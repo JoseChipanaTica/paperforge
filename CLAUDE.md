@@ -23,10 +23,14 @@ make that 30-second moment look better or work more reliably. Polish what the ca
   `data/paperforge.db` SQLite otherwise. One row per arXiv id, first save wins. Never stores paper text.
 - `src/server/token.ts` — HMAC save tokens: only graphs this server forged can be published
 - `src/server/api.ts` — `/api/papers` handlers and error → `{message, code}` mapping
-- `src/shared/learn.ts` — Zod schemas for learning artifacts (PyTorch, walkthrough, example) and
-  the `/api/learn` + `/api/ask` stream events. Every step carries a graph `block_id`.
+- `src/shared/learn.ts` — Zod schemas for learning artifacts (PyTorch and the journey: one concrete input
+  followed through every block, each step with typed `View`s of the data — tokens, vectors, heads, matrix,
+  patches, signal, frames, probs, tensor) and the `/api/learn` + `/api/ask` stream events. Every step carries
+  a graph `block_id`; `cleanJourney` clamps views so the front end can always draw them.
 - `src/server/tutor.ts` — Claude calls for learning features. All share one system prompt and one
-  `[paper, graph]` prefix with a cache breakpoint; keep it byte-identical and effort fixed.
+  `[paper, graph]` prefix with a cache breakpoint; keep it byte-identical and effort fixed. The output
+  format is part of the cache: learning kinds share `ANY_ARTIFACT`, inside views `INSIDE_ARTIFACT` (the
+  journey and the block graph together exceed the API's grammar size limit).
 - `src/shared/translate.ts` — languages, reading levels (Beginner / Engineer / Researcher), and the prose
   of each graph/artifact (`pickText` / `applyText`). Claude always writes English for an engineer; a
   "translation" rewrites only labels, descriptions and narration for another language and/or level, never
@@ -43,14 +47,17 @@ make that 30-second moment look better or work more reliably. Polish what the ca
     `layout.ts` (graph → positions), `timeline.ts` (assembly choreography), `paper.ts` (paper + highlights)
   - `main.ts` wires the modules: `landing.ts` (hero, live preview, how-it-works, gallery), `toolbar.ts`,
     `studyPanel.ts` (ARIA tabs; state in `panelState.ts`), `sheet.ts` (bottom sheet < 900 px),
-    `overview.ts` (summary, block detail, Ask), `stepsView.ts` + `tour.ts` (walkthrough / example),
+    `overview.ts` (summary, block detail, Ask), `stepsView.ts` + `tour.ts` (the walkthrough, i.e. the journey),
+    `specimenLayout.ts` (a `View` → cells, pure) + `specimen.ts` (the data as a printed card beside the current
+    block; between steps it flies along the wire as a packet),
     `codeView.ts` (PyTorch), `learn.ts` (learn/ask/inside clients, request bookkeeping), `lang.ts`
     (language + level pickers, translate client), `trace.ts` (shape tracing: dimensions, aliases via
     hyperparameters, splits like 512 = h × d_k). `main.ts` keeps `graph` (English, signed, sent to the
     API), `view` (rewritten for the reader) and `inside` (a block's inside view, when open).
   - `styles/tokens.css` holds every colour, font and spacing token; `blocks.ts` mirrors ink /
     highlighter / vermilion and owns the block palette. One CSS file per component.
-- `samples/` — committed block graphs (`<id>.json`), learning artifacts (`<id>.<kind>.json`) and inside
+- `samples/` — committed block graphs (`<id>.json`), learning artifacts (`<id>.<kind>.json`, kind `pytorch` or
+  `journey`; `bun run learn <url> <kind> --write` regenerates one) and inside
   views (`<id>.inside.<block_id>.json`) that seed the cache, so the demo runs without an API key
 
 ## Conventions
