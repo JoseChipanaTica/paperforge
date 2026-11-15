@@ -5,7 +5,7 @@ import { extractArchitecture } from "./extract";
 import { locateQuote } from "./locate";
 import { extractPages } from "./pdf";
 import { getStore, type Store } from "./store";
-import { signGraph } from "./token";
+import { getSecret, signGraph } from "./token";
 
 const ROOT = join(import.meta.dir, "..", "..");
 // Vercel functions can only write to /tmp; the cache there is per-instance and temporary.
@@ -57,6 +57,7 @@ async function loadArchitecture(
     const sample = await readJson(join(SAMPLES, `${fileId(id)}.json`));
     if (sample) return { arch: Architecture.parse(sample), source: "sample" };
   }
+  getSecret(); // fail before the visitor pays for a Claude call we couldn't let them publish
   emit({ type: "status", stage: "extract", message: "Claude is reading the paper" });
   const arch = await extract(pages, { apiKey });
   await Bun.write(cachePath, JSON.stringify(arch, null, 2));
@@ -107,6 +108,9 @@ export async function forge(
   );
   emit({ type: "status", stage: "locate", message: "Finding each block in the text" });
   const graph = locate(id, arch, pages);
-  emit({ type: "graph", graph, source, ...(source === "claude" && { save_token: signGraph(graph) }) });
+  // Fresh or disk-cached Claude output is this server's own and publishable, so a reload
+  // before clicking Publish keeps the option. Gallery and sample graphs are not.
+  const publishable = source === "claude" || source === "cache";
+  emit({ type: "graph", graph, source, ...(publishable && { save_token: signGraph(graph) }) });
   return graph;
 }

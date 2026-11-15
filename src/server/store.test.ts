@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Architecture } from "../shared/graph";
-import { createStore } from "./store";
+import { mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { createStore, storeFromEnv } from "./store";
 
 const sample = Architecture.parse(await Bun.file(join(import.meta.dir, "../../samples/1706.03762.json")).json());
 const memory = () => createStore("sqlite://:memory:");
@@ -46,5 +48,21 @@ describe("store", () => {
 
   test("rejects a graph that doesn't match the schema", async () => {
     await expect(memory().publishPaper("x", { ...sample, blocks: "bad" } as never)).rejects.toThrow();
+  });
+});
+
+describe("store from env", () => {
+  test("on Vercel without DATABASE_URL, the store rejects instead of throwing (EROFS)", async () => {
+    const store = storeFromEnv({ VERCEL: "1" });
+    await expect(store.getPaper("1706.03762")).rejects.toThrow(/DATABASE_URL/);
+    await expect(store.listPapers()).rejects.toThrow(/DATABASE_URL/);
+  });
+
+  test("a failed table create is retried on the next call", async () => {
+    const dir = join(tmpdir(), `paperforge-retry-${crypto.randomUUID()}`);
+    const store = createStore(`sqlite://${join(dir, "g.db")}`);
+    await expect(store.listPapers()).rejects.toThrow();
+    mkdirSync(dir, { recursive: true });
+    expect(await store.listPapers()).toEqual([]);
   });
 });

@@ -36,4 +36,25 @@ describe("save token", () => {
     expect(verifyGraph(g, "deadbeef")).toBe(false);
     expect(verifyGraph(g, "")).toBe(false);
   });
+
+  test("a token from another secret is rejected", () => {
+    const g = graph();
+    process.env.PAPERFORGE_SECRET = "secret-a";
+    const token = signGraph(g);
+    process.env.PAPERFORGE_SECRET = "secret-b";
+    try {
+      expect(verifyGraph(g, token)).toBe(false);
+    } finally {
+      delete process.env.PAPERFORGE_SECRET;
+    }
+  });
+
+  test("required on Vercel even without NODE_ENV=production", () => {
+    process.env.VERCEL = "1";
+    try {
+      expect(() => signGraph(graph())).toThrow(/PAPERFORGE_SECRET/);
+    } finally {
+      delete process.env.VERCEL;
+    }
+  });
 });

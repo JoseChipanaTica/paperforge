@@ -17,11 +17,19 @@ export interface Store {
 
 export function createStore(url: string): Store {
   const sqlite = url.startsWith("sqlite");
-  const db = new SQL(url);
+  let db = new SQL(url);
 
   let ready: Promise<unknown> | undefined;
-  const init = () =>
-    (ready ??= db.unsafe(`create table if not exists papers (
+  let stale = false;
+  // Retry after a failure (e.g. Neon cold start) instead of caching the rejection forever.
+  // Bun.SQL clients can keep a connection error, so the retry gets a fresh client too.
+  const init = () => {
+    if (!ready && stale) {
+      void db.close().catch(() => {});
+      db = new SQL(url);
+      stale = false;
+    }
+    return (ready ??= db.unsafe(`create table if not exists papers (
       arxiv_id text primary key,
       paper_title text not null,
       model_name text not null,
@@ -29,7 +37,12 @@ export function createStore(url: string): Store {
       graph ${sqlite ? "text" : "jsonb"} not null,
       block_count integer not null,
       created_at text not null
-    )`));
+    )`).catch((err) => {
+      ready = undefined;
+      stale = true;
+      throw err;
+    }));
+  };
 
   return {
     async getPaper(id) {
@@ -63,12 +76,23 @@ export function createStore(url: string): Store {
   };
 }
 
+/** A store whose every call rejects, so callers' "gallery unavailable" paths take over. */
+function unavailableStore(reason: string): Store {
+  const fail = () => Promise.reject(new Error(reason));
+  return { getPaper: fail, listPapers: fail, publishPaper: fail };
+}
+
+export function storeFromEnv(env: Record<string, string | undefined>): Store {
+  if (env.DATABASE_URL) return createStore(env.DATABASE_URL);
+  // The deployed project dir is read-only; without a database the gallery is simply off.
+  if (env.VERCEL) return unavailableStore("No DATABASE_URL set: the gallery is disabled.");
+  const dir = join(import.meta.dir, "..", "..", "data");
+  mkdirSync(dir, { recursive: true });
+  return createStore(`sqlite://${join(dir, "paperforge.db")}`);
+}
+
 let store: Store | undefined;
 
 export function getStore(): Store {
-  if (store) return store;
-  if (process.env.DATABASE_URL) return (store = createStore(process.env.DATABASE_URL));
-  const dir = join(import.meta.dir, "..", "..", "data");
-  mkdirSync(dir, { recursive: true });
-  return (store = createStore(`sqlite://${join(dir, "paperforge.db")}`));
+  return (store ??= storeFromEnv(process.env));
 }

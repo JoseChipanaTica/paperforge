@@ -85,8 +85,8 @@ After Claude builds a new paper, **Publish to gallery** saves its 3D model so an
 Paperforge runs on Vercel's Bun runtime as is (`vercel.json`), with visitors bringing their own Anthropic key.
 
 1. Import the repo into Vercel (or run `vercel` in the repo).
-2. In the project's **Storage** tab, add **Neon** from the Marketplace and connect it. Make sure the project has a `DATABASE_URL` env var with the Neon connection string; if the integration names it differently (e.g. `POSTGRES_URL`), add `DATABASE_URL` with the same value.
-3. Add `PAPERFORGE_SECRET` (`openssl rand -hex 32`).
+2. In the project's **Storage** tab, add **Neon** from the Marketplace and connect it. Make sure the project has a `DATABASE_URL` env var with the Neon connection string; if the integration names it differently (e.g. `POSTGRES_URL`), add `DATABASE_URL` with the same value. Use Neon's **pooled** connection string (the host contains `-pooler`): each Vercel instance keeps its own connection pool.
+3. Add `PAPERFORGE_SECRET` (`openssl rand -hex 32`). It's required: without it the server refuses to forge new papers rather than hand out publish tokens other instances would reject.
 4. Do **not** set `ANTHROPIC_API_KEY`: on the hosted site every visitor uses their own.
 5. Deploy. The gallery table is created on first use.
 

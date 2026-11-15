@@ -63,7 +63,22 @@ describe("forge lookup order", () => {
     await run({ store });
     const e = await run({ store });
     expect(e.source).toBe("cache");
-    expect(e.save_token).toBeUndefined();
+    // Still this server's own output: reloading before publishing must not lose the option.
+    expect(verifyGraph(e.graph, e.save_token!)).toBe(true);
+  });
+});
+
+describe("signing secret", () => {
+  test("missing in production fails before Claude runs (no paid call wasted)", async () => {
+    const saved = { ...process.env };
+    process.env.NODE_ENV = "production";
+    delete process.env.PAPERFORGE_SECRET;
+    try {
+      await expect(run({ store: createStore("sqlite://:memory:") })).rejects.toThrow(/PAPERFORGE_SECRET/);
+      expect(calls).toEqual([]);
+    } finally {
+      Object.assign(process.env, saved);
+    }
   });
 });
 

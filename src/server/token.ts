@@ -7,13 +7,15 @@ import type { LocatedArchitecture } from "../shared/graph";
  * published under another paper).
  */
 
-let secret: string | undefined;
+let localSecret: string | undefined;
 
-function getSecret(): string {
-  if (secret) return secret;
-  if (process.env.PAPERFORGE_SECRET) return (secret = process.env.PAPERFORGE_SECRET);
-  if (process.env.NODE_ENV === "production") throw new Error("PAPERFORGE_SECRET must be set in production.");
-  return (secret = randomUUID()); // local dev: tokens only need to outlive this process
+/** Throws when tokens can't be trusted: deployed without PAPERFORGE_SECRET, each instance would sign differently. */
+export function getSecret(): string {
+  if (process.env.PAPERFORGE_SECRET) return process.env.PAPERFORGE_SECRET;
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL) {
+    throw new Error("PAPERFORGE_SECRET must be set when deployed.");
+  }
+  return (localSecret ??= randomUUID()); // local dev: tokens only need to outlive this process
 }
 
 const hmac = (graph: unknown) =>
