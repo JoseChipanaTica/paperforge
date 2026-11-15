@@ -8,6 +8,7 @@
     "dev": "bun --hot ./index.ts",
     "start": "NODE_ENV=production bun ./index.ts",
     "forge": "bun ./scripts/forge.ts",
+    "learn": "bun ./scripts/learn.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
