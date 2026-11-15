@@ -82,6 +82,8 @@ export class ForgeScene {
   viewShift = 0;
   /** Camera sways gently until the user grabs the controls. */
   sway = true;
+  /** prefers-reduced-motion: load() leaves the camera still. */
+  reduceMotion = false;
   private swayTime = 0;
   fitDistance = 30;
   private hovered: string | null = null;
@@ -237,7 +239,7 @@ export class ForgeScene {
 
     this.buildEdges();
     this.buildPulses();
-    this.sway = true;
+    this.sway = !this.reduceMotion;
     this.frame(true);
   }
 

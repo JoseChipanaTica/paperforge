@@ -133,6 +133,7 @@ async function forgePaper(input: string, refresh = false) {
   pinned = null;
   rawGraph = saveToken = shareUrl = null;
   syncPublish();
+  graph = null; // results for the previous paper must not land on this one
   resetLearn();
 
   const key = storedKey();
@@ -174,7 +175,7 @@ async function handle(e: ForgeEvent, myRun: Run) {
       $("#title").hidden = true;
       paper.setPaper(e.arxiv_id, e.pages);
       panel.select("paper");
-      sheet.snapTo("half"); // phones: the sweep happens in the sheet
+      sheet.snapTo("half");
       paper.show(true);
       paper.startReading();
       history.replaceState(null, "", `?paper=${encodeURIComponent(e.arxiv_id)}`);
@@ -203,7 +204,9 @@ async function play(myRun = (run = new Run())) {
   document.body.classList.add("assembling");
   controls.hidden = false;
   paper.root.classList.remove("inspect");
-  scene.sway = !reducedMotion();
+  panel.select("paper"); // the sweep plays in the Paper tab (first forge and Replay)
+  sheet.snapTo("half"); // phones: the sweep happens in the sheet
+  scene.reduceMotion = reducedMotion();
   if (reducedMotion()) myRun.skip(); // straight to the finished model
   await assemble(scene, paper, graph, myRun);
   if (myRun === run) {
@@ -243,6 +246,8 @@ scene.onClick = (id) => {
   pinned = id;
   inspect(id);
   if (!id) return;
+  const touring = (panel.state.active === "walkthrough" || panel.state.active === "example") && tourKind === panel.state.active;
+  if (sheet.active && !touring) panel.select("overview"); // phones: a tapped block opens Overview
   sheet.reveal();
   const active = panel.state.active;
   if (active === "pytorch") revealSymbol(panel.tab("pytorch"), id);
@@ -312,12 +317,16 @@ const progress: Partial<Record<LearnKind, string>> = {};
 
 const NAMES: Record<LearnKind, string> = { walkthrough: "walkthrough", example: "easy example", pytorch: "PyTorch code" };
 
+let openTab: TabId | null = null;
 panel.onSelect = (tab) => {
   if (tourKind && tab !== tourKind && driver.active) {
     tourAt[tourKind] = driver.index;
     driver.pause();
   }
+  const again = tab === openTab;
+  openTab = tab;
   if (!isKind(tab) || !graph) return;
+  if (again && artifacts.has(tab)) return; // already showing (e.g. a tap to open the phone sheet)
   if (artifacts.has(tab) || panel.state.status[tab] === "ready") void openLearn(tab);
   else renderState(tab);
 };
@@ -372,8 +381,9 @@ const learning = new InFlight<Awaited<ReturnType<typeof requestArtifact>>>();
 
 function resetLearn() {
   learning.reset();
-  driver.stop();
+  driver.forget();
   tourKind = null;
+  openTab = null;
   for (const k of ["walkthrough", "example", "pytorch"] as const) {
     panel.tab(k).replaceChildren();
     delete progress[k];
@@ -401,8 +411,8 @@ async function openLearn(kind: LearnKind) {
     if (panel.state.active === kind) renderState(kind);
   }
   try {
-    const { value, current } = cached
-      ? { value: { artifact: cached }, current: true }
+    const { value } = cached
+      ? { value: { artifact: cached } }
       : await learning.run(kind, () =>
           requestArtifact(g.arxiv_id, kind, g, storedKey(), (m) => {
             progress[kind] = m;
@@ -413,7 +423,7 @@ async function openLearn(kind: LearnKind) {
     const { artifact } = value;
     artifacts.set(kind, artifact);
     panel.dispatch({ type: "loaded", kind });
-    if (!current || panel.state.active !== kind) return; // the visitor is looking at something else
+    if (panel.state.active !== kind) return; // shown when the visitor opens the tab
     showArtifact(kind, artifact, g);
   } catch (err) {
     if (graph !== g) return;

@@ -41,15 +41,20 @@ export function initLanding(root: HTMLElement, deps: LandingDeps) {
     /** Put the live model in the hero. */
     preview() {
       home ??= deps.stage.parentElement;
+      deps.scene.reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
       heroStage.append(deps.stage);
       deps.scene.showAssembled(PREVIEW, 1.15);
       deps.scene.setViewShift(0.04); // left-hand labels need more room than right-hand ones
-      deps.scene.sway = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+      // A decoration here, not a viewer: the wheel and swipes must scroll the page.
+      deps.scene.controls.enableZoom = false;
+      deps.scene.controls.enabled = !matchMedia("(max-width: 899px)").matches;
     },
     /** Hand the stage back to the workspace for a real forge. */
     hide() {
       if (home && deps.stage.parentElement !== home) home.prepend(deps.stage);
       deps.scene.pulsing = false;
+      deps.scene.controls.enableZoom = true;
+      deps.scene.controls.enabled = true;
       deps.scene.setViewShift(0);
       deps.scene.clear();
     },

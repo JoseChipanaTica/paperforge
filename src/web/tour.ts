@@ -51,6 +51,8 @@ export class TourDriver {
   onPlaying: (playing: boolean) => void = () => {};
   private run = new Run();
   private timer: ReturnType<typeof setTimeout> | undefined;
+  // Where a stopped tour was, so Next / Back / Play pick it up again after Esc.
+  private resume: { script: TourScript; index: number } | null = null;
 
   constructor(private scene: ForgeScene) {}
 
@@ -74,17 +76,28 @@ export class TourDriver {
     this.onIndex(this.index);
   }
 
+  /** The tour to step through: the running one, or the one Esc stopped. */
+  private current(): { script: TourScript; index: number } | null {
+    return this.script ? { script: this.script, index: this.index } : this.resume;
+  }
+
   next() {
-    if (!this.script || this.index >= this.script.steps.length) return this.pause();
-    this.goTo(this.script, this.index + 1);
+    const c = this.current();
+    if (!c || c.index >= c.script.steps.length) return this.pause();
+    this.goTo(c.script, c.index + 1);
   }
 
   back() {
-    if (this.script && this.index > -1) this.goTo(this.script, this.index - 1);
+    const c = this.current();
+    if (c && c.index > -1) this.goTo(c.script, c.index - 1);
   }
 
   togglePlay() {
     if (this.playing) return this.pause();
+    const c = this.current();
+    if (!c) return;
+    this.script = c.script;
+    this.index = c.index;
     const tick = () => {
       this.next();
       if (this.script && this.index < this.script.steps.length) this.timer = setTimeout(tick, PLAY_MS);
@@ -101,11 +114,18 @@ export class TourDriver {
     this.onPlaying(false);
   }
 
+  /** A new paper: stop, and don't resume the old paper's tour. */
+  forget() {
+    this.stop();
+    this.resume = null;
+  }
+
   /** Leave the tour: clear the highlight and bring the whole model back into view. */
   stop() {
     this.pause();
     this.run.cancel();
     if (!this.script) return;
+    this.resume = { script: this.script, index: this.index };
     this.script = null;
     this.index = -1;
     this.scene.highlight(null);

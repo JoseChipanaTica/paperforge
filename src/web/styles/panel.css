@@ -99,6 +99,7 @@
   .tablist { padding: 0 var(--s2); }
   .tab { padding: 6px 10px 10px; }
   .tabpanel { padding: var(--s4); }
+  .tabpanel-paper, .tabpanel-pytorch { padding: 0; }
   .steps { padding: var(--s4); }
   .step-nav { padding: var(--s2) var(--s4); }
   .code-head, .code-note { padding-left: var(--s4); padding-right: var(--s4); }

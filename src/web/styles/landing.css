@@ -8,6 +8,8 @@ body.has-paper .landing { display: none; }
 .hero-stage { position: relative; height: min(70vh, 640px); }
 /* Labels may spill into the page margin rather than being cut at the hero's edge. */
 .hero-stage #stage, .hero-stage .label-layer { overflow: visible !important; }
+/* Let vertical swipes over the preview scroll the page (OrbitControls sets touch-action: none). */
+.hero-stage .label-layer { touch-action: pan-y !important; }
 /* The preview model: labels as quiet tags, no equations, no interaction hint needed. */
 body:not(.has-paper) .bl-eq { display: none; }
 body:not(.has-paper) .block-label { padding: 2px 6px; }

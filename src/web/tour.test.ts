@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import type { ExampleArtifact, WalkthroughArtifact } from "../shared/learn";
-import { tourSteps } from "./tour";
+import type { ForgeScene } from "./scene";
+import { TourDriver, tourSteps } from "./tour";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
 const walkthrough = (await Bun.file(join(SAMPLES, "1706.03762.walkthrough.json")).json()) as WalkthroughArtifact;
@@ -24,5 +25,22 @@ describe("tourSteps", () => {
     expect(t.steps[3]!.detail).toBe(example.steps[3]!.toy_value);
     expect(t.steps[3]!.title).toBe(""); // the tour shows the block's label instead
     expect(t.outro).toBe(example.takeaway);
+  });
+});
+
+describe("TourDriver", () => {
+  const fakeScene = { highlight: () => {}, focusOn: () => Promise.resolve() } as unknown as ForgeScene;
+
+  test("Next and Back still work after Esc stopped the tour", () => {
+    const driver = new TourDriver(fakeScene);
+    const script = tourSteps("walkthrough", walkthrough);
+    driver.goTo(script, 3);
+    driver.stop();
+    driver.next();
+    expect(driver.active).toBe(true);
+    expect(driver.index).toBe(4);
+    driver.stop();
+    driver.back();
+    expect(driver.index).toBe(3);
   });
 });
