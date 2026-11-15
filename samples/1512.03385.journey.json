@@ -1,0 +1,1362 @@
+{
+  "modality": "image",
+  "analogy": {
+    "title": "An editor with track changes",
+    "text": "Picture a document passed down a line of 34 editors. Rewriting the whole text from scratch each time would garble it. Instead, each editor gets the current draft and only marks small changes in track-changes mode, and those changes are merged back into the draft. If an editor has nothing useful to add, they leave the draft as it is. ResNet works the same way: every block keeps its input through a shortcut and only learns a small correction F(x) that gets added on top. Because no editor can ruin the draft, the chain can be made very long."
+  },
+  "intro": "We follow one 224×224 photo of a tabby cat through ResNet-34. We zoom in on a 4×4 window of the image and later on four regions (ear, eye, nose, paw). Watch the resolution shrink from 224 to 7 and the channels grow from 3 to 512. At every shortcut addition you can see that each residual block only nudges the signal slightly.",
+  "input": {
+    "label": "A 224×224 mean-subtracted RGB crop of a tabby cat sitting on a sofa",
+    "views": [
+      {
+        "kind": "patches",
+        "caption": "4×4 window of the red channel (mean-subtracted)",
+        "rows": [
+          "wall",
+          "wall",
+          "ear",
+          "ear",
+          "sofa",
+          "eye",
+          "eye",
+          "sofa",
+          "sofa",
+          "nose",
+          "fur",
+          "sofa",
+          "floor",
+          "paw",
+          "paw",
+          "floor"
+        ],
+        "cols": [],
+        "values": [
+          [
+            0.6,
+            0.5,
+            -0.2,
+            -0.3
+          ],
+          [
+            0.4,
+            -0.6,
+            -0.5,
+            0.3
+          ],
+          [
+            0.2,
+            -0.1,
+            -0.4,
+            0.1
+          ],
+          [
+            -0.3,
+            -0.7,
+            -0.6,
+            -0.2
+          ]
+        ],
+        "dims": "[3, 224, 224]",
+        "split": 1
+      }
+    ]
+  },
+  "steps": [
+    {
+      "block_id": "input",
+      "title": "Crop and normalize",
+      "what_happens": "A random 224×224 crop (or its horizontal flip) is taken from the photo, and the per-pixel mean is subtracted.",
+      "narration": "The paper resizes each image so its shorter side falls in [256, 480], then samples a 224×224 crop for scale augmentation. Subtracting the per-pixel mean centers the values around zero, so dark fur ends up negative and the bright wall positive.",
+      "shape_change": "[B, 3, 224, 224] → [B, 3, 224, 224]",
+      "views": [
+        {
+          "kind": "patches",
+          "caption": "4×4 window of the red channel",
+          "rows": [
+            "wall",
+            "wall",
+            "ear",
+            "ear",
+            "sofa",
+            "eye",
+            "eye",
+            "sofa",
+            "sofa",
+            "nose",
+            "fur",
+            "sofa",
+            "floor",
+            "paw",
+            "paw",
+            "floor"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.6,
+              0.5,
+              -0.2,
+              -0.3
+            ],
+            [
+              0.4,
+              -0.6,
+              -0.5,
+              0.3
+            ],
+            [
+              0.2,
+              -0.1,
+              -0.4,
+              0.1
+            ],
+            [
+              -0.3,
+              -0.7,
+              -0.6,
+              -0.2
+            ]
+          ],
+          "dims": "[3, 224, 224]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "conv1",
+      "title": "Stem: 7×7 conv, 64, stride 2",
+      "what_happens": "64 large 7×7 filters slide over the image with stride 2, and their outputs pass through BN and ReLU to give 64 edge and colour maps at half resolution.",
+      "narration": "This one big convolution turns raw pixels into low-level features such as edges and colour blobs, and halves the resolution to 112×112. BN sits right after the conv and before the ReLU, as the paper states. The map shown is one channel that responds to the dark-fur/bright-wall boundary, so it lights up along the ear and eye.",
+      "shape_change": "[B, 3, 224, 224] → [B, 64, 112, 112]",
+      "views": [
+        {
+          "kind": "patches",
+          "caption": "channel 12 (edge detector) after ReLU",
+          "rows": [
+            "wall",
+            "wall",
+            "ear",
+            "ear",
+            "sofa",
+            "eye",
+            "eye",
+            "sofa",
+            "sofa",
+            "nose",
+            "fur",
+            "sofa",
+            "floor",
+            "paw",
+            "paw",
+            "floor"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0,
+              0.9,
+              1.2,
+              0
+            ],
+            [
+              0.3,
+              1.4,
+              0.8,
+              0
+            ],
+            [
+              0,
+              0.6,
+              1.1,
+              0.2
+            ],
+            [
+              0,
+              0.4,
+              0.9,
+              0
+            ]
+          ],
+          "dims": "[64, 112, 112]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "maxpool",
+      "title": "3×3 max pool, stride 2",
+      "what_happens": "Each 3×3 neighbourhood is replaced by its strongest response, halving the resolution to 56×56.",
+      "narration": "Max pooling keeps the strongest edge evidence and makes it robust to small shifts. The residual stages then start at 56×56 with 64 channels, the 'conv2_x' row of Table 1.",
+      "shape_change": "[B, 64, 112, 112] → [B, 64, 56, 56]",
+      "views": [
+        {
+          "kind": "patches",
+          "caption": "channel 12 after max pooling",
+          "rows": [
+            "wall",
+            "wall",
+            "ear",
+            "ear",
+            "sofa",
+            "eye",
+            "eye",
+            "sofa",
+            "sofa",
+            "nose",
+            "fur",
+            "sofa",
+            "floor",
+            "paw",
+            "paw",
+            "floor"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.9,
+              1.2,
+              1.2,
+              0.2
+            ],
+            [
+              1.4,
+              1.4,
+              1.1,
+              0.2
+            ],
+            [
+              0.6,
+              1.1,
+              1.1,
+              0.2
+            ],
+            [
+              0.4,
+              0.9,
+              0.9,
+              0
+            ]
+          ],
+          "dims": "[64, 56, 56]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c2_conv_a",
+      "title": "conv2_x: first 3×3 conv of F",
+      "what_happens": "A 3×3 conv with 64 filters, followed by BN and ReLU, computes σ(W₁x), the first half of the residual function.",
+      "narration": "From here on we track 8 of the 64 channels at four image regions. This layer starts computing the correction F that the block will add to its input x. The conv2_x stage repeats this block 3 times at 56×56.",
+      "shape_change": "[B, 64, 56, 56] → [B, 64, 56, 56]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "σ(W₁x): 8 of 64 channels at four regions",
+          "rows": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.2,
+              0,
+              0.8,
+              0.1,
+              0,
+              0.5,
+              0,
+              0.3
+            ],
+            [
+              0.9,
+              0,
+              0.4,
+              0,
+              0.6,
+              0.7,
+              0.1,
+              0
+            ],
+            [
+              0,
+              0.3,
+              0.5,
+              0.2,
+              0,
+              0.4,
+              0.6,
+              0.1
+            ],
+            [
+              0.1,
+              0.4,
+              0,
+              0.7,
+              0.2,
+              0,
+              0.3,
+              0
+            ]
+          ],
+          "dims": "[64, 56, 56]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c2_conv_b",
+      "title": "conv2_x: second 3×3 conv of F",
+      "what_happens": "A second 3×3 conv with 64 filters, followed by BN and no ReLU, produces F = W₂σ(W₁x).",
+      "narration": "The result is the residual, a signed and mostly small correction. Fig. 7 of the paper shows that these residual responses really do have small magnitude, so the block learns perturbations rather than a whole new mapping.",
+      "shape_change": "[B, 64, 56, 56] → [B, 64, 56, 56]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "residual F(x): small, signed values",
+          "rows": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.05,
+              0.1,
+              -0.1,
+              0,
+              0.05,
+              -0.15,
+              0,
+              0.1
+            ],
+            [
+              0.1,
+              -0.2,
+              0.15,
+              0.05,
+              -0.1,
+              0.2,
+              0,
+              -0.05
+            ],
+            [
+              -0.05,
+              0,
+              0.1,
+              -0.1,
+              0.05,
+              0,
+              0.15,
+              0
+            ],
+            [
+              0,
+              0.1,
+              -0.05,
+              0.2,
+              0,
+              -0.1,
+              0.05,
+              0
+            ]
+          ],
+          "dims": "[64, 56, 56]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c2_add",
+      "title": "Identity shortcut: y = F(x) + x",
+      "what_happens": "The block's input x skips both convs and is added element-wise to F(x).",
+      "narration": "Input and output both have 64 channels at 56×56, so the shortcut is a pure identity: no parameters and almost no compute. If the best thing this block could do were nothing, the solver would only need to push F toward zero, which is the core idea of Eqn. (1).",
+      "shape_change": "[B, 64, 56, 56] → [B, 64, 56, 56]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "at the 'eye' position: shortcut + residual = sum",
+          "rows": [
+            "x (shortcut)",
+            "F(x)",
+            "y = F(x) + x"
+          ],
+          "cols": [],
+          "values": [
+            [
+              1.4,
+              0,
+              0.7,
+              0.3,
+              0,
+              1.1,
+              0.2,
+              0.5
+            ],
+            [
+              0.1,
+              -0.2,
+              0.15,
+              0.05,
+              -0.1,
+              0.2,
+              0,
+              -0.05
+            ],
+            [
+              1.5,
+              -0.2,
+              0.85,
+              0.35,
+              -0.1,
+              1.3,
+              0.2,
+              0.45
+            ]
+          ],
+          "dims": "[64, 56, 56]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c2_relu",
+      "title": "ReLU after the addition",
+      "what_happens": "σ(y) clips the negative entries of the sum to zero.",
+      "narration": "The paper places the block's second nonlinearity after the addition (Fig. 2). Here only the slightly negative channels are zeroed, and the strong features carried by the shortcut pass through unchanged. This output is the input x to the next block.",
+      "shape_change": "[B, 64, 56, 56] → [B, 64, 56, 56]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "σ(y) at four regions",
+          "rows": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "cols": [],
+          "values": [
+            [
+              1.25,
+              0.3,
+              1,
+              0.1,
+              0.05,
+              0.85,
+              0.2,
+              0.6
+            ],
+            [
+              1.5,
+              0,
+              0.85,
+              0.35,
+              0,
+              1.3,
+              0.2,
+              0.45
+            ],
+            [
+              0.5,
+              0.2,
+              1.1,
+              0,
+              0.3,
+              0.6,
+              1.05,
+              0.2
+            ],
+            [
+              0.4,
+              0.9,
+              0.35,
+              1.1,
+              0.2,
+              0,
+              0.45,
+              0.3
+            ]
+          ],
+          "dims": "[64, 56, 56]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c3_conv_a",
+      "title": "conv3_x: strided 3×3 conv, 128",
+      "what_happens": "In the stage's first block, this conv uses stride 2 to halve the resolution to 28×28 and doubles the filters to 128, then applies BN and ReLU.",
+      "narration": "This follows the design rule: when the feature map size is halved, the number of filters doubles, which keeps the time cost per layer constant. Each position now sees a larger patch of the cat, so features become parts (eye shape, ear tip) rather than edges. conv3_x repeats this block 4 times.",
+      "shape_change": "[B, 64, 56, 56] → [B, 128, 28, 28]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "σ(W₁x): 8 of 128 channels",
+          "rows": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.7,
+              0,
+              0.3,
+              0.9,
+              0.1,
+              0,
+              0.4,
+              0.2
+            ],
+            [
+              0.2,
+              0.8,
+              0,
+              0.3,
+              1,
+              0.1,
+              0,
+              0.6
+            ],
+            [
+              0,
+              0.4,
+              0.9,
+              0,
+              0.2,
+              0.7,
+              0.3,
+              0
+            ],
+            [
+              0.5,
+              0.1,
+              0,
+              0.6,
+              0,
+              0.3,
+              0.8,
+              0.4
+            ]
+          ],
+          "dims": "[128, 28, 28]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c3_conv_b",
+      "title": "conv3_x: second 3×3 conv, 128",
+      "what_happens": "A 3×3 conv with 128 filters, followed by BN, finishes the residual F(x).",
+      "narration": "As in conv2_x, the result is a small signed correction. Its channels now line up with the 128-wide shortcut it will be added to.",
+      "shape_change": "[B, 128, 28, 28] → [B, 128, 28, 28]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "residual F(x)",
+          "rows": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.1,
+              0,
+              -0.15,
+              0.2,
+              0.05,
+              -0.1,
+              0,
+              0.1
+            ],
+            [
+              0.2,
+              -0.1,
+              0.3,
+              0,
+              -0.2,
+              0.1,
+              0.25,
+              -0.1
+            ],
+            [
+              0,
+              0.15,
+              0.1,
+              -0.05,
+              0,
+              0.2,
+              -0.1,
+              0.05
+            ],
+            [
+              -0.1,
+              0.05,
+              0,
+              0.15,
+              0.1,
+              0,
+              0.2,
+              -0.05
+            ]
+          ],
+          "dims": "[128, 28, 28]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c3_add",
+      "title": "Shortcut across a dimension change",
+      "what_happens": "The 64-channel 56×56 input is matched to 128 channels at 28×28 (option A: zero-padding with stride 2, or option B: a 1×1 projection W_s), then added to F(x).",
+      "narration": "Dimensions don't match here, so Eqn. (2), y = F(x) + W_s·x, applies. This corresponds to the dotted shortcut in Fig. 3. ResNet-34 A zero-pads and adds no parameters; ResNet-34 B projects with a 1×1 conv and scores slightly better (24.52 vs 25.03 top-1). The remaining 3 blocks of the stage use plain identity shortcuts.",
+      "shape_change": "[B, 128, 28, 28] → [B, 128, 28, 28]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "at the 'eye' position (shown with projection, option B)",
+          "rows": [
+            "W_s x (shortcut)",
+            "F(x)",
+            "y = F(x) + W_s x"
+          ],
+          "cols": [],
+          "values": [
+            [
+              1.1,
+              0.3,
+              0.6,
+              0,
+              0.4,
+              0.9,
+              0.1,
+              0.7
+            ],
+            [
+              0.2,
+              -0.1,
+              0.3,
+              0,
+              -0.2,
+              0.1,
+              0.25,
+              -0.1
+            ],
+            [
+              1.3,
+              0.2,
+              0.9,
+              0,
+              0.2,
+              1,
+              0.35,
+              0.6
+            ]
+          ],
+          "dims": "[128, 28, 28]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c3_relu",
+      "title": "ReLU after the addition",
+      "what_happens": "σ(y) zeroes out any negative entries of the sum.",
+      "narration": "The eye vector is already non-negative, so it passes through unchanged. The features now describe cat parts at 28×28 resolution.",
+      "shape_change": "[B, 128, 28, 28] → [B, 128, 28, 28]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "σ(y) at four regions",
+          "rows": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "cols": [],
+          "values": [
+            [
+              1.2,
+              0.4,
+              0.3,
+              1.1,
+              0.2,
+              0,
+              0.6,
+              0.5
+            ],
+            [
+              1.3,
+              0.2,
+              0.9,
+              0,
+              0.2,
+              1,
+              0.35,
+              0.6
+            ],
+            [
+              0.3,
+              0.9,
+              1.2,
+              0.1,
+              0.4,
+              0.8,
+              0.2,
+              0.3
+            ],
+            [
+              0.6,
+              0.2,
+              0.1,
+              1,
+              0.3,
+              0.4,
+              1.1,
+              0.4
+            ]
+          ],
+          "dims": "[128, 28, 28]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c4_conv_a",
+      "title": "conv4_x: strided 3×3 conv, 256",
+      "what_happens": "A stride-2 conv with 256 filters, followed by BN and ReLU, halves the resolution to 14×14 and doubles the channels.",
+      "narration": "conv4_x is the deepest stage, with 6 blocks (12 conv layers), and it does most of the work of combining parts into object-level patterns. Each position now covers a large part of the cat's face or body.",
+      "shape_change": "[B, 128, 28, 28] → [B, 256, 14, 14]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "σ(W₁x): 8 of 256 channels",
+          "rows": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.4,
+              0,
+              0.6,
+              0.2,
+              0,
+              0.9,
+              0.1,
+              0.3
+            ],
+            [
+              0.8,
+              0.3,
+              0,
+              0.5,
+              0.7,
+              0.2,
+              0,
+              0.4
+            ],
+            [
+              0.1,
+              0.6,
+              0.4,
+              0,
+              0.3,
+              0,
+              0.8,
+              0.2
+            ],
+            [
+              0,
+              0.2,
+              0.7,
+              0.6,
+              0.1,
+              0.3,
+              0,
+              0.9
+            ]
+          ],
+          "dims": "[256, 14, 14]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c4_conv_b",
+      "title": "conv4_x: second 3×3 conv, 256",
+      "what_happens": "A 3×3 conv with 256 filters, followed by BN, outputs the residual F(x).",
+      "narration": "Fig. 7 notes that deeper ResNets have smaller residual responses: each layer changes the signal less. That shows here as corrections around ±0.1.",
+      "shape_change": "[B, 256, 14, 14] → [B, 256, 14, 14]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "residual F(x): even smaller corrections",
+          "rows": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.05,
+              0,
+              -0.05,
+              0.1,
+              0,
+              0.05,
+              -0.05,
+              0
+            ],
+            [
+              0.1,
+              0.05,
+              -0.1,
+              0.15,
+              -0.05,
+              0.1,
+              0,
+              0.05
+            ],
+            [
+              0,
+              -0.05,
+              0.05,
+              0,
+              0.1,
+              0,
+              0.05,
+              -0.1
+            ],
+            [
+              -0.05,
+              0.1,
+              0,
+              0.05,
+              0,
+              -0.05,
+              0.1,
+              0
+            ]
+          ],
+          "dims": "[256, 14, 14]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c4_add",
+      "title": "Shortcut addition",
+      "what_happens": "The shortcut x is added element-wise to F(x).",
+      "narration": "In the 5 non-first blocks of this stage the shortcut is a pure identity. The first block matches dimensions as in conv3_x. The sum y stays close to x, which is the 'perturbation of an identity' picture that motivates residual learning.",
+      "shape_change": "[B, 256, 14, 14] → [B, 256, 14, 14]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "at the 'eye' position",
+          "rows": [
+            "x (shortcut)",
+            "F(x)",
+            "y = F(x) + x"
+          ],
+          "cols": [],
+          "values": [
+            [
+              1.6,
+              0.4,
+              1,
+              0.2,
+              0,
+              1.2,
+              0.5,
+              0.8
+            ],
+            [
+              0.1,
+              0.05,
+              -0.1,
+              0.15,
+              -0.05,
+              0.1,
+              0,
+              0.05
+            ],
+            [
+              1.7,
+              0.45,
+              0.9,
+              0.35,
+              -0.05,
+              1.3,
+              0.5,
+              0.85
+            ]
+          ],
+          "dims": "[256, 14, 14]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c4_relu",
+      "title": "ReLU after the addition",
+      "what_happens": "σ(y) clips the one small negative entry to zero.",
+      "narration": "Only the -0.05 channel is affected. The rich 256-channel description of each region is passed on to the final stage.",
+      "shape_change": "[B, 256, 14, 14] → [B, 256, 14, 14]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "σ(y) at four regions",
+          "rows": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "cols": [],
+          "values": [
+            [
+              1.3,
+              0.2,
+              0.8,
+              0.9,
+              0.1,
+              0.7,
+              0.4,
+              0.6
+            ],
+            [
+              1.7,
+              0.45,
+              0.9,
+              0.35,
+              0,
+              1.3,
+              0.5,
+              0.85
+            ],
+            [
+              0.5,
+              1,
+              1.1,
+              0.2,
+              0.6,
+              0.9,
+              0.7,
+              0.3
+            ],
+            [
+              0.7,
+              0.5,
+              0.4,
+              1.2,
+              0.3,
+              0.6,
+              1,
+              0.8
+            ]
+          ],
+          "dims": "[256, 14, 14]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c5_conv_a",
+      "title": "conv5_x: strided 3×3 conv, 512",
+      "what_happens": "A stride-2 conv with 512 filters, followed by BN and ReLU, brings the map down to 7×7.",
+      "narration": "This is the last halving of resolution and doubling of filters. A 7×7 grid of 512-dimensional vectors remains, and each vector encodes high-level evidence such as 'striped fur' or 'cat face'. conv5_x has 3 blocks.",
+      "shape_change": "[B, 256, 14, 14] → [B, 512, 7, 7]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "σ(W₁x): 8 of 512 channels",
+          "rows": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.6,
+              0.1,
+              0.9,
+              0,
+              0.4,
+              0.7,
+              0,
+              0.3
+            ],
+            [
+              1,
+              0,
+              0.5,
+              0.2,
+              0.8,
+              1.1,
+              0.1,
+              0.4
+            ],
+            [
+              0.3,
+              0.4,
+              1,
+              0,
+              0.6,
+              0.5,
+              0.2,
+              0.1
+            ],
+            [
+              0.2,
+              0.7,
+              0.3,
+              0.9,
+              0,
+              0.4,
+              0.8,
+              0.5
+            ]
+          ],
+          "dims": "[512, 7, 7]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c5_conv_b",
+      "title": "conv5_x: second 3×3 conv, 512",
+      "what_happens": "A 3×3 conv with 512 filters, followed by BN, produces the final residual correction F(x).",
+      "narration": "The last refinement sharpens class-relevant channels. For example, the 'cat face' channel (column 6) gets a positive push at the eye.",
+      "shape_change": "[B, 512, 7, 7] → [B, 512, 7, 7]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "residual F(x)",
+          "rows": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.2,
+              0,
+              0.1,
+              -0.1,
+              0,
+              0.3,
+              0,
+              0.05
+            ],
+            [
+              0.3,
+              -0.1,
+              0.2,
+              0,
+              -0.2,
+              0.4,
+              0,
+              0.1
+            ],
+            [
+              0.1,
+              0.05,
+              0.2,
+              0,
+              -0.1,
+              0.25,
+              0,
+              0
+            ],
+            [
+              0,
+              0.1,
+              -0.05,
+              0.2,
+              0,
+              0.1,
+              0.15,
+              0.05
+            ]
+          ],
+          "dims": "[512, 7, 7]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c5_add",
+      "title": "Shortcut addition",
+      "what_happens": "The shortcut x and F(x) are summed element-wise.",
+      "narration": "Across all 16 blocks, these shortcuts form an unbroken highway from the stem to the classifier, so both the signal and its gradients pass straight through. This is why the 34-layer ResNet trains to lower error than the 18-layer one, while the plain 34-layer net does worse (Table 2).",
+      "shape_change": "[B, 512, 7, 7] → [B, 512, 7, 7]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "at the 'eye' position",
+          "rows": [
+            "x (shortcut)",
+            "F(x)",
+            "y = F(x) + x"
+          ],
+          "cols": [],
+          "values": [
+            [
+              2,
+              0.3,
+              1.4,
+              0.1,
+              0.6,
+              1.8,
+              0.2,
+              0.9
+            ],
+            [
+              0.3,
+              -0.1,
+              0.2,
+              0,
+              -0.2,
+              0.4,
+              0,
+              0.1
+            ],
+            [
+              2.3,
+              0.2,
+              1.6,
+              0.1,
+              0.4,
+              2.2,
+              0.2,
+              1
+            ]
+          ],
+          "dims": "[512, 7, 7]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "c5_relu",
+      "title": "Final ReLU",
+      "what_happens": "σ(y) produces the network's last 7×7×512 feature map.",
+      "narration": "Every region now carries a 512-dimensional description of what it contains. The cat-related channels (1, 3 and 6) are strong across the face regions.",
+      "shape_change": "[B, 512, 7, 7] → [B, 512, 7, 7]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "σ(y) at four regions",
+          "rows": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "cols": [],
+          "values": [
+            [
+              1.6,
+              0.3,
+              1.2,
+              0.3,
+              0.6,
+              1.5,
+              0.2,
+              0.6
+            ],
+            [
+              2.3,
+              0.2,
+              1.6,
+              0.1,
+              0.4,
+              2.2,
+              0.2,
+              1
+            ],
+            [
+              1.2,
+              0.4,
+              1.3,
+              0.2,
+              0.7,
+              1.6,
+              0.3,
+              0.5
+            ],
+            [
+              0.5,
+              0.3,
+              0.3,
+              1,
+              0.3,
+              1.1,
+              0.5,
+              0.7
+            ]
+          ],
+          "dims": "[512, 7, 7]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "avgpool",
+      "title": "Global average pool",
+      "what_happens": "Each of the 512 channels is averaged over all 49 positions into a single number.",
+      "narration": "This replaces VGG's heavy fc-4096 layers and is a big reason ResNet-34 needs only 3.6 GFLOPs versus 19.6 for VGG-19. The image is now one 512-dimensional vector that summarises 'what is in the picture'.",
+      "shape_change": "[B, 512, 7, 7] → [B, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "pooled image descriptor (8 of 512)",
+          "rows": [
+            "image"
+          ],
+          "cols": [],
+          "values": [
+            [
+              1.4,
+              0.3,
+              1.1,
+              0.4,
+              0.5,
+              1.6,
+              0.3,
+              0.7
+            ]
+          ],
+          "dims": "[512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "fc",
+      "title": "1000-way fully-connected layer",
+      "what_happens": "A linear layer maps the 512-dimensional vector to one score (logit) per ImageNet class.",
+      "narration": "Each class has a 512-dimensional weight vector, and its score is the dot product of that vector with the image descriptor. Cat-like classes score highest because they weight the channels this image activates.",
+      "shape_change": "[B, 512] → [B, 1000]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "logits for a few classes (of 1000)",
+          "rows": [
+            "tabby cat",
+            "tiger cat",
+            "Egyptian cat",
+            "lynx",
+            "golden retriever"
+          ],
+          "cols": [],
+          "values": [
+            [
+              9.1
+            ],
+            [
+              7.8
+            ],
+            [
+              7.2
+            ],
+            [
+              4
+            ],
+            [
+              1.5
+            ]
+          ],
+          "dims": "[1000]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "softmax",
+      "title": "Softmax",
+      "what_happens": "The logits are exponentiated and normalised into probabilities that sum to 1.",
+      "narration": "Softmax turns the score gaps into confident probabilities. The 1.3-point lead over 'tiger cat' becomes roughly a 3.6× ratio. During training, cross-entropy on these probabilities drives SGD (batch 256, learning rate 0.1, momentum 0.9).",
+      "shape_change": "[B, 1000] → [B, 1000]",
+      "views": [
+        {
+          "kind": "probs",
+          "caption": "class probabilities",
+          "rows": [
+            "tabby cat",
+            "tiger cat",
+            "Egyptian cat",
+            "lynx",
+            "golden retriever",
+            "other 995"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.66,
+              0.18,
+              0.1,
+              0.004,
+              0.0003,
+              0.0557
+            ]
+          ],
+          "dims": "[1000]",
+          "split": 1
+        }
+      ]
+    }
+  ],
+  "output": {
+    "label": "Prediction: 'tabby cat' with 66% probability, ahead of 'tiger cat' at 18%",
+    "views": [
+      {
+        "kind": "probs",
+        "caption": "final class probabilities",
+        "rows": [
+          "tabby cat",
+          "tiger cat",
+          "Egyptian cat",
+          "lynx",
+          "golden retriever",
+          "other 995"
+        ],
+        "cols": [],
+        "values": [
+          [
+            0.66,
+            0.18,
+            0.1,
+            0.004,
+            0.0003,
+            0.0557
+          ]
+        ],
+        "dims": "[1000]",
+        "split": 1
+      }
+    ]
+  },
+  "outro": "Each ResNet block passes its input forward unchanged and only adds a small learned correction F(x), and that is what lets networks of 34, 152 or even 1000 layers still train."
+}

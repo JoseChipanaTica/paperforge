@@ -1,0 +1,1535 @@
+{
+  "steps": [
+    {
+      "block_id": "input",
+      "ops": [
+        {
+          "kind": "residual_add",
+          "caption": "Subtract the per-pixel mean from the raw red values of the 224×224 crop, so dark fur becomes negative and the bright wall positive (a constant mean of 0.7 stands in for the per-pixel mean).",
+          "tokens": [
+            "wall",
+            "wall",
+            "ear",
+            "ear",
+            "sofa",
+            "eye",
+            "eye",
+            "sofa",
+            "sofa",
+            "nose",
+            "fur",
+            "sofa",
+            "floor",
+            "paw",
+            "paw",
+            "floor"
+          ],
+          "input": [
+            [
+              1.3,
+              1.2,
+              0.5,
+              0.4
+            ],
+            [
+              1.1,
+              0.1,
+              0.2,
+              1
+            ],
+            [
+              0.9,
+              0.6,
+              0.3,
+              0.8
+            ],
+            [
+              0.4,
+              0,
+              0.1,
+              0.5
+            ]
+          ],
+          "weights": [],
+          "extra": [
+            [
+              -0.7,
+              -0.7,
+              -0.7,
+              -0.7
+            ],
+            [
+              -0.7,
+              -0.7,
+              -0.7,
+              -0.7
+            ],
+            [
+              -0.7,
+              -0.7,
+              -0.7,
+              -0.7
+            ],
+            [
+              -0.7,
+              -0.7,
+              -0.7,
+              -0.7
+            ]
+          ],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "conv1",
+      "ops": [
+        {
+          "kind": "convolution",
+          "caption": "Slide an edge-detecting kernel over the image with stride 2. The paper uses 7×7; a 3×3 kernel is shown here to fit the window.",
+          "tokens": [],
+          "input": [
+            [
+              0.6,
+              0.5,
+              -0.2,
+              -0.3,
+              -0.4
+            ],
+            [
+              0.4,
+              -0.6,
+              -0.5,
+              0.3,
+              0.2
+            ],
+            [
+              0.2,
+              -0.1,
+              -0.4,
+              0.1,
+              0.3
+            ],
+            [
+              -0.3,
+              -0.7,
+              -0.6,
+              -0.2,
+              0.1
+            ],
+            [
+              -0.1,
+              -0.5,
+              -0.4,
+              0,
+              0.2
+            ]
+          ],
+          "weights": [
+            [
+              0.5,
+              0,
+              -0.5
+            ],
+            [
+              0.5,
+              0,
+              -0.5
+            ],
+            [
+              0.5,
+              0,
+              -0.5
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 3,
+          "stride": 2,
+          "count": 64,
+          "svg": ""
+        },
+        {
+          "kind": "normalization",
+          "caption": "Batch norm comes right after the convolution, as the paper specifies.",
+          "tokens": [],
+          "input": [],
+          "weights": [],
+          "extra": [],
+          "fn": "batch",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        },
+        {
+          "kind": "activation",
+          "caption": "ReLU keeps only the positive edge responses.",
+          "tokens": [],
+          "input": [],
+          "weights": [],
+          "extra": [],
+          "fn": "relu",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "maxpool",
+      "ops": [
+        {
+          "kind": "pooling",
+          "caption": "A 3×3 max pool with stride 2 keeps the strongest edge response in each neighbourhood, taking 112 down to 56.",
+          "tokens": [],
+          "input": [
+            [
+              0,
+              0.9,
+              1.2,
+              0,
+              0.1
+            ],
+            [
+              0.3,
+              1.4,
+              0.8,
+              0,
+              0
+            ],
+            [
+              0,
+              0.6,
+              1.1,
+              0.2,
+              0
+            ],
+            [
+              0,
+              0.4,
+              0.9,
+              0,
+              0.1
+            ],
+            [
+              0.2,
+              0.3,
+              0.5,
+              0.1,
+              0
+            ]
+          ],
+          "weights": [],
+          "extra": [],
+          "fn": "max",
+          "size": 3,
+          "stride": 2,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c2_conv_a",
+      "ops": [
+        {
+          "kind": "convolution",
+          "caption": "The first 3×3 conv (64 filters) of the residual function F slides over the 56×56 map.",
+          "tokens": [],
+          "input": [
+            [
+              0.9,
+              1.2,
+              1.2,
+              0.2
+            ],
+            [
+              1.4,
+              1.4,
+              1.1,
+              0.2
+            ],
+            [
+              0.6,
+              1.1,
+              1.1,
+              0.2
+            ],
+            [
+              0.4,
+              0.9,
+              0.9,
+              0
+            ]
+          ],
+          "weights": [
+            [
+              0.1,
+              0.2,
+              0.1
+            ],
+            [
+              0,
+              0.3,
+              0
+            ],
+            [
+              -0.1,
+              0.2,
+              -0.1
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 3,
+          "stride": 1,
+          "count": 64,
+          "svg": ""
+        },
+        {
+          "kind": "normalization",
+          "caption": "Batch norm after the conv.",
+          "tokens": [],
+          "input": [],
+          "weights": [],
+          "extra": [],
+          "fn": "batch",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        },
+        {
+          "kind": "activation",
+          "caption": "ReLU produces σ(W₁x).",
+          "tokens": [],
+          "input": [],
+          "weights": [],
+          "extra": [],
+          "fn": "relu",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c2_conv_b",
+      "ops": [
+        {
+          "kind": "convolution",
+          "caption": "The second 3×3 conv (64 filters) uses mixed-sign weights and gives the signed residual W₂σ(W₁x).",
+          "tokens": [],
+          "input": [
+            [
+              0.2,
+              0,
+              0.8,
+              0.1
+            ],
+            [
+              0.9,
+              0,
+              0.4,
+              0
+            ],
+            [
+              0,
+              0.3,
+              0.5,
+              0.2
+            ],
+            [
+              0.1,
+              0.4,
+              0,
+              0.7
+            ]
+          ],
+          "weights": [
+            [
+              0.1,
+              -0.1,
+              0
+            ],
+            [
+              0.1,
+              0.2,
+              -0.1
+            ],
+            [
+              0,
+              -0.1,
+              0.1
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 3,
+          "stride": 1,
+          "count": 64,
+          "svg": ""
+        },
+        {
+          "kind": "normalization",
+          "caption": "Batch norm. There is no ReLU here, because the second nonlinearity comes after the addition.",
+          "tokens": [],
+          "input": [],
+          "weights": [],
+          "extra": [],
+          "fn": "batch",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c2_add",
+      "ops": [
+        {
+          "kind": "residual_add",
+          "caption": "The identity shortcut adds x to F(x) element-wise: y = F(x, {W_i}) + x, with no extra parameters.",
+          "tokens": [
+            "eye"
+          ],
+          "input": [
+            [
+              0.1,
+              -0.2,
+              0.2,
+              0.1,
+              -0.1,
+              0.2,
+              0,
+              -0.1
+            ]
+          ],
+          "weights": [],
+          "extra": [
+            [
+              1.4,
+              0,
+              0.7,
+              0.3,
+              0,
+              1.1,
+              0.2,
+              0.5
+            ]
+          ],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c2_relu",
+      "ops": [
+        {
+          "kind": "activation",
+          "caption": "σ(y) after the addition clips only the slightly negative channels.",
+          "tokens": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "input": [
+            [
+              1.3,
+              0.3,
+              1,
+              0.1,
+              0.1,
+              0.9,
+              0.2,
+              0.6
+            ],
+            [
+              1.5,
+              -0.2,
+              0.9,
+              0.4,
+              -0.1,
+              1.3,
+              0.2,
+              0.5
+            ],
+            [
+              0.5,
+              0.2,
+              1.1,
+              -0.1,
+              0.3,
+              0.6,
+              1.1,
+              0.2
+            ],
+            [
+              0.4,
+              0.9,
+              0.4,
+              1.1,
+              0.2,
+              -0.1,
+              0.5,
+              0.3
+            ]
+          ],
+          "weights": [],
+          "extra": [],
+          "fn": "relu",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c3_conv_a",
+      "ops": [
+        {
+          "kind": "convolution",
+          "caption": "A stride-2 3×3 conv halves the resolution (56 to 28) while the filters double to 128.",
+          "tokens": [],
+          "input": [
+            [
+              1.3,
+              0.3,
+              1,
+              0.1,
+              0.1
+            ],
+            [
+              1.5,
+              0,
+              0.9,
+              0.4,
+              0
+            ],
+            [
+              0.5,
+              0.2,
+              1.1,
+              0,
+              0.3
+            ],
+            [
+              0.4,
+              0.9,
+              0.4,
+              1.1,
+              0.2
+            ],
+            [
+              0.6,
+              0.2,
+              0.3,
+              0.8,
+              0.5
+            ]
+          ],
+          "weights": [
+            [
+              0.2,
+              0,
+              -0.1
+            ],
+            [
+              0.1,
+              0.3,
+              0.1
+            ],
+            [
+              -0.1,
+              0,
+              0.2
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 3,
+          "stride": 2,
+          "count": 128,
+          "svg": ""
+        },
+        {
+          "kind": "normalization",
+          "caption": "Batch norm after the conv.",
+          "tokens": [],
+          "input": [],
+          "weights": [],
+          "extra": [],
+          "fn": "batch",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        },
+        {
+          "kind": "activation",
+          "caption": "ReLU gives σ(W₁x).",
+          "tokens": [],
+          "input": [],
+          "weights": [],
+          "extra": [],
+          "fn": "relu",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c3_conv_b",
+      "ops": [
+        {
+          "kind": "convolution",
+          "caption": "The second 3×3 conv (128 filters) completes the residual F(x).",
+          "tokens": [],
+          "input": [
+            [
+              0.7,
+              0,
+              0.3,
+              0.9
+            ],
+            [
+              0.2,
+              0.8,
+              0,
+              0.3
+            ],
+            [
+              0,
+              0.4,
+              0.9,
+              0
+            ],
+            [
+              0.5,
+              0.1,
+              0,
+              0.6
+            ]
+          ],
+          "weights": [
+            [
+              0.1,
+              0,
+              -0.1
+            ],
+            [
+              -0.1,
+              0.2,
+              0.1
+            ],
+            [
+              0,
+              -0.1,
+              0.1
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 3,
+          "stride": 1,
+          "count": 128,
+          "svg": ""
+        },
+        {
+          "kind": "normalization",
+          "caption": "Batch norm, with no ReLU before the addition.",
+          "tokens": [],
+          "input": [],
+          "weights": [],
+          "extra": [],
+          "fn": "batch",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c3_add",
+      "ops": [
+        {
+          "kind": "linear",
+          "caption": "Option B: a 1×1 projection W_s widens the shortcut from 64 to 128 channels (shown as 4 to 8).",
+          "tokens": [
+            "eye"
+          ],
+          "input": [
+            [
+              1.5,
+              0.2,
+              0.9,
+              0.5
+            ]
+          ],
+          "weights": [
+            [
+              0.5,
+              0,
+              0.2,
+              0,
+              0.1,
+              0.4,
+              0,
+              0.3
+            ],
+            [
+              0,
+              0.5,
+              0,
+              0,
+              0.3,
+              0,
+              0.1,
+              0.2
+            ],
+            [
+              0.3,
+              0.1,
+              0.4,
+              0,
+              0,
+              0.3,
+              0.1,
+              0.2
+            ],
+            [
+              0.1,
+              0,
+              0.2,
+              0,
+              0.2,
+              0.2,
+              0,
+              0.3
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        },
+        {
+          "kind": "residual_add",
+          "caption": "Add the projected shortcut to the residual: y = F(x, {W_i}) + W_s x (Eqn. 2).",
+          "tokens": [
+            "eye"
+          ],
+          "input": [],
+          "weights": [],
+          "extra": [
+            [
+              0.2,
+              -0.1,
+              0.3,
+              0,
+              -0.2,
+              0.1,
+              0.3,
+              -0.1
+            ]
+          ],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c3_relu",
+      "ops": [
+        {
+          "kind": "activation",
+          "caption": "σ(y) zeroes the few negative entries of the sum.",
+          "tokens": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "input": [
+            [
+              1.2,
+              0.4,
+              0.3,
+              1.1,
+              0.2,
+              -0.1,
+              0.6,
+              0.5
+            ],
+            [
+              1.3,
+              0.2,
+              0.9,
+              0,
+              0.2,
+              1,
+              0.4,
+              0.6
+            ],
+            [
+              0.3,
+              0.9,
+              1.2,
+              0.1,
+              0.4,
+              0.8,
+              -0.2,
+              0.3
+            ],
+            [
+              0.6,
+              -0.1,
+              0.1,
+              1,
+              0.3,
+              0.4,
+              1.1,
+              0.4
+            ]
+          ],
+          "weights": [],
+          "extra": [],
+          "fn": "relu",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c4_conv_a",
+      "ops": [
+        {
+          "kind": "convolution",
+          "caption": "A stride-2 3×3 conv takes 28 down to 14 with 256 filters.",
+          "tokens": [],
+          "input": [
+            [
+              1.3,
+              0.2,
+              0.8,
+              0.9,
+              0.1
+            ],
+            [
+              1.7,
+              0.5,
+              0.9,
+              0.4,
+              0
+            ],
+            [
+              0.5,
+              1,
+              1.1,
+              0.2,
+              0.6
+            ],
+            [
+              0.7,
+              0.5,
+              0.4,
+              1.2,
+              0.3
+            ],
+            [
+              0.4,
+              0.6,
+              0.2,
+              0.9,
+              0.8
+            ]
+          ],
+          "weights": [
+            [
+              0.1,
+              0.2,
+              0
+            ],
+            [
+              0,
+              0.2,
+              0.1
+            ],
+            [
+              -0.1,
+              0.1,
+              0.2
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 3,
+          "stride": 2,
+          "count": 256,
+          "svg": ""
+        },
+        {
+          "kind": "normalization",
+          "caption": "Batch norm after the conv.",
+          "tokens": [],
+          "input": [],
+          "weights": [],
+          "extra": [],
+          "fn": "batch",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        },
+        {
+          "kind": "activation",
+          "caption": "ReLU gives σ(W₁x).",
+          "tokens": [],
+          "input": [],
+          "weights": [],
+          "extra": [],
+          "fn": "relu",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c4_conv_b",
+      "ops": [
+        {
+          "kind": "convolution",
+          "caption": "The second 3×3 conv (256 filters) outputs the residual F(x).",
+          "tokens": [],
+          "input": [
+            [
+              0.4,
+              0,
+              0.6,
+              0.2
+            ],
+            [
+              0.8,
+              0.3,
+              0,
+              0.5
+            ],
+            [
+              0.1,
+              0.6,
+              0.4,
+              0
+            ],
+            [
+              0,
+              0.2,
+              0.7,
+              0.6
+            ]
+          ],
+          "weights": [
+            [
+              0.1,
+              -0.1,
+              0
+            ],
+            [
+              0,
+              0.1,
+              -0.1
+            ],
+            [
+              -0.1,
+              0,
+              0.1
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 3,
+          "stride": 1,
+          "count": 256,
+          "svg": ""
+        },
+        {
+          "kind": "normalization",
+          "caption": "Batch norm, with no ReLU before the addition.",
+          "tokens": [],
+          "input": [],
+          "weights": [],
+          "extra": [],
+          "fn": "batch",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c4_add",
+      "ops": [
+        {
+          "kind": "residual_add",
+          "caption": "The identity shortcut adds x to the small correction F(x), so y stays close to x.",
+          "tokens": [
+            "eye"
+          ],
+          "input": [
+            [
+              0.1,
+              0.1,
+              -0.1,
+              0.2,
+              -0.1,
+              0.1,
+              0,
+              0.1
+            ]
+          ],
+          "weights": [],
+          "extra": [
+            [
+              1.6,
+              0.4,
+              1,
+              0.2,
+              0,
+              1.2,
+              0.5,
+              0.8
+            ]
+          ],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c4_relu",
+      "ops": [
+        {
+          "kind": "activation",
+          "caption": "σ(y) clips the small negative entries to zero.",
+          "tokens": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "input": [
+            [
+              1.3,
+              0.2,
+              0.8,
+              0.9,
+              0.1,
+              0.7,
+              0.4,
+              0.6
+            ],
+            [
+              1.7,
+              0.5,
+              0.9,
+              0.4,
+              -0.1,
+              1.3,
+              0.5,
+              0.9
+            ],
+            [
+              0.5,
+              1,
+              1.1,
+              0.2,
+              0.6,
+              0.9,
+              0.7,
+              -0.1
+            ],
+            [
+              0.7,
+              0.5,
+              0.4,
+              1.2,
+              0.3,
+              0.6,
+              1,
+              0.8
+            ]
+          ],
+          "weights": [],
+          "extra": [],
+          "fn": "relu",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c5_conv_a",
+      "ops": [
+        {
+          "kind": "convolution",
+          "caption": "The last stride-2 3×3 conv takes 14 down to 7 with 512 filters.",
+          "tokens": [],
+          "input": [
+            [
+              1.3,
+              0.2,
+              0.8,
+              0.9,
+              0.1
+            ],
+            [
+              1.7,
+              0.5,
+              0.9,
+              0.4,
+              0
+            ],
+            [
+              0.5,
+              1,
+              1.1,
+              0.2,
+              0.6
+            ],
+            [
+              0.7,
+              0.5,
+              0.4,
+              1.2,
+              0.3
+            ],
+            [
+              0.6,
+              0.4,
+              0.3,
+              1,
+              0.8
+            ]
+          ],
+          "weights": [
+            [
+              0.2,
+              0.1,
+              0
+            ],
+            [
+              0.1,
+              0.3,
+              0.1
+            ],
+            [
+              0,
+              0.1,
+              -0.1
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 3,
+          "stride": 2,
+          "count": 512,
+          "svg": ""
+        },
+        {
+          "kind": "normalization",
+          "caption": "Batch norm after the conv.",
+          "tokens": [],
+          "input": [],
+          "weights": [],
+          "extra": [],
+          "fn": "batch",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        },
+        {
+          "kind": "activation",
+          "caption": "ReLU gives σ(W₁x).",
+          "tokens": [],
+          "input": [],
+          "weights": [],
+          "extra": [],
+          "fn": "relu",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c5_conv_b",
+      "ops": [
+        {
+          "kind": "convolution",
+          "caption": "The second 3×3 conv (512 filters) produces the final residual correction F(x).",
+          "tokens": [],
+          "input": [
+            [
+              0.6,
+              0.1,
+              0.9,
+              0
+            ],
+            [
+              1,
+              0,
+              0.5,
+              0.2
+            ],
+            [
+              0.3,
+              0.4,
+              1,
+              0
+            ],
+            [
+              0.2,
+              0.7,
+              0.3,
+              0.9
+            ]
+          ],
+          "weights": [
+            [
+              0.1,
+              0,
+              0.1
+            ],
+            [
+              -0.1,
+              0.2,
+              0
+            ],
+            [
+              0,
+              0.1,
+              -0.1
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 3,
+          "stride": 1,
+          "count": 512,
+          "svg": ""
+        },
+        {
+          "kind": "normalization",
+          "caption": "Batch norm, with no ReLU before the addition.",
+          "tokens": [],
+          "input": [],
+          "weights": [],
+          "extra": [],
+          "fn": "batch",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c5_add",
+      "ops": [
+        {
+          "kind": "residual_add",
+          "caption": "The last identity shortcut adds x to F(x), boosting the 'cat face' channel at the eye.",
+          "tokens": [
+            "eye"
+          ],
+          "input": [
+            [
+              0.3,
+              -0.1,
+              0.2,
+              0,
+              -0.2,
+              0.4,
+              0,
+              0.1
+            ]
+          ],
+          "weights": [],
+          "extra": [
+            [
+              2,
+              0.3,
+              1.4,
+              0.1,
+              0.6,
+              1.8,
+              0.2,
+              0.9
+            ]
+          ],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "c5_relu",
+      "ops": [
+        {
+          "kind": "activation",
+          "caption": "The final σ(y) yields the network's last 7×7×512 feature map.",
+          "tokens": [
+            "ear",
+            "eye",
+            "nose",
+            "paw"
+          ],
+          "input": [
+            [
+              1.6,
+              0.3,
+              1.2,
+              0.3,
+              0.6,
+              1.5,
+              -0.1,
+              0.6
+            ],
+            [
+              2.3,
+              0.2,
+              1.6,
+              0.1,
+              0.4,
+              2.2,
+              0.2,
+              1
+            ],
+            [
+              1.2,
+              0.4,
+              1.3,
+              -0.2,
+              0.7,
+              1.6,
+              0.3,
+              0.5
+            ],
+            [
+              0.5,
+              0.3,
+              0.3,
+              1,
+              0.3,
+              1.1,
+              0.5,
+              0.7
+            ]
+          ],
+          "weights": [],
+          "extra": [],
+          "fn": "relu",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "avgpool",
+      "ops": [
+        {
+          "kind": "pooling",
+          "caption": "Global average pooling collapses one channel's whole map into one number (a 4×4 map stands in for 7×7).",
+          "tokens": [],
+          "input": [
+            [
+              1.5,
+              1.6,
+              1.4,
+              0.9
+            ],
+            [
+              2.2,
+              1.6,
+              1.1,
+              0.8
+            ],
+            [
+              1.6,
+              1.3,
+              1,
+              0.7
+            ],
+            [
+              1.1,
+              1,
+              0.9,
+              0.6
+            ]
+          ],
+          "weights": [],
+          "extra": [],
+          "fn": "avg",
+          "size": 4,
+          "stride": 4,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "fc",
+      "ops": [
+        {
+          "kind": "linear",
+          "caption": "The 1000-way fc layer scores the pooled descriptor against each class's weights (5 classes shown).",
+          "tokens": [
+            "image"
+          ],
+          "input": [
+            [
+              1.4,
+              0.3,
+              1.1,
+              0.4,
+              0.5,
+              1.6,
+              0.3,
+              0.7
+            ]
+          ],
+          "weights": [
+            [
+              2,
+              1.5,
+              1.5,
+              1,
+              0
+            ],
+            [
+              0,
+              0.5,
+              0,
+              0.5,
+              1
+            ],
+            [
+              1.5,
+              1.5,
+              1,
+              0.5,
+              0
+            ],
+            [
+              0,
+              0.5,
+              0.5,
+              0,
+              1
+            ],
+            [
+              0.5,
+              0,
+              0.5,
+              1,
+              0.5
+            ],
+            [
+              2.5,
+              2,
+              2,
+              1,
+              0.5
+            ],
+            [
+              0,
+              0.5,
+              0,
+              0.5,
+              0.5
+            ],
+            [
+              1,
+              0.5,
+              0.5,
+              0.5,
+              0
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "softmax",
+      "ops": [
+        {
+          "kind": "softmax",
+          "caption": "Softmax turns the logits for tabby cat, tiger cat, Egyptian cat, lynx and golden retriever into probabilities.",
+          "tokens": [
+            "image"
+          ],
+          "input": [
+            [
+              9.1,
+              7.8,
+              7.2,
+              4,
+              1.5
+            ]
+          ],
+          "weights": [],
+          "extra": [],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    }
+  ]
+}

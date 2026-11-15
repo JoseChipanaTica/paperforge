@@ -1,0 +1,574 @@
+{
+  "paper_title": "Deep Residual Learning for Image Recognition",
+  "model_name": "ResNet-34",
+  "summary": "A very deep image classifier made of stacked blocks of two 3×3 convolutions. Each block adds its own input back to its output through a shortcut, so it only has to learn a small correction, which makes networks with dozens or hundreds of layers trainable.",
+  "hyperparameters": [
+    {
+      "name": "depth",
+      "value": "34"
+    },
+    {
+      "name": "input crop",
+      "value": "224 × 224"
+    },
+    {
+      "name": "mini-batch size",
+      "value": "256"
+    },
+    {
+      "name": "learning rate",
+      "value": "0.1"
+    },
+    {
+      "name": "weight decay",
+      "value": "0.0001"
+    },
+    {
+      "name": "momentum",
+      "value": "0.9"
+    },
+    {
+      "name": "iterations",
+      "value": "60 × 10^4"
+    },
+    {
+      "name": "FLOPs",
+      "value": "3.6 × 10^9"
+    },
+    {
+      "name": "classes",
+      "value": "1000"
+    }
+  ],
+  "groups": [
+    {
+      "id": "conv2_x",
+      "label": "conv2_x stage (64 filters, 56×56)",
+      "repeat": 3
+    },
+    {
+      "id": "conv3_x",
+      "label": "conv3_x stage (128 filters, 28×28)",
+      "repeat": 4
+    },
+    {
+      "id": "conv4_x",
+      "label": "conv4_x stage (256 filters, 14×14)",
+      "repeat": 6
+    },
+    {
+      "id": "conv5_x",
+      "label": "conv5_x stage (512 filters, 7×7)",
+      "repeat": 3
+    }
+  ],
+  "blocks": [
+    {
+      "id": "input",
+      "label": "Input image",
+      "type": "input",
+      "group": "",
+      "equation": "",
+      "input_shape": "[B, 3, 224, 224]",
+      "output_shape": "[B, 3, 224, 224]",
+      "hyperparameters": [
+        {
+          "name": "crop",
+          "value": "224 × 224"
+        }
+      ],
+      "description": "A randomly cropped, mean-subtracted RGB image enters the network.",
+      "source_quote": "A 224 × 224 crop is randomly sampled from an image or its horizontal flip, with the per-pixel mean subtracted [21]."
+    },
+    {
+      "id": "conv1",
+      "label": "7×7 conv, 64, /2 + BN + ReLU",
+      "type": "convolution",
+      "group": "",
+      "equation": "",
+      "input_shape": "[B, 3, 224, 224]",
+      "output_shape": "[B, 64, 112, 112]",
+      "hyperparameters": [
+        {
+          "name": "kernel",
+          "value": "7 × 7"
+        },
+        {
+          "name": "filters",
+          "value": "64"
+        },
+        {
+          "name": "stride",
+          "value": "2"
+        }
+      ],
+      "description": "A large strided stem convolution, followed by batch norm and ReLU, extracts low-level features and halves the resolution.",
+      "source_quote": "We adopt batch normalization (BN) [16] right after each convolution and before activation, following [16]."
+    },
+    {
+      "id": "maxpool",
+      "label": "3×3 max pool, /2",
+      "type": "pooling",
+      "group": "",
+      "equation": "",
+      "input_shape": "[B, 64, 112, 112]",
+      "output_shape": "[B, 64, 56, 56]",
+      "hyperparameters": [
+        {
+          "name": "kernel",
+          "value": "3 × 3"
+        },
+        {
+          "name": "stride",
+          "value": "2"
+        }
+      ],
+      "description": "Max pooling halves the spatial resolution again before the residual stages.",
+      "source_quote": "3 × 3 max pool, stride 2"
+    },
+    {
+      "id": "c2_conv_a",
+      "label": "3×3 conv, 64 + BN + ReLU",
+      "type": "convolution",
+      "group": "conv2_x",
+      "equation": "\\sigma(W_1 x)",
+      "input_shape": "[B, 64, 56, 56]",
+      "output_shape": "[B, 64, 56, 56]",
+      "hyperparameters": [
+        {
+          "name": "kernel",
+          "value": "3 × 3"
+        },
+        {
+          "name": "filters",
+          "value": "64"
+        }
+      ],
+      "description": "The first layer of the residual function F: a convolution followed by batch norm and ReLU.",
+      "source_quote": "The function F ( x , { W i } ) represents the residual mapping to be learned."
+    },
+    {
+      "id": "c2_conv_b",
+      "label": "3×3 conv, 64 + BN",
+      "type": "convolution",
+      "group": "conv2_x",
+      "equation": "F = W_2 \\sigma(W_1 x)",
+      "input_shape": "[B, 64, 56, 56]",
+      "output_shape": "[B, 64, 56, 56]",
+      "hyperparameters": [
+        {
+          "name": "kernel",
+          "value": "3 × 3"
+        },
+        {
+          "name": "filters",
+          "value": "64"
+        }
+      ],
+      "description": "The second convolution of F, followed by batch norm, completes the residual function.",
+      "source_quote": "The baseline architectures are the same as the above plain nets, expect that a shortcut connection is added to each pair of 3 × 3 filters as in Fig. 3 (right)."
+    },
+    {
+      "id": "c2_add",
+      "label": "Shortcut addition",
+      "type": "residual_add",
+      "group": "conv2_x",
+      "equation": "y = F(x, \\{W_i\\}) + x",
+      "input_shape": "[B, 64, 56, 56]",
+      "output_shape": "[B, 64, 56, 56]",
+      "hyperparameters": [],
+      "description": "Adds the block input, carried by an identity shortcut, to the residual output element-wise.",
+      "source_quote": "The operation F + x is performed by a shortcut connection and element-wise addition."
+    },
+    {
+      "id": "c2_relu",
+      "label": "ReLU",
+      "type": "activation",
+      "group": "conv2_x",
+      "equation": "\\sigma(y)",
+      "input_shape": "[B, 64, 56, 56]",
+      "output_shape": "[B, 64, 56, 56]",
+      "hyperparameters": [],
+      "description": "Applies a ReLU after the addition.",
+      "source_quote": "We adopt the sec- ond nonlinearity after the addition ( i.e ., σ ( y ) , see Fig. 2)."
+    },
+    {
+      "id": "c3_conv_a",
+      "label": "3×3 conv, 128 + BN + ReLU",
+      "type": "convolution",
+      "group": "conv3_x",
+      "equation": "\\sigma(W_1 x)",
+      "input_shape": "[B, 64, 56, 56]",
+      "output_shape": "[B, 128, 28, 28]",
+      "hyperparameters": [
+        {
+          "name": "kernel",
+          "value": "3 × 3"
+        },
+        {
+          "name": "filters",
+          "value": "128"
+        },
+        {
+          "name": "stride",
+          "value": "2 (first block)"
+        }
+      ],
+      "description": "The first residual convolution; in the first block of the stage it uses stride 2 to downsample and doubles the channels.",
+      "source_quote": "We perform downsampling directly by convolutional layers that have a stride of 2."
+    },
+    {
+      "id": "c3_conv_b",
+      "label": "3×3 conv, 128 + BN",
+      "type": "convolution",
+      "group": "conv3_x",
+      "equation": "F = W_2 \\sigma(W_1 x)",
+      "input_shape": "[B, 128, 28, 28]",
+      "output_shape": "[B, 128, 28, 28]",
+      "hyperparameters": [
+        {
+          "name": "kernel",
+          "value": "3 × 3"
+        },
+        {
+          "name": "filters",
+          "value": "128"
+        }
+      ],
+      "description": "The second convolution of the residual function, followed by batch norm.",
+      "source_quote": "The baseline architectures are the same as the above plain nets, expect that a shortcut connection is added to each pair of 3 × 3 filters as in Fig. 3 (right)."
+    },
+    {
+      "id": "c3_add",
+      "label": "Shortcut addition",
+      "type": "residual_add",
+      "group": "conv3_x",
+      "equation": "y = F(x, \\{W_i\\}) + W_s x",
+      "input_shape": "[B, 128, 28, 28]",
+      "output_shape": "[B, 128, 28, 28]",
+      "hyperparameters": [],
+      "description": "Adds the shortcut to the residual output; where dimensions increase, the shortcut is zero-padded (option A) or projected by a 1×1 convolution (option B).",
+      "source_quote": "(B) The projection shortcut in Eqn.(2) is used to match dimensions (done by 1 × 1 convolutions)."
+    },
+    {
+      "id": "c3_relu",
+      "label": "ReLU",
+      "type": "activation",
+      "group": "conv3_x",
+      "equation": "\\sigma(y)",
+      "input_shape": "[B, 128, 28, 28]",
+      "output_shape": "[B, 128, 28, 28]",
+      "hyperparameters": [],
+      "description": "Applies a ReLU after the addition.",
+      "source_quote": "We adopt the sec- ond nonlinearity after the addition ( i.e ., σ ( y ) , see Fig. 2)."
+    },
+    {
+      "id": "c4_conv_a",
+      "label": "3×3 conv, 256 + BN + ReLU",
+      "type": "convolution",
+      "group": "conv4_x",
+      "equation": "\\sigma(W_1 x)",
+      "input_shape": "[B, 128, 28, 28]",
+      "output_shape": "[B, 256, 14, 14]",
+      "hyperparameters": [
+        {
+          "name": "kernel",
+          "value": "3 × 3"
+        },
+        {
+          "name": "filters",
+          "value": "256"
+        },
+        {
+          "name": "stride",
+          "value": "2 (first block)"
+        }
+      ],
+      "description": "The first residual convolution; the first block of the stage halves the resolution and doubles the filters.",
+      "source_quote": "We perform downsampling directly by convolutional layers that have a stride of 2."
+    },
+    {
+      "id": "c4_conv_b",
+      "label": "3×3 conv, 256 + BN",
+      "type": "convolution",
+      "group": "conv4_x",
+      "equation": "F = W_2 \\sigma(W_1 x)",
+      "input_shape": "[B, 256, 14, 14]",
+      "output_shape": "[B, 256, 14, 14]",
+      "hyperparameters": [
+        {
+          "name": "kernel",
+          "value": "3 × 3"
+        },
+        {
+          "name": "filters",
+          "value": "256"
+        }
+      ],
+      "description": "The second convolution of the residual function, followed by batch norm.",
+      "source_quote": "The baseline architectures are the same as the above plain nets, expect that a shortcut connection is added to each pair of 3 × 3 filters as in Fig. 3 (right)."
+    },
+    {
+      "id": "c4_add",
+      "label": "Shortcut addition",
+      "type": "residual_add",
+      "group": "conv4_x",
+      "equation": "y = F(x, \\{W_i\\}) + x",
+      "input_shape": "[B, 256, 14, 14]",
+      "output_shape": "[B, 256, 14, 14]",
+      "hyperparameters": [],
+      "description": "Element-wise addition of the shortcut and the residual output.",
+      "source_quote": "The operation F + x is performed by a shortcut connection and element-wise addition."
+    },
+    {
+      "id": "c4_relu",
+      "label": "ReLU",
+      "type": "activation",
+      "group": "conv4_x",
+      "equation": "\\sigma(y)",
+      "input_shape": "[B, 256, 14, 14]",
+      "output_shape": "[B, 256, 14, 14]",
+      "hyperparameters": [],
+      "description": "Applies a ReLU after the addition.",
+      "source_quote": "We adopt the sec- ond nonlinearity after the addition ( i.e ., σ ( y ) , see Fig. 2)."
+    },
+    {
+      "id": "c5_conv_a",
+      "label": "3×3 conv, 512 + BN + ReLU",
+      "type": "convolution",
+      "group": "conv5_x",
+      "equation": "\\sigma(W_1 x)",
+      "input_shape": "[B, 256, 14, 14]",
+      "output_shape": "[B, 512, 7, 7]",
+      "hyperparameters": [
+        {
+          "name": "kernel",
+          "value": "3 × 3"
+        },
+        {
+          "name": "filters",
+          "value": "512"
+        },
+        {
+          "name": "stride",
+          "value": "2 (first block)"
+        }
+      ],
+      "description": "The first residual convolution; the first block of the stage halves the resolution and doubles the filters.",
+      "source_quote": "We perform downsampling directly by convolutional layers that have a stride of 2."
+    },
+    {
+      "id": "c5_conv_b",
+      "label": "3×3 conv, 512 + BN",
+      "type": "convolution",
+      "group": "conv5_x",
+      "equation": "F = W_2 \\sigma(W_1 x)",
+      "input_shape": "[B, 512, 7, 7]",
+      "output_shape": "[B, 512, 7, 7]",
+      "hyperparameters": [
+        {
+          "name": "kernel",
+          "value": "3 × 3"
+        },
+        {
+          "name": "filters",
+          "value": "512"
+        }
+      ],
+      "description": "The second convolution of the residual function, followed by batch norm.",
+      "source_quote": "The baseline architectures are the same as the above plain nets, expect that a shortcut connection is added to each pair of 3 × 3 filters as in Fig. 3 (right)."
+    },
+    {
+      "id": "c5_add",
+      "label": "Shortcut addition",
+      "type": "residual_add",
+      "group": "conv5_x",
+      "equation": "y = F(x, \\{W_i\\}) + x",
+      "input_shape": "[B, 512, 7, 7]",
+      "output_shape": "[B, 512, 7, 7]",
+      "hyperparameters": [],
+      "description": "Element-wise addition of the shortcut and the residual output.",
+      "source_quote": "The operation F + x is performed by a shortcut connection and element-wise addition."
+    },
+    {
+      "id": "c5_relu",
+      "label": "ReLU",
+      "type": "activation",
+      "group": "conv5_x",
+      "equation": "\\sigma(y)",
+      "input_shape": "[B, 512, 7, 7]",
+      "output_shape": "[B, 512, 7, 7]",
+      "hyperparameters": [],
+      "description": "Applies a ReLU after the addition.",
+      "source_quote": "We adopt the sec- ond nonlinearity after the addition ( i.e ., σ ( y ) , see Fig. 2)."
+    },
+    {
+      "id": "avgpool",
+      "label": "Global average pool",
+      "type": "pooling",
+      "group": "",
+      "equation": "",
+      "input_shape": "[B, 512, 7, 7]",
+      "output_shape": "[B, 512]",
+      "hyperparameters": [],
+      "description": "Averages each feature map over all spatial positions into a single vector.",
+      "source_quote": "The network ends with a global average pooling layer and a 1000-way fully-connected layer with softmax."
+    },
+    {
+      "id": "fc",
+      "label": "FC 1000",
+      "type": "linear",
+      "group": "",
+      "equation": "",
+      "input_shape": "[B, 512]",
+      "output_shape": "[B, 1000]",
+      "hyperparameters": [
+        {
+          "name": "outputs",
+          "value": "1000"
+        }
+      ],
+      "description": "A fully-connected layer maps the pooled features to 1000 class scores.",
+      "source_quote": "1 × 1 average pool, 1000-d fc, softmax"
+    },
+    {
+      "id": "softmax",
+      "label": "Softmax",
+      "type": "softmax",
+      "group": "",
+      "equation": "",
+      "input_shape": "[B, 1000]",
+      "output_shape": "[B, 1000]",
+      "hyperparameters": [],
+      "description": "Converts the class scores into probabilities over the 1000 ImageNet classes.",
+      "source_quote": "The network ends with a global average pooling layer and a 1000-way fully-connected layer with softmax."
+    }
+  ],
+  "edges": [
+    {
+      "from": "input",
+      "to": "conv1",
+      "kind": "data"
+    },
+    {
+      "from": "conv1",
+      "to": "maxpool",
+      "kind": "data"
+    },
+    {
+      "from": "maxpool",
+      "to": "c2_conv_a",
+      "kind": "data"
+    },
+    {
+      "from": "c2_conv_a",
+      "to": "c2_conv_b",
+      "kind": "data"
+    },
+    {
+      "from": "c2_conv_b",
+      "to": "c2_add",
+      "kind": "data"
+    },
+    {
+      "from": "maxpool",
+      "to": "c2_add",
+      "kind": "residual"
+    },
+    {
+      "from": "c2_add",
+      "to": "c2_relu",
+      "kind": "data"
+    },
+    {
+      "from": "c2_relu",
+      "to": "c3_conv_a",
+      "kind": "data"
+    },
+    {
+      "from": "c3_conv_a",
+      "to": "c3_conv_b",
+      "kind": "data"
+    },
+    {
+      "from": "c3_conv_b",
+      "to": "c3_add",
+      "kind": "data"
+    },
+    {
+      "from": "c2_relu",
+      "to": "c3_add",
+      "kind": "residual"
+    },
+    {
+      "from": "c3_add",
+      "to": "c3_relu",
+      "kind": "data"
+    },
+    {
+      "from": "c3_relu",
+      "to": "c4_conv_a",
+      "kind": "data"
+    },
+    {
+      "from": "c4_conv_a",
+      "to": "c4_conv_b",
+      "kind": "data"
+    },
+    {
+      "from": "c4_conv_b",
+      "to": "c4_add",
+      "kind": "data"
+    },
+    {
+      "from": "c3_relu",
+      "to": "c4_add",
+      "kind": "residual"
+    },
+    {
+      "from": "c4_add",
+      "to": "c4_relu",
+      "kind": "data"
+    },
+    {
+      "from": "c4_relu",
+      "to": "c5_conv_a",
+      "kind": "data"
+    },
+    {
+      "from": "c5_conv_a",
+      "to": "c5_conv_b",
+      "kind": "data"
+    },
+    {
+      "from": "c5_conv_b",
+      "to": "c5_add",
+      "kind": "data"
+    },
+    {
+      "from": "c4_relu",
+      "to": "c5_add",
+      "kind": "residual"
+    },
+    {
+      "from": "c5_add",
+      "to": "c5_relu",
+      "kind": "data"
+    },
+    {
+      "from": "c5_relu",
+      "to": "avgpool",
+      "kind": "data"
+    },
+    {
+      "from": "avgpool",
+      "to": "fc",
+      "kind": "data"
+    },
+    {
+      "from": "fc",
+      "to": "softmax",
+      "kind": "data"
+    }
+  ]
+}

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Architecture } from "./graph";
 import type { JourneyArtifact } from "./learn";
-import { cleanMotion, motionFits, type MotionArtifact, type Op } from "./motion";
+import { MotionArtifact, cleanMotion, motionFits, type Op } from "./motion";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
 const graph = Architecture.parse(await Bun.file(join(SAMPLES, "1706.03762.json")).json());
@@ -79,4 +79,21 @@ describe("motionFits", () => {
     expect(motionFits(motion([{ block_id: ids[0]!, ops: [op({})] }]), journey)).toBe(true);
     expect(motionFits(motion([{ block_id: "elsewhere", ops: [op({})] }]), journey)).toBe(false);
   });
+});
+
+describe("committed motion samples", () => {
+  for (const [id, needs] of [["1706.03762", ["attention"]], ["1512.03385", ["convolution", "pooling"]]] as const) {
+    test(`${id}: clean, fits its walkthrough, and the math runs`, async () => {
+      const { runChain } = await import("../web/motion/compute");
+      const g = Architecture.parse(await Bun.file(join(SAMPLES, `${id}.json`)).json());
+      const j = (await Bun.file(join(SAMPLES, `${id}.journey.json`)).json()) as JourneyArtifact;
+      const m = MotionArtifact.parse(await Bun.file(join(SAMPLES, `${id}.motion.json`)).json());
+      expect(cleanMotion(m, g, j)).toEqual(m);
+      expect(motionFits(m, j)).toBe(true);
+      const results = m.steps.flatMap((s) => runChain(s.ops));
+      expect(results.filter((r) => r.result.ok).length / results.length).toBeGreaterThanOrEqual(0.8);
+      const kinds = new Set(m.steps.flatMap((s) => s.ops.map((o) => o.kind)));
+      for (const k of needs) expect(kinds.has(k)).toBe(true);
+    });
+  }
 });
