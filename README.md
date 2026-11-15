@@ -69,6 +69,7 @@ Reading a paper takes a minute or two the first time, and it's instant after tha
 | Command | What it does |
 | --- | --- |
 | `bun run forge <arxiv-link> [--refresh]` | Run the pipeline in the terminal and print the extracted blocks |
+| `bun run learn <arxiv-link> <pytorch\|walkthrough\|example>` | Generate one learning artifact and print its token usage (including prompt-cache reads) |
 | `bun test` | Unit tests: link parsing, quote matching, layout, sample checks |
 | `bun run typecheck` | TypeScript check |
 
@@ -79,6 +80,19 @@ Settings in `.env` (see `.env.example`): `ANTHROPIC_API_KEY` (local fallback key
 ### The gallery
 
 After Claude builds a new paper, **Publish to gallery** saves its 3D model so anyone can open it instantly, no key needed, and gives you a link to share. Each paper is published once; the first save stays. Only the model is saved, never the paper's text: viewers' copies of the paper come straight from arXiv.
+
+### Learn the paper
+
+Once the model has assembled, the buttons next to the controls help you understand it:
+
+- **PyTorch:** Claude writes the architecture as PyTorch code, with the paper's hyperparameters and a forward pass on random input. Click a block to jump to its class, or a highlighted line to find its block. Copy or download the `.py`. The code is generated, not executed.
+- **Walkthrough:** a guided tour. The camera flies from block to block in the order data flows, with a short explanation and the tensor shapes at each step.
+- **Easy example:** the same tour for non-experts, starting from an everyday analogy and following a tiny input (like "the cat sat") through each block.
+- **Ask:** pick a block and ask Claude anything about it; the answer streams in, grounded in the paper.
+
+For papers in the gallery, the first PyTorch code, walkthrough and example anyone generates are saved with the paper, so later visitors get them instantly with no key. The Transformer demo ships with all three, so they work without a key. Ask answers are never saved.
+
+Each new artifact is one Claude call on your key, roughly $0.20–0.40 for a 15-page paper. The paper is sent with prompt caching, so trying a second feature on the same paper within a few minutes costs less.
 
 ## Deploy your own
 

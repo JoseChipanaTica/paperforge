@@ -23,9 +23,17 @@ make that 30-second moment look better or work more reliably. Polish what the ca
   `data/paperforge.db` SQLite otherwise. One row per arXiv id, first save wins. Never stores paper text.
 - `src/server/token.ts` — HMAC save tokens: only graphs this server forged can be published
 - `src/server/api.ts` — `/api/papers` handlers and error → `{message, code}` mapping
+- `src/shared/learn.ts` — Zod schemas for learning artifacts (PyTorch, walkthrough, example) and
+  the `/api/learn` + `/api/ask` stream events. Every step carries a graph `block_id`.
+- `src/server/tutor.ts` — Claude calls for learning features. All share one system prompt and one
+  `[paper, graph]` prefix with a cache breakpoint; keep it byte-identical and effort fixed.
+- `src/server/learn-api.ts` — `POST /api/learn` (gallery → sample → Claude; saved only for published
+  papers, first save wins), `POST /api/ask` (streamed, never stored), `GET /api/learn?arxiv_id=`
 - `src/web/` — Three.js front end: `layout.ts` (graph → positions), `scene.ts`
-  (meshes, labels, pulse), `timeline.ts` (the assembly choreography), `paper.ts` (page flip + highlights), `gallery.ts` (published-paper cards)
-- `samples/` — committed block graphs that seed the cache, so the demo runs without an API key
+  (meshes, labels, pulse), `timeline.ts` (the assembly choreography), `paper.ts` (page flip + highlights), `gallery.ts` (published-paper cards), `learn.ts` (learn/ask
+  clients, PyTorch panel), `tour.ts` (guided camera tour for walkthrough + example)
+- `samples/` — committed block graphs (`<id>.json`) and learning artifacts (`<id>.<kind>.json`) that
+  seed the cache, so the demo runs without an API key
 
 ## Conventions
 
@@ -48,4 +56,5 @@ make that 30-second moment look better or work more reliably. Polish what the ca
 - `bun run dev` — hot-reloading server on http://localhost:3000
 - `bun test` — unit tests (arXiv parsing, quote locator, layout, schema/sample validity)
 - `bun run forge <arxiv-url> [--refresh]` — run the pipeline from the CLI, write cache
+- `bun run learn <arxiv-url> <kind>` — generate one learning artifact, print token usage (cache check)
 - `bunx tsc --noEmit` — type-check
