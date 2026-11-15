@@ -48,7 +48,9 @@ make that 30-second moment look better or work more reliably. Polish what the ca
 - `src/server/learn-api.ts` — `POST /api/learn` (gallery → sample → Claude; saved only for published
   papers, first save wins), `POST /api/ask` (streamed, never stored), `GET /api/learn?arxiv_id=`,
   `POST /api/inside` (a block's inside view: an `Architecture` of its own, same lookup order, `insides`
-  table; the tutor writes it through the shared output format so it reads the paper from the cache)
+  table; the tutor writes it through the shared output format so it reads the paper from the cache),
+  `POST /api/inside-learn` (a block's own walkthrough and its motion, continuing the model's example from what
+  enters the block to what leaves it; `inside_learn` table; saved only when built from shared inputs)
 - `src/web/` — Three.js front end ("Paper & ink": spec `docs/superpowers/specs/2026-11-15-ui-overhaul-design.md`):
   - `scene.ts` (printed model: matte blocks, ink outline/shadow/halo shells from `blocks.ts`; labels, pulse),
     `layout.ts` (graph → positions), `timeline.ts` (assembly choreography), `paper.ts` (paper + highlights)
@@ -66,7 +68,8 @@ make that 30-second moment look better or work more reliably. Polish what the ca
     highlighter / vermilion and owns the block palette. One CSS file per component.
 - `samples/` — committed block graphs (`<id>.json`), learning artifacts (`<id>.<kind>.json`, kind `pytorch` or
   `journey` or `motion`; `bun run learn <url> <kind> --write` regenerates one, motion from the committed journey) and inside
-  views (`<id>.inside.<block_id>.json`) that seed the cache, so the demo runs without an API key
+  views (`<id>.inside.<block_id>.json`, with `<id>.inside.<block_id>.{journey,motion}.json` for their walkthrough;
+  `bun run learn <url> <journey|motion> --inside <block_id> --write`) that seed the cache, so the demo runs without an API key
 
 ## Conventions
 
