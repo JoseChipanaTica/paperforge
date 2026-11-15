@@ -22,8 +22,7 @@
 .tabpanel:focus-visible { box-shadow: inset var(--focus); border-radius: 0; }
 .tabpanel-paper, .tabpanel-pytorch { padding: 0; }
 
-/* ---------- overview: block detail (moved from the floating inspector) ---------- */
-.inspector:empty::before { content: "Hover a block to see where it comes from in the paper. Click it to keep it here and ask about it."; font: var(--t-base) / 1.55 var(--serif); color: var(--ink-faint); }
+/* ---------- overview: block detail ---------- */
 .in-type { font-size: var(--t-xs); color: var(--ink-faint); }
 .in-title { font: 500 var(--t-lg) var(--display); margin: 2px 0 var(--s2); display: flex; gap: 10px; align-items: center; }
 .in-title .dot { width: 12px; height: 12px; border-radius: 2px; border: 1.5px solid var(--ink); flex: none; }
@@ -32,9 +31,8 @@
 .in-eq { margin: var(--s3) 0; overflow-x: auto; font-size: 14px; }
 .in-eq .katex-display { margin: 0; text-align: left; }
 .in-desc { font: var(--t-base) / 1.6 var(--serif); margin: var(--s3) 0 var(--s4); }
-.in-quote { font: italic var(--t-base) / 1.6 var(--serif); margin: 0; padding: 0; }
-.in-quote::before { content: ""; }
-.in-quote { background: var(--mark); }
+/* The source sentence, marked with the highlighter as in the paper. */
+.in-quote { display: inline; font: italic var(--t-base) / 1.7 var(--serif); margin: 0; padding: 0; background: var(--mark); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .in-cite { font-size: var(--t-xs); color: var(--ink-faint); margin-top: var(--s2); }
 .in-cite.missing { color: var(--vermilion); }
 

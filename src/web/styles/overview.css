@@ -1,0 +1,24 @@
+/* Overview tab: the paper at a glance, or one block. */
+.ov-model { font-size: var(--t-xl); line-height: 1.1; }
+.ov-paper { font: italic var(--t-sm) var(--serif); color: var(--ink-soft); margin-top: var(--s1); }
+.ov-text { font: var(--t-md) / 1.55 var(--serif); margin-top: var(--s4); max-width: 34em; }
+.ov-hp { display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--s4); }
+
+/* Start cards are printed: the ink offset shadow, lifting on hover. */
+.ov-start { display: grid; gap: var(--s3); margin-top: var(--s6); }
+.start-card {
+  display: grid; gap: 2px; text-align: left; padding: var(--s3) var(--s4);
+  background: var(--sheet); border: 1.5px solid var(--ink); border-radius: var(--r-print); box-shadow: var(--print);
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.start-card:hover { transform: translate(-1px, -1px); box-shadow: var(--print-lift); }
+.start-card:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+.start-card b { font: 500 var(--t-md) var(--display); }
+.start-card span { font: var(--t-sm) / 1.45 var(--serif); color: var(--ink-soft); }
+.start-card:focus-visible { box-shadow: var(--print), var(--focus); }
+
+.ov-hint { font: var(--t-sm) / 1.5 var(--serif); color: var(--ink-faint); margin-top: var(--s5); }
+
+.in-source { margin: var(--s4) 0 0; }
+.link { border: 0; background: none; padding: 0; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--vermilion); font-size: inherit; margin-left: var(--s2); }
+.link:hover { text-decoration-thickness: 2px; }

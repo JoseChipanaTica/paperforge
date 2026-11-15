@@ -1,8 +1,7 @@
 import "katex/dist/katex.min.css";
 import type { ForgeEvent, LocatedArchitecture } from "../shared/graph";
-import type { AnyArtifact, AskTurn, ExampleArtifact, LearnKind, PytorchArtifact, WalkthroughArtifact } from "../shared/learn";
-import { Run, ease } from "./anim";
-import { TYPE_COLOR } from "./blocks";
+import type { AnyArtifact, ExampleArtifact, LearnKind, PytorchArtifact, WalkthroughArtifact } from "../shared/learn";
+import { Run } from "./anim";
 import { loadGallery } from "./gallery";
 import {
   InFlight,
@@ -18,6 +17,7 @@ import {
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
 import type { TabId } from "./panelState";
+import { Overview } from "./overview";
 import { StudyPanel } from "./studyPanel";
 import { assemble } from "./timeline";
 import { Tour, tourSteps } from "./tour";
@@ -27,13 +27,24 @@ const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySe
 const scene = new ForgeScene($("#stage"));
 const paper = new PaperView($("#paper"));
 const statusEl = $("#status");
-const inspector = $("#inspector");
 const controls = $("#controls");
 const codePanel = $("#code");
 const tourRoot = $("#tour");
 const tour = new Tour(scene, tourRoot);
 const panel = new StudyPanel($("#panel"));
-panel.tab("overview").append(inspector);
+const overview = new Overview(panel.tab("overview"), {
+  onStart: (kind) => panel.select(kind),
+  onShowInPaper: (blockId) => void openPaper(blockId),
+  ask: async (blockId, question, history, onDelta) => {
+    if (!graph) return;
+    try {
+      await askBlock(graph.arxiv_id, blockId, question, askHistoryPayload(history), graph, storedKey(), onDelta);
+    } catch (err) {
+      if (err instanceof LearnError && err.code === "needs_key") openKey();
+      throw err;
+    }
+  },
+});
 panel.tab("paper").append($("#paper"));
 panel.tab("pytorch").append(codePanel);
 const learnSlot: Record<"walkthrough" | "example", HTMLElement> = {
@@ -48,8 +59,6 @@ let pinned: string | null = null;
 // The graph exactly as the server signed it: publishing re-checks the signature, so never mutate this.
 let rawGraph: LocatedArchitecture | null = null;
 let saveToken: string | null = null;
-// Ask-about-a-block conversations, per block, for the current paper only.
-const askHistory = new Map<string, AskTurn[]>();
 
 // ---------- API key (bring your own; stays in this browser) ----------
 
@@ -107,7 +116,7 @@ async function forgePaper(input: string, refresh = false) {
   const myRun = run;
   document.body.classList.add("has-paper");
   setStatus("Fetching paper…");
-  inspector.replaceChildren();
+  overview.setGraph(null);
   pinned = null;
   rawGraph = saveToken = shareUrl = null;
   syncPublish();
@@ -161,6 +170,7 @@ async function handle(e: ForgeEvent, myRun: Run) {
       saveToken = e.save_token ?? null;
       syncPublish();
       graph = e.graph;
+      overview.setGraph(e.graph);
       paper.stopReading();
       setStatus(null);
       showTitle(e.graph);
@@ -201,36 +211,13 @@ function showTitle(g: LocatedArchitecture) {
 
 // ---------- inspecting ----------
 
-// What the inspector currently shows; re-rendering the same view would wipe a typed question.
-let shownView: string | null = null;
-
+/** Overview follows the mouse, except while a question about the pinned block is in progress. */
 function inspect(id: string | null) {
-  const sb = id ? scene.blocks.get(id) : null;
-  if (!sb) {
-    inspector.replaceChildren();
-    shownView = null;
-    return;
-  }
-  const view = `${id}${id === pinned ? ":pinned" : ""}:${askHistory.get(id!)?.length ?? 0}`;
-  if (view === shownView && inspector.childElementCount) return;
-  shownView = view;
-  const b = sb.block;
-  const page = b.source ? `p. ${b.source.page + 1}` : null;
-  inspector.innerHTML = `
-    <div class="in-type">${escapeHtml(b.type.replace(/_/g, " "))}${b.group ? ` · ${escapeHtml(b.group)}` : ""}</div>
-    <div class="in-title"><span class="dot" style="background:${TYPE_COLOR[b.type]}"></span>${escapeHtml(b.label)}</div>
-    <div class="in-shape">${escapeHtml(b.input_shape)} → ${escapeHtml(b.output_shape)}</div>
-    ${b.hyperparameters.length ? `<div class="in-hp">${b.hyperparameters.map((h) => `<span class="chip">${escapeHtml(h.name)} = <b>${escapeHtml(h.value)}</b></span>`).join("")}</div>` : ""}
-    ${b.equation ? `<div class="in-eq">${renderTex(b.equation, true)}</div>` : ""}
-    <p class="in-desc">${escapeHtml(b.description)}</p>
-    <blockquote class="in-quote">“${escapeHtml(b.source_quote)}”</blockquote>
-    <div class="in-cite ${page ? "" : "missing"}">${page ? `From the paper, ${page}` : "Quote not found verbatim in the extracted text"}</div>
-    ${id && id === pinned ? askSection(id) : ""}`;
+  overview.showBlock(id, pinned);
 }
 
 scene.onHover = (id) => {
-  // Hover previews other blocks, except while a question about the pinned block is in progress.
-  if (!document.body.classList.contains("assembling")) inspect(inspectTarget(id, pinned, askBusy()));
+  if (!document.body.classList.contains("assembling")) inspect(inspectTarget(id, pinned, overview.askBusy));
 };
 
 scene.onClick = (id) => {
@@ -312,13 +299,6 @@ function renderGenerate(kind: LearnKind) {
 
 // One request per kind at a time; a repeat click joins it instead of paying again.
 const learning = new InFlight<Awaited<ReturnType<typeof requestArtifact>>>();
-let asking = false;
-
-/** True while the visitor is typing a question or an answer is streaming in. */
-function askBusy(): boolean {
-  const input = inspector.querySelector<HTMLInputElement>(".ask-form input");
-  return asking || (!!input && (document.activeElement === input || input.value.trim() !== ""));
-}
 
 function resetLearn() {
   learning.reset();
@@ -328,7 +308,6 @@ function resetLearn() {
   learnSlot.walkthrough.replaceChildren();
   learnSlot.example.replaceChildren();
   artifacts.clear();
-  askHistory.clear();
   panel.dispatch({ type: "reset" });
 }
 
@@ -379,46 +358,6 @@ async function openLearn(kind: LearnKind) {
   }
 }
 
-function askSection(id: string): string {
-  const turns = askHistory.get(id) ?? [];
-  return `
-    <div class="in-ask">
-      ${turns.map((t) => `<p class="ask-${t.role}">${escapeHtml(t.text)}</p>`).join("")}
-      <form class="ask-form"><input name="q" maxlength="1000" placeholder="Ask about this block…" autocomplete="off" /><button>Ask</button></form>
-    </div>`;
-}
-
-inspector.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const form = e.target as HTMLFormElement;
-  const input = form.elements.namedItem("q") as HTMLInputElement;
-  const question = input.value.trim();
-  const blockId = pinned;
-  if (!question || !blockId || !graph) return;
-  const g = graph;
-  const history = askHistory.get(blockId) ?? [];
-  asking = true;
-  const answer = document.createElement("p");
-  answer.className = "ask-assistant streaming";
-  form.before(Object.assign(document.createElement("p"), { className: "ask-user", textContent: question }), answer);
-  input.value = "";
-  input.disabled = true;
-  let text = "";
-  try {
-    await askBlock(g.arxiv_id, blockId, question, askHistoryPayload(history), g, storedKey(), (d) => (answer.textContent = text += d));
-    if (graph === g) askHistory.set(blockId, [...history, { role: "user", text: question }, { role: "assistant", text }]);
-  } catch (err) {
-    const le = err instanceof LearnError ? err : new LearnError(String(err));
-    answer.textContent = le.message;
-    answer.classList.add("ask-error");
-    if (le.code === "needs_key") openKey();
-  } finally {
-    asking = false;
-    answer.classList.remove("streaming");
-    input.disabled = false;
-  }
-});
-
 // ---------- controls ----------
 
 function syncToggles() {
@@ -436,7 +375,7 @@ controls.addEventListener("click", (e) => {
       break;
     case "replay":
       pinned = null;
-      inspector.replaceChildren();
+      inspect(null);
       if (graph) {
         paper.setPaper(graph.arxiv_id, pages);
         void play();
