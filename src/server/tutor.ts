@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { z } from "zod";
 import type { Architecture, Block } from "../shared/graph";
 import { ARTIFACT_SCHEMA, type AnyArtifact, type AskTurn, type LearnKind } from "../shared/learn";
 import { formatPaper } from "./extract";
@@ -43,6 +44,15 @@ export const LEARN_TASK: Record<LearnKind, string> = {
 - takeaway: one sentence to remember.`,
 };
 
+/**
+ * One output format for every kind. The format sits ahead of the whole prompt in the cache,
+ * so a per-kind schema made every feature re-pay for the paper (measured: cache read 0).
+ * The task text says which shape to write; generateArtifact checks it against that kind's schema.
+ */
+export const ANY_ARTIFACT = z.object({
+  artifact: z.union([ARTIFACT_SCHEMA.pytorch, ARTIFACT_SCHEMA.walkthrough, ARTIFACT_SCHEMA.example]),
+});
+
 export function paperPrefix(pages: string[], graph: Architecture): Anthropic.Beta.BetaTextBlockParam[] {
   return [
     { type: "text", text: `<paper>\n${formatPaper(pages)}\n</paper>` },
@@ -55,9 +65,14 @@ export function learnRequest(kind: LearnKind, pages: string[], graph: Architectu
     model: MODEL,
     max_tokens: 32000,
     system: TUTOR_SYSTEM,
-    output_config: { effort: EFFORT, format: betaZodOutputFormat(ARTIFACT_SCHEMA[kind]) },
+    output_config: { effort: EFFORT, format: betaZodOutputFormat(ANY_ARTIFACT) },
     ...fallback(),
-    messages: [{ role: "user" as const, content: [...paperPrefix(pages, graph), { type: "text" as const, text: LEARN_TASK[kind] }] }],
+    messages: [
+      {
+        role: "user" as const,
+        content: [...paperPrefix(pages, graph), { type: "text" as const, text: `${LEARN_TASK[kind]}\n\nWrite it as the "${kind}" shape of artifact.` }],
+      },
+    ],
   };
 }
 
@@ -111,8 +126,9 @@ export async function generateArtifact(
     throw new Error(`Claude declined to write this (${response.stop_details?.category ?? "unspecified"}).`);
   }
   if (response.stop_reason === "max_tokens") throw new Error("Claude ran out of output tokens before finishing.");
-  if (!response.parsed_output) throw new Error("Claude returned something that didn't match the expected format.");
-  return response.parsed_output as AnyArtifact;
+  const parsed = ARTIFACT_SCHEMA[kind].safeParse(response.parsed_output?.artifact);
+  if (!parsed.success) throw new Error("Claude returned something that didn't match the expected format.");
+  return parsed.data as AnyArtifact;
 }
 
 export async function* askStream(input: AskInput & { apiKey?: string }): AsyncIterable<string> {

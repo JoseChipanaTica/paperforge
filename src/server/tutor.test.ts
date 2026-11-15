@@ -19,6 +19,11 @@ describe("cached paper prefix", () => {
     for (const r of reqs) expect(prefix(firstContent(r))).toBe(first);
   });
 
+  test("sends the same output format for every kind (a format change invalidates the cache)", () => {
+    const formats = reqs.map((r) => JSON.stringify(r.output_config.format.schema));
+    expect(new Set(formats).size).toBe(1);
+  });
+
   test("ends in a cache breakpoint on the graph block", () => {
     const blocks = firstContent(reqs[0]!) as { text: string; cache_control?: unknown }[];
     expect(blocks[0]!.text).toContain('<page number="1">');
