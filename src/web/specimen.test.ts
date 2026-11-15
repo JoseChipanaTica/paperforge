@@ -8,10 +8,17 @@ describe("specimenOffset", () => {
 
   test("sits beside the block, never over it, from any viewing side", () => {
     for (const camera of [new THREE.Vector3(0, 0, 10), new THREE.Vector3(10, 2, 0), new THREE.Vector3(-6, 3, -6)]) {
-      const p = specimenOffset(camera, block, 2);
-      expect(horizontal(p)).toBeGreaterThanOrEqual(2.5);
+      // The card's near edge clears the block's half-width.
+      const p = specimenOffset(camera, block, 2, 3);
+      expect(horizontal(p) - 3 / 2).toBeGreaterThanOrEqual(1);
       expect(p.y).toBeGreaterThan(0);
     }
+  });
+
+  test("side -1 puts it on the camera's left instead", () => {
+    const camera = new THREE.Vector3(0, 0, 10);
+    expect(specimenOffset(camera, block, 2, 0, 1).x).toBeGreaterThan(0);
+    expect(specimenOffset(camera, block, 2, 0, -1).x).toBeLessThan(0);
   });
 
   test("a wider specimen moves further out", () => {

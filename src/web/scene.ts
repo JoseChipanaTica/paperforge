@@ -17,6 +17,7 @@ export interface SceneBlock {
   placed: PlacedBlock;
   obj: BlockObject;
   label: CSS2DObject;
+  labelSide: "left" | "right" | "top";
   assembled: THREE.Vector3;
   exploded: THREE.Vector3;
   /** 0 = at rest, decays from 1 after a flash */
@@ -244,7 +245,7 @@ export class ForgeScene {
       }
       obj.root.add(label);
 
-      this.blocks.set(block.id, { block, placed, obj, label, assembled, exploded, glow: 0, index });
+      this.blocks.set(block.id, { block, placed, obj, label, labelSide: side, assembled, exploded, glow: 0, index });
     });
 
     for (const g of layout.groups) {
@@ -422,6 +423,11 @@ export class ForgeScene {
   /** Where a block sits now, for things placed beside it. */
   blockAnchor(id: string): THREE.Vector3 | null {
     return this.blocks.get(id)?.obj.root.position.clone() ?? null;
+  }
+
+  /** Which side of a block its label tag sits on. */
+  labelSide(id: string): "left" | "right" | "top" | null {
+    return this.blocks.get(id)?.labelSide ?? null;
   }
 
   /** A block's larger side, in world units. */

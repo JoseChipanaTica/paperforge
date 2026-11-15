@@ -84,7 +84,9 @@ export class TourDriver {
     this.run = new Run();
     if (reducedMotion()) this.run.skip(); // cut instead of flying
     this.scene.highlight(step?.block_id ?? null);
-    void this.scene.focusOn(step?.block_id ?? null, this.run);
+    // The intro looks at where the input enters, the outro at where the output leaves.
+    const look = step?.block_id ?? (this.index < 0 ? script.steps[0] : script.steps.at(-1))?.block_id ?? null;
+    void this.scene.focusOn(look, this.run);
     this.showData(script, before);
     this.onIndex(this.index);
   }

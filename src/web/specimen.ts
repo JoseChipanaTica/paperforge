@@ -14,20 +14,28 @@ import { layoutViews, type Cell, type Laid } from "./specimenLayout";
 
 const UP = new THREE.Vector3(0, 1, 0);
 const CARD_PAD = 0.18;
+/** Cells are laid out in small units; the card is printed this much larger next to a block. */
+const SCALE = 1.6;
+const CAMERA_MS = 720; // scene.focusOn's flight, plus a frame
 const PALE = new THREE.Color("#fbf1cf");
 const HL = new THREE.Color(HIGHLIGHTER);
 const VM = new THREE.Color(VERMILION);
 const HEADS = new THREE.Color(TYPE_COLOR.multi_head_attention);
 const WHITE = new THREE.Color("#ffffff");
 
-/** Beside the block on the camera's right, a little above it, far enough out not to cover it. */
-export function specimenOffset(camera: THREE.Vector3, target: THREE.Vector3, blockSize: number, width = 0): THREE.Vector3 {
+/**
+ * Beside the block on the camera's right (or left, with side -1), a little above it, far enough out not to cover it, and
+ * pulled toward the camera so a neighbouring column of blocks can't cut through the card.
+ */
+export function specimenOffset(camera: THREE.Vector3, target: THREE.Vector3, blockSize: number, width = 0, side: 1 | -1 = 1): THREE.Vector3 {
   const forward = target.clone().sub(camera).setY(0);
   if (forward.lengthSq() < 1e-9) forward.set(0, 0, -1);
-  const right = new THREE.Vector3().crossVectors(forward.normalize(), UP).normalize();
+  forward.normalize();
+  const right = new THREE.Vector3().crossVectors(forward, UP).normalize();
   return target
     .clone()
-    .addScaledVector(right, blockSize * 0.75 + 1 + width / 2)
+    .addScaledVector(right, side * (blockSize / 2 + 0.4 + width / 2))
+    .addScaledVector(forward, -2.5)
     .add(new THREE.Vector3(0, 0.6, 0));
 }
 
@@ -64,6 +72,7 @@ interface Built {
   mesh: THREE.InstancedMesh;
   cells: Cell[];
   width: number;
+  scale: number;
 }
 
 export class Specimen {
@@ -94,13 +103,14 @@ export class Specimen {
   /** Show these views beside `at`; with `from`, the old specimen flies there along the wire first. */
   async show(views: View[], at: string, from: string | null, run: Run): Promise<void> {
     const token = ++this.token;
+    const started = performance.now();
     const anchor = this.scene.blockAnchor(at);
     if (!anchor || !views.length) return this.hide();
     const old = this.current;
     const before = new Map(old?.cells.map((c) => [c.key, c] as const));
 
     if (old && from && from !== at) {
-      await run.tween(220, (t) => old.group.scale.setScalar(1 - 0.92 * t), ease.inCubic);
+      await run.tween(220, (t) => old.group.scale.setScalar(old.scale * (1 - 0.92 * t)), ease.inCubic);
       this.drop(old);
       const path = this.scene.pathBetween(from, at);
       if (path && token === this.token) {
@@ -109,14 +119,16 @@ export class Specimen {
         this.packet.visible = false;
       }
     } else if (old) {
-      await run.tween(160, (t) => old.group.scale.setScalar(1 - t), ease.inCubic);
+      await run.tween(160, (t) => old.group.scale.setScalar(old.scale * (1 - t)), ease.inCubic);
       this.drop(old);
     }
+    // Measure where the card fits only once the camera has arrived at the block.
+    await run.wait(Math.max(0, CAMERA_MS - (performance.now() - started)));
     if (token !== this.token) return;
 
     const built = this.build(views);
     this.current = built;
-    built.group.position.copy(specimenOffset(this.scene.camera.position, anchor, this.scene.blockSize(at), built.width));
+    this.place(built, at, anchor, this.scene.blockSize(at));
     this.face(built.group);
     this.scene.scene.add(built.group);
 
@@ -138,6 +150,27 @@ export class Specimen {
     };
     place(0);
     await run.tween(480, place, ease.linear);
+  }
+
+  /**
+   * Beside the block, opposite its label, shrunk until its outer edge is in view: a wide card next
+   * to the right-hand column would otherwise run under the study panel.
+   */
+  private place(b: Built, at: string, anchor: THREE.Vector3, blockSize: number) {
+    const camera = this.scene.camera;
+    // Away from the block's own label; with the label on top, toward the roomier side of the screen.
+    const labelSide = this.scene.labelSide(at);
+    const side = labelSide === "right" ? -1 : labelSide === "left" ? 1 : anchor.clone().project(camera).x > 0 ? -1 : 1;
+    const right = new THREE.Vector3().crossVectors(anchor.clone().sub(camera.position).setY(0).normalize(), UP).normalize();
+    let scale = SCALE;
+    for (let i = 0; i < 6; i++) {
+      b.group.position.copy(specimenOffset(camera.position, anchor, blockSize, b.width * scale, side));
+      const edge = b.group.position.clone().addScaledVector(right, (side * b.width * scale) / 2).project(camera).x;
+      if (Math.abs(edge) <= 0.94) break;
+      scale *= 0.82;
+    }
+    b.group.scale.setScalar(scale);
+    b.scale = scale;
   }
 
   /** Take the specimen off the model (the tour ended, or it no longer applies). */
@@ -174,7 +207,7 @@ export class Specimen {
     for (const [i, l] of laid.entries()) this.decorate(group, l, views[i]!);
     const minX = Math.min(...laid.map((l) => (l.cells[0] ? Math.min(...l.cells.map((c) => c.x - c.w / 2)) : 0)));
     const maxX = Math.max(...laid.map((l) => (l.cells[0] ? Math.max(...l.cells.map((c) => c.x + c.w / 2)) : 0)));
-    return { group, mesh, cells, width: maxX - minX + 2 * CARD_PAD };
+    return { group, mesh, cells, width: maxX - minX + 2 * CARD_PAD, scale: SCALE };
   }
 
   /** The printed card behind a view, its row labels, caption and "…512" cap. */
