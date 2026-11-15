@@ -2,6 +2,7 @@ import { SQL } from "bun";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Architecture, type PaperSummary } from "../shared/graph";
+import { ARTIFACT_SCHEMA, LEARN_KINDS, type AnyArtifact, type LearnKind } from "../shared/learn";
 
 /**
  * The public gallery: one row per arXiv id, first save wins. Postgres (Neon) when
@@ -13,6 +14,10 @@ export interface Store {
   getPaper(id: string): Promise<Architecture | null>;
   listPapers(opts?: { limit?: number; before?: string }): Promise<PaperSummary[]>;
   publishPaper(id: string, arch: Architecture): Promise<"created" | "exists">;
+  /** Learning artifacts for published papers; first save wins, like papers. */
+  getArtifact(id: string, kind: LearnKind): Promise<AnyArtifact | null>;
+  putArtifact(id: string, kind: LearnKind, artifact: AnyArtifact): Promise<"created" | "exists">;
+  listArtifactKinds(id: string): Promise<LearnKind[]>;
 }
 
 export function createStore(url: string): Store {
@@ -29,19 +34,35 @@ export function createStore(url: string): Store {
       db = new SQL(url);
       stale = false;
     }
-    return (ready ??= db.unsafe(`create table if not exists papers (
-      arxiv_id text primary key,
-      paper_title text not null,
-      model_name text not null,
-      summary text not null,
-      graph ${sqlite ? "text" : "jsonb"} not null,
-      block_count integer not null,
-      created_at text not null
-    )`).catch((err) => {
+    const json = sqlite ? "text" : "jsonb";
+    return (ready ??= (async () => {
+      await db.unsafe(`create table if not exists papers (
+        arxiv_id text primary key,
+        paper_title text not null,
+        model_name text not null,
+        summary text not null,
+        graph ${json} not null,
+        block_count integer not null,
+        created_at text not null
+      )`);
+      await db.unsafe(`create table if not exists artifacts (
+        arxiv_id text not null,
+        kind text not null,
+        content ${json} not null,
+        created_at text not null,
+        primary key (arxiv_id, kind)
+      )`);
+    })().catch((err) => {
       ready = undefined;
       stale = true;
       throw err;
     }));
+  };
+
+  const fromJson = (v: unknown) => (typeof v === "string" ? JSON.parse(v) : v);
+  const toJson = (v: unknown) => {
+    const text = JSON.stringify(v);
+    return sqlite ? text : db`${text}::jsonb`;
   };
 
   return {
@@ -49,7 +70,7 @@ export function createStore(url: string): Store {
       await init();
       const [row] = await db`select graph from papers where arxiv_id = ${id}`;
       if (!row) return null;
-      return Architecture.parse(typeof row.graph === "string" ? JSON.parse(row.graph) : row.graph);
+      return Architecture.parse(fromJson(row.graph));
     },
 
     async listPapers({ limit = 24, before } = {}) {
@@ -65,13 +86,34 @@ export function createStore(url: string): Store {
     async publishPaper(id, arch) {
       const a = Architecture.parse(arch);
       await init();
-      const json = JSON.stringify(a);
       const result = await db`
         insert into papers (arxiv_id, paper_title, model_name, summary, graph, block_count, created_at)
         values (${id}, ${a.paper_title}, ${a.model_name}, ${a.summary},
-                ${sqlite ? json : db`${json}::jsonb`}, ${a.blocks.length}, ${new Date().toISOString()})
+                ${toJson(a)}, ${a.blocks.length}, ${new Date().toISOString()})
         on conflict (arxiv_id) do nothing`;
       return result.count > 0 ? "created" : "exists";
+    },
+
+    async getArtifact(id, kind) {
+      await init();
+      const [row] = await db`select content from artifacts where arxiv_id = ${id} and kind = ${kind}`;
+      return row ? (ARTIFACT_SCHEMA[kind].parse(fromJson(row.content)) as AnyArtifact) : null;
+    },
+
+    async putArtifact(id, kind, artifact) {
+      const a = ARTIFACT_SCHEMA[kind].parse(artifact);
+      await init();
+      const result = await db`
+        insert into artifacts (arxiv_id, kind, content, created_at)
+        values (${id}, ${kind}, ${toJson(a)}, ${new Date().toISOString()})
+        on conflict (arxiv_id, kind) do nothing`;
+      return result.count > 0 ? "created" : "exists";
+    },
+
+    async listArtifactKinds(id) {
+      await init();
+      const rows: { kind: string }[] = await db`select kind from artifacts where arxiv_id = ${id}`;
+      return LEARN_KINDS.filter((k) => rows.some((r) => r.kind === k));
     },
   };
 }
@@ -79,7 +121,7 @@ export function createStore(url: string): Store {
 /** A store whose every call rejects, so callers' "gallery unavailable" paths take over. */
 function unavailableStore(reason: string): Store {
   const fail = () => Promise.reject(new Error(reason));
-  return { getPaper: fail, listPapers: fail, publishPaper: fail };
+  return { getPaper: fail, listPapers: fail, publishPaper: fail, getArtifact: fail, putArtifact: fail, listArtifactKinds: fail };
 }
 
 export function storeFromEnv(env: Record<string, string | undefined>): Store {

@@ -21,6 +21,9 @@ const broken: Store = {
   getPaper: () => Promise.reject(new Error("db down")),
   listPapers: () => Promise.reject(new Error("db down")),
   publishPaper: () => Promise.reject(new Error("db down")),
+  getArtifact: () => Promise.reject(new Error("db down")),
+  putArtifact: () => Promise.reject(new Error("db down")),
+  listArtifactKinds: () => Promise.reject(new Error("db down")),
 };
 
 describe("POST /api/papers", () => {

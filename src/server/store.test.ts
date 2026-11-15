@@ -66,3 +66,32 @@ describe("store from env", () => {
     expect(await store.listPapers()).toEqual([]);
   });
 });
+
+describe("artifacts", () => {
+  const load = (kind: string) => Bun.file(join(import.meta.dir, `../../samples/1706.03762.${kind}.json`)).json();
+
+  test("put then get round-trips; first save wins", async () => {
+    const store = memory();
+    const w = await load("walkthrough");
+    expect(await store.putArtifact("1706.03762", "walkthrough", w)).toBe("created");
+    expect(await store.getArtifact("1706.03762", "walkthrough")).toEqual(w);
+    expect(await store.putArtifact("1706.03762", "walkthrough", { ...w, intro: "Imposter" })).toBe("exists");
+    expect(await store.getArtifact("1706.03762", "walkthrough")).toEqual(w);
+  });
+
+  test("missing artifact is null", async () => {
+    expect(await memory().getArtifact("1706.03762", "example")).toBeNull();
+  });
+
+  test("lists the kinds saved for a paper", async () => {
+    const store = memory();
+    await store.putArtifact("1706.03762", "walkthrough", await load("walkthrough"));
+    await store.putArtifact("1706.03762", "pytorch", await load("pytorch"));
+    await store.putArtifact("1512.03385", "example", await load("example"));
+    expect((await store.listArtifactKinds("1706.03762")).sort()).toEqual(["pytorch", "walkthrough"]);
+  });
+
+  test("rejects an artifact that doesn't match its kind's schema", async () => {
+    await expect(memory().putArtifact("x", "example", { nope: 1 } as never)).rejects.toThrow();
+  });
+});
