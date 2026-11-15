@@ -1,0 +1,6 @@
+{
+  "bunVersion": "1.x",
+  "functions": {
+    "index.ts": { "maxDuration": 300 }
+  }
+}

@@ -6,7 +6,8 @@ import { locateQuote } from "./locate";
 import { extractPages } from "./pdf";
 
 const ROOT = join(import.meta.dir, "..", "..");
-const CACHE = join(ROOT, "data", "cache");
+// Vercel functions can only write to /tmp; the cache there is per-instance and temporary.
+const CACHE = process.env.VERCEL ? "/tmp/paperforge" : join(ROOT, "data", "cache");
 const SAMPLES = join(ROOT, "samples");
 
 const fileId = (id: string) => id.replace(/\//g, "_");
