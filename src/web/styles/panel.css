@@ -67,7 +67,6 @@
 @keyframes scan { to { top: 100%; } }
 
 /* ---------- code ---------- */
-.code-panel { display: flex; flex-direction: column; height: 100%; }
 .code-head { display: flex; justify-content: space-between; align-items: center; gap: var(--s2); padding: var(--s3) var(--s5); border-bottom: 1px solid var(--rule); font: var(--t-sm) var(--mono); }
 .code-head span { display: flex; gap: 6px; }
 .code-head button { border: 1px solid var(--rule-strong); background: var(--sheet); border-radius: var(--r-control); padding: 4px 10px; font-size: var(--t-xs); }
@@ -81,15 +80,3 @@
 .code-body .ln.lit { background: var(--highlighter); box-shadow: inset 2px 0 0 var(--ink); }
 .code-notes { margin: 0; padding: var(--s3) var(--s5) var(--s4) calc(var(--s5) + 16px); font: var(--t-sm) / 1.55 var(--serif); color: var(--ink-soft); border-top: 1px solid var(--rule); max-height: 28%; overflow: auto; }
 
-/* ---------- tour (interim card; Task 6 turns it into a step list) ---------- */
-.tour-head { display: flex; justify-content: space-between; font: var(--t-xs) var(--mono); color: var(--ink-faint); }
-.tour-head button { border: 0; background: none; color: var(--ink-faint); font-size: 18px; line-height: 1; }
-.tour h4 { font-size: var(--t-lg); margin: var(--s2) 0; }
-.tour p { font: var(--t-base) / 1.6 var(--serif); margin-bottom: var(--s3); }
-.tour code { display: block; font: var(--t-xs) var(--mono); color: var(--ink-soft); margin-bottom: var(--s4); }
-.tour-nav { display: flex; gap: 6px; }
-.tour-nav button { border: 1px solid var(--rule-strong); background: var(--sheet); border-radius: var(--r-control); padding: 6px 12px; font-size: var(--t-sm); }
-.tour-nav button:disabled { opacity: 0.4; cursor: default; }
-
-.learn-empty { display: grid; gap: var(--s3); justify-items: start; padding: var(--s5); }
-.learn-empty p { font: var(--t-base) / 1.55 var(--serif); color: var(--ink-soft); max-width: 32em; }

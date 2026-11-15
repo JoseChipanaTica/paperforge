@@ -11,8 +11,6 @@ import {
   fetchKinds,
   inspectTarget,
   requestArtifact,
-  revealSymbol,
-  showCode,
 } from "./learn";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
@@ -20,7 +18,9 @@ import type { TabId } from "./panelState";
 import { Overview } from "./overview";
 import { StudyPanel } from "./studyPanel";
 import { assemble } from "./timeline";
-import { Tour, tourSteps } from "./tour";
+import { renderSteps } from "./stepsView";
+import { TourDriver, tourSteps } from "./tour";
+import { revealSymbol, showCode } from "./codeView";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 
@@ -28,9 +28,7 @@ const scene = new ForgeScene($("#stage"));
 const paper = new PaperView($("#paper"));
 const statusEl = $("#status");
 const controls = $("#controls");
-const codePanel = $("#code");
-const tourRoot = $("#tour");
-const tour = new Tour(scene, tourRoot);
+const driver = new TourDriver(scene);
 const panel = new StudyPanel($("#panel"));
 const overview = new Overview(panel.tab("overview"), {
   onStart: (kind) => panel.select(kind),
@@ -46,11 +44,6 @@ const overview = new Overview(panel.tab("overview"), {
   },
 });
 panel.tab("paper").append($("#paper"));
-panel.tab("pytorch").append(codePanel);
-const learnSlot: Record<"walkthrough" | "example", HTMLElement> = {
-  walkthrough: panel.tab("walkthrough").appendChild(document.createElement("div")),
-  example: panel.tab("example").appendChild(document.createElement("div")),
-};
 
 let run = new Run();
 let graph: LocatedArchitecture | null = null;
@@ -86,14 +79,16 @@ function openKey() {
 }
 
 keyToggle.addEventListener("click", () => (keyInput.hidden ? openKey() : (keyInput.hidden = true)));
-keyInput.addEventListener("change", () => {
+/** Remember the visitor's key in this browser (empty clears it). */
+function saveKey(key: string) {
   try {
-    const key = keyInput.value.trim();
     if (key) localStorage.setItem(KEY_STORAGE, key);
     else localStorage.removeItem(KEY_STORAGE);
   } catch {}
   syncKey();
-});
+}
+
+keyInput.addEventListener("change", () => saveKey(keyInput.value.trim()));
 keyInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     keyInput.dispatchEvent(new Event("change"));
@@ -204,7 +199,9 @@ function showTitle(g: LocatedArchitecture) {
   $(".tc-paper").textContent = `${g.paper_title} · arXiv:${g.arxiv_id}`;
   $(".tc-model").textContent = g.model_name;
   $(".tc-summary").textContent = g.summary;
+  // A taste on the stage; the full list lives in Overview.
   $(".tc-hparams").innerHTML = g.hyperparameters
+    .slice(0, 4)
     .map((h) => `<span class="chip">${escapeHtml(h.name)} = <b>${escapeHtml(h.value)}</b></span>`)
     .join("");
 }
@@ -226,9 +223,13 @@ scene.onClick = (id) => {
   inspect(id);
   if (!id) return;
   const active = panel.state.active;
-  if (active === "pytorch") revealSymbol(codePanel, id);
+  if (active === "pytorch") revealSymbol(panel.tab("pytorch"), id);
   else if (active === "paper") void openPaper(id);
-  else if (active !== "overview" && !tour.active) panel.select("overview");
+  else if ((active === "walkthrough" || active === "example") && driver.script) {
+    // Clicking a block during a tour jumps to its step.
+    const step = driver.script.steps.findIndex((s) => s.block_id === id);
+    if (step >= 0) driver.goTo(driver.script, step);
+  }
 };
 
 /** Show the paper at a block's source sentence (the Paper tab). */
@@ -281,20 +282,67 @@ async function publish() {
 // Artifacts opened for this paper, so revisiting a tab never pays for a second generation.
 const artifacts = new Map<LearnKind, AnyArtifact>();
 const isKind = (t: TabId): t is LearnKind => t === "walkthrough" || t === "example" || t === "pytorch";
+type TourKind = "walkthrough" | "example";
+// Where each tour was left, so switching tabs mid-tour picks up at the same step.
+const tourAt: Partial<Record<TourKind, number>> = {};
+let tourKind: TourKind | null = null;
+const progress: Partial<Record<LearnKind, string>> = {};
+
+const NAMES: Record<LearnKind, string> = { walkthrough: "walkthrough", example: "easy example", pytorch: "PyTorch code" };
 
 panel.onSelect = (tab) => {
+  if (tourKind && tab !== tourKind && driver.active) {
+    tourAt[tourKind] = driver.index;
+    driver.pause();
+  }
   if (!isKind(tab) || !graph) return;
-  const status = panel.state.status[tab];
-  if (artifacts.has(tab) || status === "ready") void openLearn(tab);
-  else if (status !== "generating") renderGenerate(tab);
+  if (artifacts.has(tab) || panel.state.status[tab] === "ready") void openLearn(tab);
+  else renderState(tab);
 };
 
-/** Interim tab body for a kind that needs a Claude call (Task 6 replaces it). */
-function renderGenerate(kind: LearnKind) {
-  const root = kind === "pytorch" ? codePanel : learnSlot[kind];
-  if (kind === "pytorch") codePanel.hidden = false;
-  root.innerHTML = `<div class="learn-empty"><p>Claude writes this for the paper on your API key; it takes about half a minute.</p><button type="button" class="btn btn-primary" data-generate>Generate</button></div>`;
-  root.querySelector("[data-generate]")!.addEventListener("click", () => void openLearn(kind));
+/** A learning tab's body before its content exists: generate, generating, key needed, or error. */
+function renderState(kind: LearnKind) {
+  const root = panel.tab(kind);
+  const status = panel.state.status[kind];
+  if (status === "generating") {
+    root.innerHTML = `
+      <div class="learn-state" aria-busy="true">
+        <div class="skeleton"><i></i><i></i><i></i><i></i><i></i></div>
+        <p class="learn-progress">${escapeHtml(progress[kind] ?? `Claude is writing the ${NAMES[kind]}…`)}</p>
+      </div>`;
+  } else if (status === "needs_key") {
+    root.innerHTML = `
+      <form class="learn-state key-card">
+        <h3>Add your Anthropic API key</h3>
+        <p>Claude writes the ${NAMES[kind]} for this paper using your key. It stays in this browser and is only sent to Paperforge's server for this request.</p>
+        <label class="sr-only" for="key-${kind}">Anthropic API key</label>
+        <input id="key-${kind}" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" required />
+        <button class="btn btn-primary">Save key and write the ${NAMES[kind]}</button>
+      </form>`;
+    root.querySelector("form")!.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const key = root.querySelector<HTMLInputElement>("input")!.value.trim();
+      if (!key) return;
+      saveKey(key);
+      void openLearn(kind);
+    });
+  } else if (status === "error") {
+    root.innerHTML = `
+      <div class="learn-state">
+        <h3>The ${NAMES[kind]} didn't come through</h3>
+        <p>${escapeHtml(panel.state.error[kind] ?? "Something went wrong.")}</p>
+        <button type="button" class="btn btn-primary" data-retry>Try again</button>
+      </div>`;
+    root.querySelector("[data-retry]")!.addEventListener("click", () => void openLearn(kind));
+  } else {
+    root.innerHTML = `
+      <div class="learn-state">
+        <h3>${kind === "pytorch" ? "PyTorch code for this model" : kind === "walkthrough" ? "A guided walkthrough" : "An easy example"}</h3>
+        <p>Claude writes this from the paper, usually in under a minute, using your API key.</p>
+        <button type="button" class="btn btn-primary" data-generate>Write the ${NAMES[kind]}</button>
+      </div>`;
+    root.querySelector("[data-generate]")!.addEventListener("click", () => void openLearn(kind));
+  }
 }
 
 // One request per kind at a time; a repeat click joins it instead of paying again.
@@ -302,11 +350,14 @@ const learning = new InFlight<Awaited<ReturnType<typeof requestArtifact>>>();
 
 function resetLearn() {
   learning.reset();
-  tour.stop(false);
-  codePanel.hidden = true;
-  codePanel.replaceChildren();
-  learnSlot.walkthrough.replaceChildren();
-  learnSlot.example.replaceChildren();
+  driver.stop();
+  tourKind = null;
+  for (const k of ["walkthrough", "example", "pytorch"] as const) {
+    panel.tab(k).replaceChildren();
+    delete progress[k];
+  }
+  delete tourAt.walkthrough;
+  delete tourAt.example;
   artifacts.clear();
   panel.dispatch({ type: "reset" });
 }
@@ -325,37 +376,43 @@ async function openLearn(kind: LearnKind) {
   const cached = artifacts.get(kind);
   if (!cached) {
     panel.dispatch({ type: "generate", kind });
-    setStatus("Loading…");
+    if (panel.state.active === kind) renderState(kind);
   }
   try {
     const { value, current } = cached
       ? { value: { artifact: cached }, current: true }
-      : await learning.run(kind, () => requestArtifact(g.arxiv_id, kind, g, storedKey(), (m) => setStatus(m)));
+      : await learning.run(kind, () =>
+          requestArtifact(g.arxiv_id, kind, g, storedKey(), (m) => {
+            progress[kind] = m;
+            panel.tab(kind).querySelector(".learn-progress")?.replaceChildren(m);
+          }),
+        );
     if (graph !== g) return; // the visitor moved on to another paper meanwhile
-    if (!cached) setStatus(learning.busy ? "Still generating…" : null);
     const { artifact } = value;
     artifacts.set(kind, artifact);
     panel.dispatch({ type: "loaded", kind });
     if (!current || panel.state.active !== kind) return; // the visitor is looking at something else
-    if (kind === "pytorch") {
-      tour.stop(false);
-      showCode(codePanel, artifact as PytorchArtifact, (blockId) => {
-        scene.highlight(blockId);
-        void scene.focusOn(blockId, new Run());
-      });
-    } else {
-      const script =
-        kind === "walkthrough" ? tourSteps(kind, artifact as WalkthroughArtifact) : tourSteps(kind, artifact as ExampleArtifact);
-      learnSlot[kind].replaceChildren(tourRoot);
-      tour.start(script, g);
-    }
+    showArtifact(kind, artifact, g);
   } catch (err) {
     if (graph !== g) return;
     const e = err instanceof LearnError ? err : new LearnError(String(err));
     panel.dispatch({ type: "failed", kind, message: e.message, needsKey: e.code === "needs_key" });
-    setStatus(e.message, true);
-    if (e.code === "needs_key") openKey();
+    renderState(kind);
   }
+}
+
+function showArtifact(kind: LearnKind, artifact: AnyArtifact, g: LocatedArchitecture) {
+  if (kind === "pytorch") {
+    showCode(panel.tab("pytorch"), artifact as PytorchArtifact, (blockId) => {
+      scene.highlight(blockId);
+      void scene.focusOn(blockId, new Run());
+    });
+    return;
+  }
+  const script =
+    kind === "walkthrough" ? tourSteps(kind, artifact as WalkthroughArtifact) : tourSteps(kind, artifact as ExampleArtifact);
+  tourKind = kind;
+  renderSteps(panel.tab(kind), script, g, driver, tourAt[kind] ?? -1);
 }
 
 // ---------- controls ----------
@@ -426,10 +483,14 @@ window.addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
   if (e.key === " " && document.body.classList.contains("assembling")) run.skip();
   if (e.key === "Escape") {
-    if (tour.active) tour.stop();
+    if (driver.active) driver.stop();
   }
-  if (tour.active && e.key === "ArrowRight") tour.next();
-  if (tour.active && e.key === "ArrowLeft") tour.back();
+  // Arrow keys step through a tour, unless they're moving between tabs.
+  const inTour = driver.active && (panel.state.active === "walkthrough" || panel.state.active === "example");
+  if (inTour && !(e.target as HTMLElement).closest?.('[role="tablist"]')) {
+    if (e.key === "ArrowRight") driver.next();
+    if (e.key === "ArrowLeft") driver.back();
+  }
 });
 
 if (!document.body.classList.contains("has-paper")) {

@@ -1,0 +1,49 @@
+/* Walkthrough / Example: a step list with the camera following. */
+.tabpanel-walkthrough, .tabpanel-example { padding: 0; display: flex; flex-direction: column; }
+.steps { flex: 1; overflow: auto; padding: var(--s5) var(--s5) var(--s4); }
+
+.step-intro h3 { font-size: var(--t-lg); }
+.step-intro p, .step-outro p { font: var(--t-base) / 1.65 var(--serif); margin-top: var(--s2); }
+.step-intro code, .step-body code { display: inline-block; margin-top: var(--s2); font: var(--t-xs) var(--mono); color: var(--ink-soft); }
+.step-intro, .step-outro { padding: var(--s2) var(--s3); margin: 0 calc(-1 * var(--s3)); border-radius: var(--r-print); }
+.step-outro { margin-top: var(--s4); color: var(--ink-soft); }
+
+.step-list { list-style: none; margin: var(--s4) 0 0; padding: 0; counter-reset: none; }
+.step { border-top: 1px solid var(--rule); }
+.step-head { display: flex; gap: var(--s3); align-items: baseline; width: 100%; padding: var(--s3) 0; border: 0; background: none; text-align: left; }
+.step-n { font: var(--t-xs) var(--mono); color: var(--ink-faint); min-width: 2ch; text-align: right; }
+.step-title { font: 500 var(--t-base) var(--display); }
+.step-head:hover .step-title { text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: 3px; }
+/* Only the current step opens up; the rest stay a scannable list of titles. */
+.step-body { display: none; padding: 0 0 var(--s4) calc(2ch + var(--s3)); }
+.step-body p { font: var(--t-base) / 1.65 var(--serif); }
+.step.current .step-body { display: block; }
+.step.current .step-title { background: var(--mark); }
+.step.current .step-n { color: var(--vermilion); }
+.step-intro.current, .step-outro.current { background: color-mix(in srgb, var(--highlighter) 22%, transparent); }
+
+.step-nav {
+  display: flex; align-items: center; gap: var(--s2); padding: var(--s3) var(--s5);
+  border-top: 1px solid var(--rule); background: var(--sheet); flex: none;
+}
+.step-pos { flex: 1; text-align: center; font: var(--t-xs) var(--mono); color: var(--ink-faint); }
+.step-nav .btn:disabled { opacity: 0.4; cursor: default; }
+
+/* Before content exists: generate, generating, key needed, error. */
+.learn-state { display: grid; gap: var(--s3); justify-items: start; padding: var(--s5); max-width: 34em; }
+.learn-state h3 { font-size: var(--t-lg); }
+.learn-state p { font: var(--t-base) / 1.6 var(--serif); color: var(--ink-soft); }
+.key-card input { width: 100%; background: var(--paper); border: 1px solid var(--rule-strong); border-radius: var(--r-control); padding: 9px 11px; font: var(--t-sm) var(--mono); outline: 0; }
+.key-card input:focus { border-color: var(--ink); background: var(--sheet); }
+
+/* A printed placeholder while Claude writes: ruled lines that shimmer like wet ink. */
+.skeleton { display: grid; gap: 10px; width: 100%; }
+.skeleton i { display: block; height: 10px; border-radius: 2px; background: linear-gradient(90deg, var(--rule) 0%, #ebe3d3 40%, var(--rule) 80%) 0 0 / 300% 100%; animation: ink 1.6s ease-in-out infinite; }
+.skeleton i:nth-child(1) { width: 55%; height: 16px; }
+.skeleton i:nth-child(3) { width: 88%; }
+.skeleton i:nth-child(5) { width: 64%; }
+@keyframes ink { to { background-position: -150% 0; } }
+.learn-progress { font-size: var(--t-sm) !important; }
+
+/* PyTorch: the code view renders straight into its tab. */
+.tabpanel-pytorch { display: flex; flex-direction: column; }
