@@ -41,8 +41,14 @@ const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").match
 // Labels crowd a phone-sized stage; start with them off there (the toolbar brings them back).
 if (sheet.active) document.body.classList.add("labels-off");
 const overview = new Overview(panel.tab("overview"), {
-  onStart: (kind) => panel.select(kind),
-  onShowInPaper: (blockId) => void openPaper(blockId),
+  onStart: (kind) => {
+    panel.select(kind);
+    panel.tab(kind).focus(); // the card's panel just hid; keep keyboard focus with the content
+  },
+  onShowInPaper: (blockId) => {
+    void openPaper(blockId);
+    panel.tab("paper").focus();
+  },
   ask: async (blockId, question, history, onDelta) => {
     if (!graph) return;
     try {

@@ -29,9 +29,15 @@ make that 30-second moment look better or work more reliably. Polish what the ca
   `[paper, graph]` prefix with a cache breakpoint; keep it byte-identical and effort fixed.
 - `src/server/learn-api.ts` — `POST /api/learn` (gallery → sample → Claude; saved only for published
   papers, first save wins), `POST /api/ask` (streamed, never stored), `GET /api/learn?arxiv_id=`
-- `src/web/` — Three.js front end: `layout.ts` (graph → positions), `scene.ts`
-  (meshes, labels, pulse), `timeline.ts` (the assembly choreography), `paper.ts` (page flip + highlights), `gallery.ts` (published-paper cards), `learn.ts` (learn/ask
-  clients, PyTorch panel), `tour.ts` (guided camera tour for walkthrough + example)
+- `src/web/` — Three.js front end ("Paper & ink": spec `docs/superpowers/specs/2026-11-15-ui-overhaul-design.md`):
+  - `scene.ts` (printed model: matte blocks, ink outline/shadow/halo shells from `blocks.ts`; labels, pulse),
+    `layout.ts` (graph → positions), `timeline.ts` (assembly choreography), `paper.ts` (paper + highlights)
+  - `main.ts` wires the modules: `landing.ts` (hero, live preview, how-it-works, gallery), `toolbar.ts`,
+    `studyPanel.ts` (ARIA tabs; state in `panelState.ts`), `sheet.ts` (bottom sheet < 900 px),
+    `overview.ts` (summary, block detail, Ask), `stepsView.ts` + `tour.ts` (walkthrough / example),
+    `codeView.ts` (PyTorch), `learn.ts` (learn/ask clients, request bookkeeping)
+  - `styles/tokens.css` holds every colour, font and spacing token; `blocks.ts` mirrors ink /
+    highlighter / vermilion and owns the block palette. One CSS file per component.
 - `samples/` — committed block graphs (`<id>.json`) and learning artifacts (`<id>.<kind>.json`) that
   seed the cache, so the demo runs without an API key
 
@@ -49,7 +55,9 @@ make that 30-second moment look better or work more reliably. Polish what the ca
 - Source quotes must be verbatim from the paper; the locator is what lets hover show the
   real sentence. If a quote can't be located, keep the block but mark `page: null`.
 - Front end is plain TypeScript + Three.js (no React). Labels are DOM via `CSS2DRenderer`,
-  equations via KaTeX.
+  equations via KaTeX. Colours only from `styles/tokens.css` / `TYPE_COLOR`; the hard ink offset
+  shadow is reserved for "printed" things (blocks, paste box, start cards). Respect
+  `prefers-reduced-motion`.
 
 ## Commands
 

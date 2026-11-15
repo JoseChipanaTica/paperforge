@@ -83,12 +83,12 @@ After Claude builds a new paper, **Publish to gallery** saves its 3D model so an
 
 ### Learn the paper
 
-Once the model has assembled, the buttons next to the controls help you understand it:
+Once the model has assembled, the study panel's tabs help you understand it (a dot on a tab means it opens instantly):
 
 - **PyTorch:** Claude writes the architecture as PyTorch code, with the paper's hyperparameters and a forward pass on random input. Click a block to jump to its class, or a highlighted line to find its block. Copy or download the `.py`. The code is generated, not executed.
-- **Walkthrough:** a guided tour. The camera flies from block to block in the order data flows, with a short explanation and the tensor shapes at each step.
+- **Walkthrough:** a guided tour, listed step by step in the panel. The camera flies from block to block in the order data flows, with a short explanation and the tensor shapes at each step. Click any step, or any block, to jump there.
 - **Easy example:** the same tour for non-experts, starting from an everyday analogy and following a tiny input (like "the cat sat") through each block.
-- **Ask:** pick a block and ask Claude anything about it; the answer streams in, grounded in the paper.
+- **Ask:** in **Overview**, click a block and ask Claude anything about it; the answer streams in, grounded in the paper.
 
 For papers in the gallery, the first PyTorch code, walkthrough and example anyone generates are saved with the paper, so later visitors get them instantly with no key. The Transformer demo ships with all three, so they work without a key. Ask answers are never saved.
 
@@ -108,7 +108,7 @@ Forging takes a minute or two; `vercel.json` allows the function up to 300 secon
 
 ### Viewer controls
 
-Drag to orbit and scroll to zoom. Click a block to open the paper at its sentence. Press **Space** to skip the assembly animation. **Explode** pulls the model apart, and **Replay** runs the build again. Share a link straight to a paper with `?paper=<arxiv id>`.
+The model sits on the left and the study panel on the right (on phones the panel is a sheet you drag up from the bottom). Drag to orbit and scroll or pinch to zoom. Hover a block to see the sentence it came from; click it to keep it in **Overview** and ask about it, or use **Show in paper** to jump to that sentence in the **Paper** tab. Press **Space** to skip the assembly animation. **Explode** pulls the model apart, and **Replay** runs the build again. The panel's tabs work from the keyboard (arrow keys between tabs), and during a walkthrough the arrow keys step through it and **Esc** ends it. Share a link straight to a paper with `?paper=<arxiv id>`.
 
 ## Limitations
 
