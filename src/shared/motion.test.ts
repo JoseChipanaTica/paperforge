@@ -104,3 +104,22 @@ describe("committed motion samples", () => {
     });
   }
 });
+
+describe("committed inside walkthroughs", () => {
+  for (const block of ["encoder_self_attention", "encoder_ffn"]) {
+    test(`${block}: clean, fits its inside graph, and the math runs`, async () => {
+      const { runChain } = await import("../web/motion/compute");
+      const { cleanJourney } = await import("./learn");
+      const base = join(SAMPLES, `1706.03762.inside.${block}`);
+      const inside = Architecture.parse(await Bun.file(`${base}.json`).json());
+      const j = (await Bun.file(`${base}.journey.json`).json()) as JourneyArtifact;
+      const m = MotionArtifact.parse(await Bun.file(`${base}.motion.json`).json());
+      expect(cleanJourney(j, inside)).toEqual(j);
+      expect(new Set(j.steps.map((s) => s.block_id))).toEqual(new Set(inside.blocks.map((b) => b.id)));
+      expect(cleanMotion(m, inside, j)).toEqual(m);
+      expect(motionFits(m, j)).toBe(true);
+      const results = m.steps.flatMap((s) => runChain(s.ops));
+      expect(results.filter((r) => r.result.ok).length / results.length).toBeGreaterThanOrEqual(0.8);
+    });
+  }
+});

@@ -1,0 +1,374 @@
+{
+  "modality": "text",
+  "analogy": {
+    "title": "A private think-tank for each word",
+    "text": "After the words have chatted with each other in attention, each word steps into its own soundproof booth. Inside, it spreads its notes out over a much bigger desk (2048 slots instead of 512), crosses out anything negative, then condenses the useful bits back onto a 512-slot index card. Every booth has the same furniture and the same rules, so 'the', 'cat' and 'sat' are each processed identically and independently."
+  },
+  "intro": "We follow the three vectors for \"the cat sat\" as they enter the encoder's Feed Forward sub-layer, get expanded to 2048 dimensions, pass through ReLU, and are squeezed back to 512, exactly as in Eq. 2: FFN(x) = max(0, xW1 + b1)W2 + b2.",
+  "input": {
+    "label": "The normalized attention output for \"the cat sat\": one 512-dim vector per word",
+    "views": [
+      {
+        "kind": "vectors",
+        "caption": "LayerNorm(x + MultiHead(x))",
+        "rows": [
+          "the",
+          "cat",
+          "sat"
+        ],
+        "cols": [],
+        "values": [
+          [
+            -0.4,
+            0.1,
+            0.5,
+            0.9,
+            -1.3,
+            1.5,
+            -1.9,
+            0.6
+          ],
+          [
+            -1.2,
+            1.1,
+            0.3,
+            -1,
+            1.4,
+            -0.5,
+            0.8,
+            -0.9
+          ],
+          [
+            1.6,
+            -1.1,
+            -0.3,
+            0,
+            0.4,
+            -1.7,
+            1,
+            0.1
+          ]
+        ],
+        "dims": "[1, 3, 512]",
+        "split": 1
+      }
+    ]
+  },
+  "steps": [
+    {
+      "block_id": "ffn_in",
+      "title": "Receive x",
+      "what_happens": "Each word's 512-dim vector from the Add & Norm after self-attention arrives, unchanged.",
+      "narration": "These vectors already mix in context from the other words via attention. The FFN will now transform each one on its own: the paper says it is applied \"to each position separately and identically\", so no information flows between 'the', 'cat' and 'sat' here.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "x entering the FFN (first 8 of 512 dims)",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              -0.4,
+              0.1,
+              0.5,
+              0.9,
+              -1.3,
+              1.5,
+              -1.9,
+              0.6
+            ],
+            [
+              -1.2,
+              1.1,
+              0.3,
+              -1,
+              1.4,
+              -0.5,
+              0.8,
+              -0.9
+            ],
+            [
+              1.6,
+              -1.1,
+              -0.3,
+              0,
+              0.4,
+              -1.7,
+              1,
+              0.1
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "ffn_linear_1",
+      "title": "Expand to d_ff = 2048",
+      "what_happens": "Each vector is multiplied by W1 (512×2048) and shifted by b1, making it four times wider.",
+      "narration": "The same W1 is used for all three words, which is why the paper also calls this a convolution with kernel size 1. Widening to d_ff = 2048 gives the layer room to compute many feature detectors per word; values can be positive or negative at this point.",
+      "shape_change": "[1, 3, 512] → [1, 3, 2048]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "xW1 + b1 (first 8 of 2048 dims)",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.7,
+              -1.2,
+              0.3,
+              -0.5,
+              1.4,
+              -0.8,
+              0.2,
+              -1
+            ],
+            [
+              -0.6,
+              0.9,
+              -1.1,
+              0.5,
+              -0.3,
+              1.2,
+              -0.7,
+              0.4
+            ],
+            [
+              1.1,
+              -0.4,
+              0.6,
+              -1.3,
+              0.2,
+              -0.9,
+              0.8,
+              0.5
+            ]
+          ],
+          "dims": "[1, 3, 2048]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "ffn_relu",
+      "title": "ReLU gate",
+      "what_happens": "Every negative number in the 2048-dim vectors is set to zero.",
+      "narration": "max(0, ·) is the only nonlinearity in the sub-layer; without it the two linear layers would collapse into one. Roughly half the inner features go silent per word, so each word lights up its own subset of detectors.",
+      "shape_change": "[1, 3, 2048] → [1, 3, 2048]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "max(0, xW1 + b1) (first 8 of 2048 dims)",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.7,
+              0,
+              0.3,
+              0,
+              1.4,
+              0,
+              0.2,
+              0
+            ],
+            [
+              0,
+              0.9,
+              0,
+              0.5,
+              0,
+              1.2,
+              0,
+              0.4
+            ],
+            [
+              1.1,
+              0,
+              0.6,
+              0,
+              0.2,
+              0,
+              0.8,
+              0.5
+            ]
+          ],
+          "dims": "[1, 3, 2048]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "ffn_linear_2",
+      "title": "Project back to d_model = 512",
+      "what_happens": "The active features are combined by W2 (2048×512) plus b2 into a 512-dim vector per word.",
+      "narration": "Every sub-layer must output d_model = 512 so the residual connection can add it to x. The result is a small, mostly modest-magnitude update vector for each word.",
+      "shape_change": "[1, 3, 2048] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "ReLU(...)W2 + b2 (first 8 of 512 dims)",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.2,
+              -0.3,
+              0.1,
+              0.4,
+              -0.2,
+              0.3,
+              -0.5,
+              0.1
+            ],
+            [
+              -0.1,
+              0.5,
+              0.2,
+              -0.3,
+              0.4,
+              0,
+              0.3,
+              -0.2
+            ],
+            [
+              0.4,
+              -0.2,
+              -0.1,
+              0.3,
+              0.1,
+              -0.4,
+              0.2,
+              0.3
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "ffn_out",
+      "title": "FFN(x) leaves the block",
+      "what_happens": "The 512-dim update for each word exits the sub-layer.",
+      "narration": "Outside this block, dropout (P_drop = 0.1) is applied and the result goes to encoder_add_norm_2, which computes LayerNorm(x + FFN(x)). These weights are shared across positions but differ in each of the N = 6 encoder layers.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "FFN(x) output (first 8 dims)",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.2,
+              -0.3,
+              0.1,
+              0.4,
+              -0.2,
+              0.3,
+              -0.5,
+              0.1
+            ],
+            [
+              -0.1,
+              0.5,
+              0.2,
+              -0.3,
+              0.4,
+              0,
+              0.3,
+              -0.2
+            ],
+            [
+              0.4,
+              -0.2,
+              -0.1,
+              0.3,
+              0.1,
+              -0.4,
+              0.2,
+              0.3
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    }
+  ],
+  "output": {
+    "label": "A 512-dim update vector per word, ready to be added back to x in encoder_add_norm_2",
+    "views": [
+      {
+        "kind": "vectors",
+        "caption": "FFN(x) output (first 8 dims)",
+        "rows": [
+          "the",
+          "cat",
+          "sat"
+        ],
+        "cols": [],
+        "values": [
+          [
+            0.2,
+            -0.3,
+            0.1,
+            0.4,
+            -0.2,
+            0.3,
+            -0.5,
+            0.1
+          ],
+          [
+            -0.1,
+            0.5,
+            0.2,
+            -0.3,
+            0.4,
+            0,
+            0.3,
+            -0.2
+          ],
+          [
+            0.4,
+            -0.2,
+            -0.1,
+            0.3,
+            0.1,
+            -0.4,
+            0.2,
+            0.3
+          ]
+        ],
+        "dims": "[1, 3, 512]",
+        "split": 1
+      }
+    ]
+  },
+  "outro": "Attention mixes information between words; the Feed Forward network then processes each word privately, expanding it from 512 to 2048 dims, applying ReLU, and projecting back to 512."
+}

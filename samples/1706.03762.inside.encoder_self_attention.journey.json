@@ -1,0 +1,600 @@
+{
+  "modality": "text",
+  "analogy": {
+    "title": "Eight reporters at one press conference",
+    "text": "Picture eight reporters covering the same three-person press conference. Each reporter has their own beat, such as grammar, meaning or who-refers-to-whom. For every speaker, a reporter writes a question (query), notes what each speaker is known for (key), and records what each actually said (value). Each reporter decides how much to listen to each speaker and writes a short summary. An editor then staples the eight summaries together and rewrites them into one 512-word brief per speaker."
+  },
+  "intro": "We open the encoder's Multi-Head Attention block and follow \"the cat sat\" through it. You will see each 512-dim word vector projected into a 64-dim query, key and value for one head, then a 3×3 table of who-looks-at-whom, then a weighted mix. Finally the 8 heads are glued back into 512 dimensions.",
+  "input": {
+    "label": "\"the cat sat\" as embedding + positional encoding vectors (Q = K = V = x)",
+    "views": [
+      {
+        "kind": "vectors",
+        "caption": "embedding + positional encoding",
+        "rows": [
+          "the",
+          "cat",
+          "sat"
+        ],
+        "cols": [],
+        "values": [
+          [
+            0.3,
+            0.5,
+            0.8,
+            1.1,
+            -0.2,
+            1.6,
+            -0.7,
+            1.4
+          ],
+          [
+            0.24,
+            1.44,
+            1.02,
+            0.17,
+            1.5,
+            0.5,
+            1.28,
+            0.32
+          ],
+          [
+            1.41,
+            -0.22,
+            0.34,
+            0.45,
+            0.66,
+            -0.79,
+            1.07,
+            0.47
+          ]
+        ],
+        "dims": "[1, 3, 512]",
+        "split": 1
+      }
+    ]
+  },
+  "steps": [
+    {
+      "block_id": "mha_in",
+      "title": "One input, three roles",
+      "what_happens": "The same 512-dim vectors are handed out as queries, keys and values.",
+      "narration": "In encoder self-attention, the paper says keys, values and queries all \"come from the same place\": the previous layer's output. Here that is the embedding plus positional encoding. Nothing is computed yet; x is simply copied into three streams.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "x used as Q, K and V",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.3,
+              0.5,
+              0.8,
+              1.1,
+              -0.2,
+              1.6,
+              -0.7,
+              1.4
+            ],
+            [
+              0.24,
+              1.44,
+              1.02,
+              0.17,
+              1.5,
+              0.5,
+              1.28,
+              0.32
+            ],
+            [
+              1.41,
+              -0.22,
+              0.34,
+              0.45,
+              0.66,
+              -0.79,
+              1.07,
+              0.47
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "query_proj",
+      "title": "Ask a question (W^Q_1)",
+      "what_happens": "Each word's 512-dim vector is projected to a 64-dim query for head 1.",
+      "narration": "W^Q_i ∈ R^{512×64} turns each position into a description of what it is looking for. With h = 8 heads, d_k = d_model/h = 64, so all heads together cost about the same as one full-width head. The values shown are a 4-number slice of head 1's query.",
+      "shape_change": "[1, 3, 512] → [1, 3, 64]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "queries Q_1, head 1 of 8",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.9,
+              0.2,
+              -0.4,
+              0.6
+            ],
+            [
+              0.1,
+              1.1,
+              0.3,
+              -0.2
+            ],
+            [
+              -0.3,
+              1,
+              0.7,
+              0.1
+            ]
+          ],
+          "dims": "[1, 3, 64]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "key_proj",
+      "title": "Post a label (W^K_1)",
+      "what_happens": "A separate projection gives each word a 64-dim key that queries will be compared against.",
+      "narration": "Keys advertise what each position offers. Because W^K_1 is learned separately from W^Q_1, a word can look for something different from what it advertises. That asymmetry is why \"sat\" can attend strongly to \"cat\" without \"cat\" returning the favour.",
+      "shape_change": "[1, 3, 512] → [1, 3, 64]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "keys K_1, head 1 of 8",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              1,
+              0.1,
+              -0.5,
+              0.4
+            ],
+            [
+              0.3,
+              1.2,
+              0.4,
+              0
+            ],
+            [
+              -0.2,
+              0.6,
+              0.5,
+              0.3
+            ]
+          ],
+          "dims": "[1, 3, 64]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "value_proj",
+      "title": "Pack the content (W^V_1)",
+      "what_happens": "A third projection produces each word's 64-dim value, the information that will actually be mixed.",
+      "narration": "Values are what gets passed along once the attention weights are decided. Here d_v = 64, the same as d_k.",
+      "shape_change": "[1, 3, 512] → [1, 3, 64]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "values V_1, head 1 of 8",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.5,
+              -0.2,
+              0.8,
+              0.1
+            ],
+            [
+              -0.3,
+              0.9,
+              0.2,
+              0.6
+            ],
+            [
+              0.7,
+              0.4,
+              -0.5,
+              -0.2
+            ]
+          ],
+          "dims": "[1, 3, 64]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "scaled_scores",
+      "title": "Score every pair, divide by 8",
+      "what_happens": "Every query is dot-producted with every key and divided by √64 = 8, giving a 3×3 score table.",
+      "narration": "Q_1K_1^T measures how compatible each query is with each key. The paper notes that dot products of 64-dim vectors have variance d_k, which would push the softmax into regions with tiny gradients. Dividing by √d_k keeps the scores in a gentle range.",
+      "shape_change": "[1, 3, 64] + [1, 3, 64] → [1, 3, 3]",
+      "views": [
+        {
+          "kind": "matrix",
+          "caption": "scaled scores S_1 = Q_1K_1ᵀ/√64 (rows = queries)",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "values": [
+            [
+              1.2,
+              0.51,
+              -0.59
+            ],
+            [
+              0.4,
+              1.32,
+              0.81
+            ],
+            [
+              -0.3,
+              1.49,
+              0.8
+            ]
+          ],
+          "dims": "[1, 8, 3, 3]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "attn_softmax",
+      "title": "Turn scores into shares",
+      "what_happens": "Each row of scores is softmaxed into weights that sum to 1.",
+      "narration": "Each row now says how much one word listens to each word. Here \"the\" mostly keeps to itself, while \"sat\" puts 0.6 of its attention on \"cat\", its subject. The encoder uses no mask, so every word may look at every other word.",
+      "shape_change": "[1, 3, 3] → [1, 3, 3]",
+      "views": [
+        {
+          "kind": "matrix",
+          "caption": "attention weights, head 1 of 8 (rows = queries)",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "values": [
+            [
+              0.6,
+              0.3,
+              0.1
+            ],
+            [
+              0.2,
+              0.5,
+              0.3
+            ],
+            [
+              0.1,
+              0.6,
+              0.3
+            ]
+          ],
+          "dims": "[1, 8, 3, 3]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "weighted_sum",
+      "title": "Blend the values",
+      "what_happens": "Each word's head output is the weighted average of all three value vectors.",
+      "narration": "head_1 = A_1V_1. For example, \"sat\" = 0.1·V_the + 0.6·V_cat + 0.3·V_sat, so it now carries much of \"cat\"'s content. All 8 heads run this in parallel, each with its own weights.",
+      "shape_change": "[1, 3, 3] + [1, 3, 64] → [1, 3, 64]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "head_1 = A_1 V_1",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.28,
+              0.19,
+              0.49,
+              0.22
+            ],
+            [
+              0.16,
+              0.53,
+              0.11,
+              0.26
+            ],
+            [
+              0.08,
+              0.64,
+              0.05,
+              0.31
+            ]
+          ],
+          "dims": "[1, 3, 64]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "heads_concat",
+      "title": "Staple the 8 heads together",
+      "what_happens": "The eight 64-dim head outputs are placed side by side into one 512-dim vector per word.",
+      "narration": "Concat(head_1, …, head_8) restores h·d_v = 8·64 = 512 dimensions. Each 64-wide segment comes from a different representation subspace. The view shows one representative number per head.",
+      "shape_change": "8 × [1, 3, 64] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "heads",
+          "caption": "concatenated heads (one sample number per head)",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "h7",
+            "h8"
+          ],
+          "values": [
+            [
+              0.28,
+              -0.1,
+              0.42,
+              0.05,
+              0.31,
+              -0.22,
+              0.17,
+              0.09
+            ],
+            [
+              0.16,
+              0.37,
+              -0.05,
+              0.24,
+              0.12,
+              0.4,
+              -0.18,
+              0.2
+            ],
+            [
+              0.08,
+              0.29,
+              0.33,
+              -0.12,
+              0.45,
+              0.06,
+              0.21,
+              -0.07
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 8
+        }
+      ]
+    },
+    {
+      "block_id": "output_proj",
+      "title": "Mix across heads (W^O)",
+      "what_happens": "A learned 512×512 matrix W^O blends the heads' findings into one representation per word.",
+      "narration": "Without W^O, the heads would sit in separate slots. The output projection lets the model \"jointly attend to information from different representation subspaces\". The result is back in the d_model = 512 space, so a residual connection can add it to x.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "MultiHead(Q,K,V) = Concat(heads)·W^O",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.21,
+              0.34,
+              -0.12,
+              0.4,
+              0.05,
+              0.27,
+              -0.18,
+              0.3
+            ],
+            [
+              0.12,
+              0.46,
+              0.25,
+              -0.08,
+              0.38,
+              0.1,
+              0.29,
+              0.03
+            ],
+            [
+              0.18,
+              0.41,
+              0.2,
+              0.07,
+              0.33,
+              -0.05,
+              0.36,
+              0.11
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "mha_out",
+      "title": "Leave with context",
+      "what_happens": "The context-mixed 512-dim vectors leave the block, heading to Add & Norm (encoder_add_norm_1).",
+      "narration": "Each word now carries information gathered from the whole sentence, for example \"sat\" knows about \"cat\". The attention table from head 1 is the clearest trace of what happened inside.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "self-attention output",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.21,
+              0.34,
+              -0.12,
+              0.4,
+              0.05,
+              0.27,
+              -0.18,
+              0.3
+            ],
+            [
+              0.12,
+              0.46,
+              0.25,
+              -0.08,
+              0.38,
+              0.1,
+              0.29,
+              0.03
+            ],
+            [
+              0.18,
+              0.41,
+              0.2,
+              0.07,
+              0.33,
+              -0.05,
+              0.36,
+              0.11
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        },
+        {
+          "kind": "matrix",
+          "caption": "attention weights, head 1 of 8 (rows = queries)",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "values": [
+            [
+              0.6,
+              0.3,
+              0.1
+            ],
+            [
+              0.2,
+              0.5,
+              0.3
+            ],
+            [
+              0.1,
+              0.6,
+              0.3
+            ]
+          ],
+          "dims": "[1, 8, 3, 3]",
+          "split": 1
+        }
+      ]
+    }
+  ],
+  "output": {
+    "label": "Context-mixed vectors for \"the cat sat\"; head 1's attention shows \"sat\" looking mostly at \"cat\"",
+    "views": [
+      {
+        "kind": "matrix",
+        "caption": "attention weights, head 1 of 8 (rows = queries)",
+        "rows": [
+          "the",
+          "cat",
+          "sat"
+        ],
+        "cols": [
+          "the",
+          "cat",
+          "sat"
+        ],
+        "values": [
+          [
+            0.6,
+            0.3,
+            0.1
+          ],
+          [
+            0.2,
+            0.5,
+            0.3
+          ],
+          [
+            0.1,
+            0.6,
+            0.3
+          ]
+        ],
+        "dims": "[1, 8, 3, 3]",
+        "split": 1
+      }
+    ]
+  },
+  "outro": "Multi-head attention projects each word into 8 small query/key/value spaces, lets each word take a softmax-weighted average of every word's values, then stitches the 8 views back into 512 dimensions with W^O."
+}

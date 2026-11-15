@@ -1,0 +1,792 @@
+{
+  "steps": [
+    {
+      "block_id": "mha_in",
+      "ops": [
+        {
+          "kind": "custom",
+          "caption": "In encoder self-attention, queries, keys and values all come from the same place: x is copied into three streams.",
+          "tokens": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "input": [
+            [
+              0.3,
+              0.5,
+              0.8,
+              1.1,
+              -0.2,
+              1.6,
+              -0.7,
+              1.4
+            ],
+            [
+              0.2,
+              1.4,
+              1,
+              0.2,
+              1.5,
+              0.5,
+              1.3,
+              0.3
+            ],
+            [
+              1.4,
+              -0.2,
+              0.3,
+              0.5,
+              0.7,
+              -0.8,
+              1.1,
+              0.5
+            ]
+          ],
+          "weights": [],
+          "extra": [],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 360 220\"><rect width=\"360\" height=\"220\" fill=\"#fffdf7\"/><rect x=\"20\" y=\"80\" width=\"90\" height=\"60\" fill=\"#f6d77a\" stroke=\"#1e1d1a\"/><text x=\"65\" y=\"108\" font-family=\"sans-serif\" font-size=\"13\" text-anchor=\"middle\" fill=\"#1e1d1a\">x</text><text x=\"65\" y=\"126\" font-family=\"sans-serif\" font-size=\"10\" text-anchor=\"middle\" fill=\"#1e1d1a\">[1,3,512]</text><g stroke=\"#1e1d1a\" stroke-width=\"1.5\"><line x1=\"110\" y1=\"110\" x2=\"240\" y2=\"40\"/><line x1=\"110\" y1=\"110\" x2=\"240\" y2=\"110\"/><line x1=\"110\" y1=\"110\" x2=\"240\" y2=\"180\"/></g><g font-family=\"sans-serif\" font-size=\"13\" text-anchor=\"middle\"><rect x=\"240\" y=\"22\" width=\"90\" height=\"36\" fill=\"#fffdf7\" stroke=\"#1e1d1a\"><animate attributeName=\"fill\" values=\"#fffdf7;#f6d77a;#fffdf7\" dur=\"3s\" begin=\"0s\" repeatCount=\"indefinite\"/></rect><text x=\"285\" y=\"45\" fill=\"#c2410c\">Q (queries)</text><rect x=\"240\" y=\"92\" width=\"90\" height=\"36\" fill=\"#fffdf7\" stroke=\"#1e1d1a\"><animate attributeName=\"fill\" values=\"#fffdf7;#f6d77a;#fffdf7\" dur=\"3s\" begin=\"1s\" repeatCount=\"indefinite\"/></rect><text x=\"285\" y=\"115\" fill=\"#c2410c\">K (keys)</text><rect x=\"240\" y=\"162\" width=\"90\" height=\"36\" fill=\"#fffdf7\" stroke=\"#1e1d1a\"><animate attributeName=\"fill\" values=\"#fffdf7;#f6d77a;#fffdf7\" dur=\"3s\" begin=\"2s\" repeatCount=\"indefinite\"/></rect><text x=\"285\" y=\"185\" fill=\"#c2410c\">V (values)</text></g><circle r=\"5\" fill=\"#c2410c\"><animateMotion path=\"M110,110 L240,40\" dur=\"3s\" begin=\"0s\" repeatCount=\"indefinite\"/></circle><circle r=\"5\" fill=\"#c2410c\"><animateMotion path=\"M110,110 L240,110\" dur=\"3s\" begin=\"1s\" repeatCount=\"indefinite\"/></circle><circle r=\"5\" fill=\"#c2410c\"><animateMotion path=\"M110,110 L240,180\" dur=\"3s\" begin=\"2s\" repeatCount=\"indefinite\"/></circle></svg>"
+        }
+      ]
+    },
+    {
+      "block_id": "query_proj",
+      "ops": [
+        {
+          "kind": "linear",
+          "caption": "Project each word with W^Q_1 (512→64, slice shown 8→4) into head 1's query.",
+          "tokens": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "input": [
+            [
+              0.3,
+              0.5,
+              0.8,
+              1.1,
+              -0.2,
+              1.6,
+              -0.7,
+              1.4
+            ],
+            [
+              0.2,
+              1.4,
+              1,
+              0.2,
+              1.5,
+              0.5,
+              1.3,
+              0.3
+            ],
+            [
+              1.4,
+              -0.2,
+              0.3,
+              0.5,
+              0.7,
+              -0.8,
+              1.1,
+              0.5
+            ]
+          ],
+          "weights": [
+            [
+              0.3,
+              -0.1,
+              0.2,
+              0.1
+            ],
+            [
+              0.1,
+              0.4,
+              -0.2,
+              0
+            ],
+            [
+              -0.2,
+              0.1,
+              0.3,
+              0.2
+            ],
+            [
+              0.2,
+              0,
+              -0.1,
+              0.3
+            ],
+            [
+              0,
+              0.3,
+              0.1,
+              -0.2
+            ],
+            [
+              0.4,
+              -0.1,
+              0,
+              0.1
+            ],
+            [
+              -0.1,
+              0.2,
+              0.3,
+              0
+            ],
+            [
+              0.1,
+              0,
+              -0.2,
+              0.2
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "key_proj",
+      "ops": [
+        {
+          "kind": "linear",
+          "caption": "A separately learned W^K_1 gives each word a key that queries are compared against.",
+          "tokens": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "input": [
+            [
+              0.3,
+              0.5,
+              0.8,
+              1.1,
+              -0.2,
+              1.6,
+              -0.7,
+              1.4
+            ],
+            [
+              0.2,
+              1.4,
+              1,
+              0.2,
+              1.5,
+              0.5,
+              1.3,
+              0.3
+            ],
+            [
+              1.4,
+              -0.2,
+              0.3,
+              0.5,
+              0.7,
+              -0.8,
+              1.1,
+              0.5
+            ]
+          ],
+          "weights": [
+            [
+              0.2,
+              0.1,
+              -0.1,
+              0.3
+            ],
+            [
+              -0.1,
+              0.3,
+              0.2,
+              0
+            ],
+            [
+              0.1,
+              0,
+              0.3,
+              -0.2
+            ],
+            [
+              0.3,
+              -0.2,
+              0,
+              0.1
+            ],
+            [
+              0.1,
+              0.2,
+              0.1,
+              0
+            ],
+            [
+              0.2,
+              0,
+              -0.3,
+              0.2
+            ],
+            [
+              0,
+              0.3,
+              0.2,
+              -0.1
+            ],
+            [
+              0.1,
+              -0.1,
+              0,
+              0.2
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "value_proj",
+      "ops": [
+        {
+          "kind": "linear",
+          "caption": "W^V_1 produces each word's value (d_v = 64), the content that will be mixed.",
+          "tokens": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "input": [
+            [
+              0.3,
+              0.5,
+              0.8,
+              1.1,
+              -0.2,
+              1.6,
+              -0.7,
+              1.4
+            ],
+            [
+              0.2,
+              1.4,
+              1,
+              0.2,
+              1.5,
+              0.5,
+              1.3,
+              0.3
+            ],
+            [
+              1.4,
+              -0.2,
+              0.3,
+              0.5,
+              0.7,
+              -0.8,
+              1.1,
+              0.5
+            ]
+          ],
+          "weights": [
+            [
+              0.2,
+              0,
+              0.1,
+              -0.1
+            ],
+            [
+              -0.1,
+              0.2,
+              0,
+              0.3
+            ],
+            [
+              0.1,
+              -0.2,
+              0.3,
+              0
+            ],
+            [
+              0,
+              0.1,
+              0.2,
+              0.1
+            ],
+            [
+              -0.2,
+              0.3,
+              0,
+              0.2
+            ],
+            [
+              0.3,
+              -0.1,
+              0.1,
+              0
+            ],
+            [
+              0.1,
+              0.2,
+              -0.3,
+              0.1
+            ],
+            [
+              0,
+              0.1,
+              0.2,
+              -0.2
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "scaled_scores",
+      "ops": [
+        {
+          "kind": "linear",
+          "caption": "Dot every query with every key (Q_1 K_1ᵀ); the paper then divides by √d_k = 8 to keep softmax gradients healthy.",
+          "tokens": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "input": [
+            [
+              0.9,
+              0.2,
+              -0.4,
+              0.6
+            ],
+            [
+              0.1,
+              1.1,
+              0.3,
+              -0.2
+            ],
+            [
+              -0.3,
+              1,
+              0.7,
+              0.1
+            ]
+          ],
+          "weights": [
+            [
+              1,
+              0.3,
+              -0.2
+            ],
+            [
+              0.1,
+              1.2,
+              0.6
+            ],
+            [
+              -0.5,
+              0.4,
+              0.5
+            ],
+            [
+              0.4,
+              0,
+              0.3
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "attn_softmax",
+      "ops": [
+        {
+          "kind": "softmax",
+          "caption": "Softmax each row of scaled scores so every query's weights over the words sum to 1 (no mask in the encoder).",
+          "tokens": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "input": [
+            [
+              1.2,
+              0.5,
+              -0.6
+            ],
+            [
+              0.4,
+              1.3,
+              0.8
+            ],
+            [
+              -0.3,
+              1.5,
+              0.8
+            ]
+          ],
+          "weights": [],
+          "extra": [],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "weighted_sum",
+      "ops": [
+        {
+          "kind": "linear",
+          "caption": "head_1 = A_1 V_1: each word takes a weighted average of all value vectors.",
+          "tokens": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "input": [
+            [
+              0.6,
+              0.3,
+              0.1
+            ],
+            [
+              0.2,
+              0.5,
+              0.3
+            ],
+            [
+              0.1,
+              0.6,
+              0.3
+            ]
+          ],
+          "weights": [
+            [
+              0.5,
+              -0.2,
+              0.8,
+              0.1
+            ],
+            [
+              -0.3,
+              0.9,
+              0.2,
+              0.6
+            ],
+            [
+              0.7,
+              0.4,
+              -0.5,
+              -0.2
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "heads_concat",
+      "ops": [
+        {
+          "kind": "concat",
+          "caption": "Place head outputs side by side: Concat(head_1, …, head_8) restores 8·64 = 512 dims (two heads shown).",
+          "tokens": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "input": [
+            [
+              0.3,
+              0.2,
+              0.5,
+              0.2
+            ],
+            [
+              0.2,
+              0.5,
+              0.1,
+              0.3
+            ],
+            [
+              0.1,
+              0.6,
+              0.1,
+              0.3
+            ]
+          ],
+          "weights": [],
+          "extra": [
+            [
+              -0.1,
+              0.4,
+              0,
+              0.3
+            ],
+            [
+              0.4,
+              -0.1,
+              0.2,
+              0.1
+            ],
+            [
+              0.3,
+              0.3,
+              -0.1,
+              0.5
+            ]
+          ],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 8,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "output_proj",
+      "ops": [
+        {
+          "kind": "linear",
+          "caption": "W^O mixes the concatenated heads back into one d_model-wide vector per word.",
+          "tokens": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "input": [
+            [
+              0.3,
+              -0.1,
+              0.4,
+              0.1,
+              0.3,
+              -0.2,
+              0.2,
+              0.1
+            ],
+            [
+              0.2,
+              0.4,
+              -0.1,
+              0.2,
+              0.1,
+              0.4,
+              -0.2,
+              0.2
+            ],
+            [
+              0.1,
+              0.3,
+              0.3,
+              -0.1,
+              0.5,
+              0.1,
+              0.2,
+              -0.1
+            ]
+          ],
+          "weights": [
+            [
+              0.3,
+              0.1,
+              -0.2,
+              0.4,
+              0,
+              0.2,
+              -0.1,
+              0.3
+            ],
+            [
+              0.1,
+              0.4,
+              0.2,
+              -0.1,
+              0.3,
+              0,
+              0.2,
+              0.1
+            ],
+            [
+              -0.1,
+              0.2,
+              0.3,
+              0.1,
+              0.2,
+              0.3,
+              0,
+              0.2
+            ],
+            [
+              0.2,
+              0,
+              0.1,
+              0.3,
+              -0.2,
+              0.1,
+              0.3,
+              0
+            ],
+            [
+              0,
+              0.3,
+              0.1,
+              0,
+              0.4,
+              -0.1,
+              0.3,
+              0.1
+            ],
+            [
+              0.2,
+              0.1,
+              0,
+              0.2,
+              0.1,
+              0.3,
+              -0.2,
+              0.2
+            ],
+            [
+              0.1,
+              -0.1,
+              0.2,
+              0,
+              0.2,
+              0.1,
+              0.4,
+              0
+            ],
+            [
+              0,
+              0.2,
+              -0.1,
+              0.3,
+              0.1,
+              0,
+              0.1,
+              0.3
+            ]
+          ],
+          "extra": [],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    },
+    {
+      "block_id": "mha_out",
+      "ops": [
+        {
+          "kind": "attention",
+          "caption": "Recap of head 1: scaled dot-product attention lets 'sat' gather mostly from 'cat' before the output heads to Add & Norm.",
+          "tokens": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "input": [
+            [
+              0.9,
+              0.2,
+              -0.4,
+              0.6
+            ],
+            [
+              0.1,
+              1.1,
+              0.3,
+              -0.2
+            ],
+            [
+              -0.3,
+              1,
+              0.7,
+              0.1
+            ]
+          ],
+          "weights": [],
+          "extra": [
+            [
+              1,
+              0.1,
+              -0.5,
+              0.4
+            ],
+            [
+              0.3,
+              1.2,
+              0.4,
+              0
+            ],
+            [
+              -0.2,
+              0.6,
+              0.5,
+              0.3
+            ],
+            [
+              0.5,
+              -0.2,
+              0.8,
+              0.1
+            ],
+            [
+              -0.3,
+              0.9,
+              0.2,
+              0.6
+            ],
+            [
+              0.7,
+              0.4,
+              -0.5,
+              -0.2
+            ]
+          ],
+          "fn": "",
+          "size": 1,
+          "stride": 1,
+          "count": 1,
+          "svg": ""
+        }
+      ]
+    }
+  ]
+}
