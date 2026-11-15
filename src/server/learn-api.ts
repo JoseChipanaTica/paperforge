@@ -60,9 +60,18 @@ function ndjson<E>(run: (emit: (e: E) => void) => Promise<void>): Response {
 const publishedGraph = (store: Store, id: string) =>
   store.getPaper(id).catch((err) => (console.error("gallery lookup failed:", err), null));
 
-async function readSample(dir: string, id: string, kind: LearnKind): Promise<AnyArtifact | null> {
+/**
+ * A committed sample, if it fits the paper's published graph. Samples are written for one
+ * graph; if the gallery holds a different one (re-forged and published), a sample whose
+ * blocks don't all exist would leave tour steps and code lines pointing at nothing.
+ */
+async function readSample(dir: string, id: string, kind: LearnKind, published: Architecture | null): Promise<AnyArtifact | null> {
   const f = Bun.file(join(dir, `${fileId(id)}.${kind}.json`));
-  return (await f.exists()) ? (ARTIFACT_SCHEMA[kind].parse(await f.json()) as AnyArtifact) : null;
+  if (!(await f.exists())) return null;
+  const sample = ARTIFACT_SCHEMA[kind].parse(await f.json()) as AnyArtifact;
+  if (!published) return sample;
+  const fits = artifactBlockCount(kind, pruneArtifact(kind, sample, published)) === artifactBlockCount(kind, sample);
+  return fits ? sample : null;
 }
 
 async function readBody(req: Request): Promise<Record<string, unknown> | null> {
@@ -92,7 +101,7 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
         const saved = await d.store.getArtifact(id, k).catch(() => null);
         if (saved) return emit({ type: "learn", kind: k, artifact: saved, source: "gallery", saved: true });
       }
-      const sample = await readSample(d.samplesDir, id, k);
+      const sample = await readSample(d.samplesDir, id, k, published);
       if (sample) return emit({ type: "learn", kind: k, artifact: sample, source: "sample", saved: false });
 
       // A published paper always uses its stored graph; otherwise the visitor's own forge.
@@ -174,9 +183,10 @@ export async function kindsHandler(req: Request, overrides: Partial<LearnDeps> =
   const d = { ...defaultLearnDeps(), ...overrides };
   const id = parseArxivId(new URL(req.url).searchParams.get("arxiv_id") ?? "");
   if (!id) return bad("Expected ?arxiv_id=");
-  const saved = (await publishedGraph(d.store, id)) ? await d.store.listArtifactKinds(id).catch(() => []) : [];
+  const published = await publishedGraph(d.store, id);
+  const saved = published ? await d.store.listArtifactKinds(id).catch(() => []) : [];
   const available = await Promise.all(
-    LEARN_KINDS.map(async (k) => saved.includes(k) || (await Bun.file(join(d.samplesDir, `${fileId(id)}.${k}.json`)).exists())),
+    LEARN_KINDS.map(async (k) => saved.includes(k) || (await readSample(d.samplesDir, id, k, published)) !== null),
   );
   return Response.json(LEARN_KINDS.filter((_, i) => available[i]));
 }

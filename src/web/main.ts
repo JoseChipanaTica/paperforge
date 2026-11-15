@@ -4,7 +4,17 @@ import type { AskTurn, ExampleArtifact, LearnKind, PytorchArtifact, WalkthroughA
 import { Run, ease } from "./anim";
 import { TYPE_COLOR } from "./blocks";
 import { loadGallery } from "./gallery";
-import { LearnError, askBlock, fetchKinds, requestArtifact, revealSymbol, showCode } from "./learn";
+import {
+  InFlight,
+  LearnError,
+  askBlock,
+  askHistoryPayload,
+  fetchKinds,
+  inspectTarget,
+  requestArtifact,
+  revealSymbol,
+  showCode,
+} from "./learn";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
 import { assemble } from "./timeline";
@@ -176,12 +186,19 @@ function showTitle(g: LocatedArchitecture) {
 
 // ---------- inspecting ----------
 
+// What the inspector currently shows; re-rendering the same view would wipe a typed question.
+let shownView: string | null = null;
+
 function inspect(id: string | null) {
   const sb = id ? scene.blocks.get(id) : null;
   if (!sb) {
     inspector.hidden = true;
+    shownView = null;
     return;
   }
+  const view = `${id}${id === pinned ? ":pinned" : ""}:${askHistory.get(id!)?.length ?? 0}`;
+  if (view === shownView && !inspector.hidden) return;
+  shownView = view;
   const b = sb.block;
   const page = b.source ? `p. ${b.source.page + 1}` : null;
   inspector.hidden = false;
@@ -198,8 +215,8 @@ function inspect(id: string | null) {
 }
 
 scene.onHover = (id) => {
-  // A pinned block keeps the inspector (and any question being typed) until another click.
-  if (!document.body.classList.contains("assembling")) inspect(pinned ?? id);
+  // Hover previews other blocks, except while a question about the pinned block is in progress.
+  if (!document.body.classList.contains("assembling")) inspect(inspectTarget(id, pinned, askBusy()));
 };
 
 scene.onClick = (id) => {
@@ -279,7 +296,18 @@ async function publish() {
 
 const learnButtons = () => controls.querySelectorAll<HTMLButtonElement>("[data-learn]");
 
+// One request per kind at a time; a repeat click joins it instead of paying again.
+const learning = new InFlight<Awaited<ReturnType<typeof requestArtifact>>>();
+let asking = false;
+
+/** True while the visitor is typing a question or an answer is streaming in. */
+function askBusy(): boolean {
+  const input = inspector.querySelector<HTMLInputElement>(".ask-form input");
+  return asking || (!!input && (document.activeElement === input || input.value.trim() !== ""));
+}
+
 function resetLearn() {
+  learning.reset();
   tour.stop(false);
   codePanel.hidden = true;
   askHistory.clear();
@@ -299,9 +327,14 @@ async function openLearn(kind: LearnKind) {
   const g = graph;
   setStatus("Loading…");
   try {
-    const { artifact } = await requestArtifact(g.arxiv_id, kind, g, storedKey(), (m) => setStatus(m));
+    const { value, current } = await learning.run(kind, () =>
+      requestArtifact(g.arxiv_id, kind, g, storedKey(), (m) => setStatus(m)),
+    );
     if (graph !== g) return; // the visitor moved on to another paper meanwhile
-    setStatus(null);
+    if (!learning.busy) setStatus(null);
+    else setStatus("Still generating…");
+    if (!current) return; // the visitor asked for something else since; don't yank the view
+    const { artifact } = value;
     controls.querySelector(`[data-learn="${kind}"]`)?.classList.add("ready");
     if (kind === "pytorch") {
       tour.stop(false);
@@ -342,6 +375,7 @@ inspector.addEventListener("submit", async (e) => {
   if (!question || !blockId || !graph) return;
   const g = graph;
   const history = askHistory.get(blockId) ?? [];
+  asking = true;
   const answer = document.createElement("p");
   answer.className = "ask-assistant streaming";
   form.before(Object.assign(document.createElement("p"), { className: "ask-user", textContent: question }), answer);
@@ -349,7 +383,7 @@ inspector.addEventListener("submit", async (e) => {
   input.disabled = true;
   let text = "";
   try {
-    await askBlock(g.arxiv_id, blockId, question, history, g, storedKey(), (d) => (answer.textContent = text += d));
+    await askBlock(g.arxiv_id, blockId, question, askHistoryPayload(history), g, storedKey(), (d) => (answer.textContent = text += d));
     if (graph === g) askHistory.set(blockId, [...history, { role: "user", text: question }, { role: "assistant", text }]);
   } catch (err) {
     const le = err instanceof LearnError ? err : new LearnError(String(err));
@@ -357,6 +391,7 @@ inspector.addEventListener("submit", async (e) => {
     answer.classList.add("ask-error");
     if (le.code === "needs_key") openKey();
   } finally {
+    asking = false;
     answer.classList.remove("streaming");
     input.disabled = false;
   }

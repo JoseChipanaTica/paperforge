@@ -140,3 +140,52 @@ export function revealSymbol(panel: HTMLElement, blockId: string) {
   line.classList.add("lit");
   line.scrollIntoView({ block: "center", behavior: "smooth" });
 }
+
+// ---------- request bookkeeping ----------
+
+/**
+ * The ask history to send: the server takes at most 10 turns of 4000 chars, so send the
+ * recent window (starting on a question) and clip long answers, instead of failing forever.
+ */
+export function askHistoryPayload(turns: AskTurn[], maxTurns = 10, maxChars = 4000): AskTurn[] {
+  let recent = turns.slice(-maxTurns);
+  if (recent[0]?.role === "assistant") recent = recent.slice(1);
+  return recent.map((t) => ({ role: t.role, text: t.text.slice(0, maxChars) }));
+}
+
+/** Which block the inspector shows: hover previews, except while an Ask is being typed or answered. */
+export function inspectTarget(hovered: string | null, pinned: string | null, askBusy: boolean): string | null {
+  return askBusy ? pinned : (hovered ?? pinned);
+}
+
+/**
+ * At most one request per kind in flight (a repeat click reuses it, so it never pays twice),
+ * and only the most recently requested kind is "current" when its result arrives.
+ */
+export class InFlight<T> {
+  private pending = new Map<string, Promise<T>>();
+  private latest: string | null = null;
+
+  get busy() {
+    return this.pending.size > 0;
+  }
+
+  async run(key: string, work: () => Promise<T>): Promise<{ value: T; current: boolean }> {
+    this.latest = key;
+    let p = this.pending.get(key);
+    if (!p) {
+      const q: Promise<T> = work().finally(() => {
+        if (this.pending.get(key) === q) this.pending.delete(key);
+      });
+      this.pending.set(key, (p = q));
+    }
+    const value = await p;
+    return { value, current: this.latest === key };
+  }
+
+  /** Forget everything (a new paper): late results come back as not current. */
+  reset() {
+    this.pending.clear();
+    this.latest = null;
+  }
+}

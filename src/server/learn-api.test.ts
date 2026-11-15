@@ -183,3 +183,26 @@ describe("GET /api/learn", () => {
     expect(await res.json()).toEqual(["pytorch", "walkthrough"]);
   });
 });
+
+describe("samples against a published graph", () => {
+  test("a sample that doesn't fit the published graph is not served or listed", async () => {
+    const store = createStore("sqlite://:memory:");
+    // Someone re-forged and published this paper with different block ids.
+    const other = { ...graph, blocks: graph.blocks.map((b) => ({ ...b, id: `x_${b.id}` })), edges: [] };
+    await store.publishPaper(ID, other);
+    await Bun.write(join(samplesDir, `${ID}.walkthrough.json`), JSON.stringify(walkthrough));
+    next = { ...(walkthrough as object), steps: [{ block_id: "x_inputs", title: "t", narration: "n", shape_change: "s" }] } as AnyArtifact;
+    const e = await learn({ arxiv_id: ID, kind: "walkthrough" }, deps(store));
+    expect(e).toMatchObject({ type: "learn", source: "claude" });
+    const kinds = await kindsHandler(new Request(`http://x/api/learn?arxiv_id=${ID}`), deps(store));
+    expect(await kinds.json()).toEqual(["walkthrough"]); // now saved from Claude, not the sample
+  });
+
+  test("a sample that fits the published graph is still served", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    await Bun.write(join(samplesDir, `${ID}.walkthrough.json`), JSON.stringify(walkthrough));
+    const e = await learn({ arxiv_id: ID, kind: "walkthrough" }, deps(store));
+    expect(e).toMatchObject({ type: "learn", source: "sample" });
+  });
+});
