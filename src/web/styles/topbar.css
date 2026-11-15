@@ -22,6 +22,9 @@
 .forge-form input::placeholder { color: var(--ink-faint); }
 .forge-form .btn-primary { border-radius: 6px; padding: 6px 16px; }
 
+/* On the landing page the hero owns the paste box. */
+body:not(.has-paper) .topbar .forge-form { visibility: hidden; }
+
 .key { display: flex; align-items: center; gap: var(--s2); margin-left: auto; }
 .key .btn.set { color: var(--ink); }
 .key .btn.set::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #5f8a4f; }

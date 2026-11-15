@@ -2,7 +2,8 @@ import "katex/dist/katex.min.css";
 import type { ForgeEvent, LocatedArchitecture } from "../shared/graph";
 import type { AnyArtifact, ExampleArtifact, LearnKind, PytorchArtifact, WalkthroughArtifact } from "../shared/learn";
 import { Run } from "./anim";
-import { loadGallery } from "./gallery";
+import { initLanding } from "./landing";
+import { initToolbar } from "./toolbar";
 import {
   InFlight,
   LearnError,
@@ -109,6 +110,8 @@ async function forgePaper(input: string, refresh = false) {
   run.cancel();
   run = new Run();
   const myRun = run;
+  landing.hide();
+  $<HTMLInputElement>("#url").value = input.includes("/") ? input : `https://arxiv.org/abs/${input}`;
   document.body.classList.add("has-paper");
   setStatus("Fetching paper…");
   overview.setGraph(null);
@@ -190,7 +193,7 @@ async function play(myRun = (run = new Run())) {
     document.body.classList.remove("assembling");
     panel.select("overview");
   }
-  syncToggles();
+  toolbar.sync();
   void refreshKinds();
 }
 
@@ -242,7 +245,7 @@ async function openPaper(blockId?: string) {
 
 // ---------- publishing ----------
 
-const publishBtn = controls.querySelector<HTMLButtonElement>('[data-action="publish"]')!;
+const publishBtn = controls.querySelector<HTMLButtonElement>('[data-action="publish"]')!; // owned by the toolbar
 let shareUrl: string | null = null;
 
 function syncPublish(label = "Publish to gallery") {
@@ -417,53 +420,38 @@ function showArtifact(kind: LearnKind, artifact: AnyArtifact, g: LocatedArchitec
 
 // ---------- controls ----------
 
-function syncToggles() {
-  controls.querySelector('[data-action="explode"]')!.classList.toggle("on", scene.explode > 0.5);
-  controls.querySelector('[data-action="labels"]')!.classList.toggle("on", !document.body.classList.contains("labels-off"));
-  controls.querySelector('[data-action="pulse"]')!.classList.toggle("on", scene.pulsing);
-}
-
 let explodeRun = new Run();
-controls.addEventListener("click", (e) => {
-  const action = (e.target as HTMLElement).closest<HTMLElement>("button")?.dataset.action;
-  switch (action) {
-    case "skip":
-      run.skip();
-      break;
-    case "replay":
-      pinned = null;
-      inspect(null);
-      if (graph) {
-        paper.setPaper(graph.arxiv_id, pages);
-        void play();
-      }
-      break;
-    case "explode": {
-      explodeRun.cancel();
-      explodeRun = new Run();
-      const from = scene.explode;
-      const to = from > 0.5 ? 0 : 1;
-      const d0 = scene.fitDistance;
-      const d1 = scene.distanceFor(to);
-      void explodeRun.tween(900, (t) => {
-        scene.setExplode(from + (to - from) * t);
-        scene.fitDistance = d0 + (d1 - d0) * t;
-      });
-      scene.explode = to; // so the toggle state reads right immediately
-      break;
-    }
-    case "labels":
-      document.body.classList.toggle("labels-off");
-      break;
-    case "pulse":
-      if (scene.pulsing) scene.pulsing = false;
-      else scene.startPulse();
-      break;
-    case "publish":
-      void publish();
-      break;
-  }
-  syncToggles();
+const toolbar = initToolbar(controls, {
+  skip: () => run.skip(),
+  replay() {
+    if (!graph) return;
+    driver.stop();
+    pinned = null;
+    inspect(null);
+    paper.setPaper(graph.arxiv_id, pages);
+    void play();
+  },
+  explode() {
+    explodeRun.cancel();
+    explodeRun = new Run();
+    const from = scene.explode;
+    const to = from > 0.5 ? 0 : 1;
+    const d0 = scene.fitDistance;
+    const d1 = scene.distanceFor(to);
+    void explodeRun.tween(900, (t) => {
+      scene.setExplode(from + (to - from) * t);
+      scene.fitDistance = d0 + (d1 - d0) * t;
+    });
+    scene.explode = to; // so the toggle state reads right immediately
+  },
+  labels: () => document.body.classList.toggle("labels-off"),
+  pulse: () => (scene.pulsing ? (scene.pulsing = false) : scene.startPulse()),
+  publish: () => void publish(),
+  state: () => ({
+    explode: scene.explode > 0.5,
+    labels: !document.body.classList.contains("labels-off"),
+    pulse: scene.pulsing,
+  }),
 });
 
 $<HTMLFormElement>("#forge-form").addEventListener("submit", (e) => {
@@ -472,12 +460,7 @@ $<HTMLFormElement>("#forge-form").addEventListener("submit", (e) => {
   if (value) void forgePaper(value);
 });
 
-document.querySelectorAll<HTMLButtonElement>(".examples button").forEach((btn) =>
-  btn.addEventListener("click", () => {
-    $<HTMLInputElement>("#url").value = `https://arxiv.org/abs/${btn.dataset.paper}`;
-    void forgePaper(btn.dataset.paper!);
-  }),
-);
+const landing = initLanding($("#landing"), { scene, stage: $("#stage"), onForge: (id) => void forgePaper(id) });
 
 window.addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
@@ -493,15 +476,6 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-if (!document.body.classList.contains("has-paper")) {
-  void loadGallery($("#gallery"), (id) => {
-    $<HTMLInputElement>("#url").value = id.includes("/") ? id : `https://arxiv.org/abs/${id}`;
-    void forgePaper(id);
-  });
-}
-
 const initial = new URLSearchParams(location.search).get("paper");
-if (initial) {
-  $<HTMLInputElement>("#url").value = initial.includes("/") ? initial : `https://arxiv.org/abs/${initial}`;
-  void forgePaper(initial);
-}
+if (initial) void forgePaper(initial);
+else landing.preview();

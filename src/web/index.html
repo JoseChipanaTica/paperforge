@@ -41,15 +41,30 @@
         <div class="hero-text">
           <h1>Every paper has a machine inside.</h1>
           <p>Paste an arXiv link. Claude reads the method section, and the architecture builds itself in 3D, every block tied to the sentence it came from.</p>
+          <form id="hero-form" class="forge-form hero-form" autocomplete="off">
+            <label class="sr-only" for="hero-url">arXiv link or id</label>
+            <input id="hero-url" type="text" spellcheck="false" placeholder="arxiv.org/abs/1706.03762" />
+            <button type="submit" class="btn btn-primary">Forge</button>
+          </form>
           <div class="examples">
-            <span>Try</span>
+            <span>Or try</span>
             <button type="button" class="btn" data-paper="1706.03762">Transformer</button>
             <button type="button" class="btn" data-paper="1512.03385">ResNet</button>
             <button type="button" class="btn" data-paper="2010.11929">ViT</button>
           </div>
         </div>
-        <div class="hero-stage" id="hero-stage"></div>
+        <div class="hero-stage" id="hero-stage" aria-label="The Transformer from Attention Is All You Need, printed in 3D"></div>
       </section>
+
+      <section class="how" aria-labelledby="how-title">
+        <h2 id="how-title" class="sr-only">How it works</h2>
+        <ol>
+          <li><b>Paste a link</b><p>Any arXiv paper that proposes a model: a link, or just its id.</p></li>
+          <li><b>Claude reads the method</b><p>It pulls out every block with its equation, tensor shapes and the exact sentence that defines it.</p></li>
+          <li><b>It builds and teaches</b><p>The model assembles in 3D. Then take the walkthrough, an easy example, or the PyTorch code.</p></li>
+        </ol>
+      </section>
+
       <section id="gallery" class="gallery"></section>
     </main>
 
@@ -66,9 +81,9 @@
         <nav id="controls" class="toolbar" aria-label="Model controls" hidden>
           <button data-action="skip" class="btn skip">Skip</button>
           <button data-action="replay" class="btn">Replay</button>
-          <button data-action="explode" class="btn">Explode</button>
-          <button data-action="labels" class="btn on">Labels</button>
-          <button data-action="pulse" class="btn on">Pulse</button>
+          <button data-action="explode" class="btn" aria-pressed="false">Explode</button>
+          <button data-action="labels" class="btn" aria-pressed="true">Labels</button>
+          <button data-action="pulse" class="btn" aria-pressed="true">Pulse</button>
           <button data-action="publish" class="btn publish" hidden>Publish to gallery</button>
         </nav>
       </section>

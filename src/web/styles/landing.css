@@ -5,12 +5,31 @@ body.has-paper .landing { display: none; }
 .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s6); align-items: center; min-height: min(68vh, 620px); }
 .hero-text h1 { font-size: var(--t-hero); line-height: 1.02; font-weight: 400; letter-spacing: -0.025em; max-width: 12ch; }
 .hero-text p { font: var(--t-md) / 1.55 var(--serif); color: var(--ink-soft); max-width: 34em; margin-top: var(--s4); }
-.hero-stage { position: relative; height: min(64vh, 600px); }
+.hero-stage { position: relative; height: min(70vh, 640px); }
+/* Labels may spill into the page margin rather than being cut at the hero's edge. */
+.hero-stage #stage, .hero-stage .label-layer { overflow: visible !important; }
+/* The preview model: labels as quiet tags, no equations, no interaction hint needed. */
+body:not(.has-paper) .bl-eq { display: none; }
+body:not(.has-paper) .block-label { padding: 2px 6px; }
+body:not(.has-paper) .bl-title { font-size: var(--t-xs); }
+
+.hero-form { margin-top: var(--s6); max-width: 520px; padding: 5px; }
+.hero-form input { font-size: var(--t-base); padding: 10px 12px; }
+.hero-form .btn-primary { padding: 10px 22px; font-size: var(--t-base); }
 
 .examples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: var(--s5); font-size: var(--t-sm); color: var(--ink-soft); }
 
-.gallery { margin-top: var(--s7); }
-.gallery h3 { font-size: var(--t-lg); margin-bottom: var(--s4); }
+/* How it works: a real three-step sequence, so it's numbered. */
+.how { margin-top: var(--s7); border-top: 1px solid var(--rule); padding-top: var(--s6); }
+.how ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s6); counter-reset: how; }
+.how li { counter-increment: how; }
+.how li::before { content: counter(how); display: block; font: 400 var(--t-xl) var(--display); color: var(--vermilion); margin-bottom: var(--s2); }
+.how b { font: 500 var(--t-md) var(--display); }
+.how p { font: var(--t-base) / 1.6 var(--serif); color: var(--ink-soft); margin-top: var(--s2); max-width: 30em; }
+
+.gallery { margin-top: var(--s7); border-top: 1px solid var(--rule); padding-top: var(--s6); }
+.gallery h2 { font-size: var(--t-xl); }
+.gallery-lede { font: var(--t-base) / 1.6 var(--serif); color: var(--ink-soft); margin: var(--s2) 0 var(--s5); }
 .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--s3); }
 .gallery-card { display: grid; gap: 2px; text-align: left; padding: var(--s3) var(--s4); background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--r-print); }
 .gallery-card:hover { border-color: var(--ink); }
@@ -22,5 +41,6 @@ body.has-paper .landing { display: none; }
 @media (max-width: 899px) {
   .landing { padding-top: var(--s5); }
   .hero { grid-template-columns: 1fr; min-height: 0; }
-  .hero-stage { height: 46vh; }
+  .hero-stage { height: 52vh; order: -1; }
+  .how ol { grid-template-columns: 1fr; gap: var(--s5); }
 }

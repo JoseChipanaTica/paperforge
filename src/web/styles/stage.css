@@ -27,7 +27,6 @@ body.has-paper .workspace {
 .status.error .spinner { display: none; }
 
 .toolbar { position: absolute; left: var(--s5); bottom: var(--s5); z-index: 5; display: flex; flex-wrap: wrap; gap: 6px; }
-.toolbar .btn.on { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
 .toolbar .skip { display: none; }
 .assembling .toolbar .skip { display: inline-flex; }
 .assembling .toolbar .btn:not(.skip) { display: none; }

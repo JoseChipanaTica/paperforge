@@ -241,6 +241,24 @@ export class ForgeScene {
     this.frame(true);
   }
 
+  /** Load a graph already assembled: no flight, wires drawn, pulse running (the landing preview). */
+  showAssembled(graph: LocatedArchitecture, pad = 1) {
+    this.explode = 0;
+    this.labelAlpha = 1;
+    this.groupAlpha = 1;
+    this.load(graph);
+    for (const sb of this.blocks.values()) {
+      sb.obj.root.visible = true;
+      sb.obj.root.position.copy(sb.assembled);
+    }
+    this.setEdgeProgress(1);
+    this.startPulse();
+    // Pull the camera back so side labels fit a narrower container (the landing hero).
+    const target = this.controls.target;
+    this.camera.position.sub(target).multiplyScalar(pad).add(target);
+    this.fitDistance *= pad;
+  }
+
   /** Camera distance that fits the model, assembled (0) or exploded (1). */
   distanceFor(explode: number): number {
     if (!this.layout) return 30;
