@@ -1,6 +1,6 @@
 import "katex/dist/katex.min.css";
 import type { ForgeEvent, LocatedArchitecture } from "../shared/graph";
-import type { AnyArtifact, JourneyArtifact, LearnKind, PytorchArtifact } from "../shared/learn";
+import { blockEnds, type AnyArtifact, type JourneyArtifact, type LearnKind, type PytorchArtifact } from "../shared/learn";
 import type { MotionArtifact } from "../shared/motion";
 import { FigureSlot, StepFigure, figureState, type FigureStatus } from "./motion/figure";
 import { locateQuote } from "../shared/locate";
@@ -530,16 +530,6 @@ function renderJourney(journey: JourneyArtifact, scope: string, shownGraph: Loca
 // Inside walkthroughs for this paper (English), by block id, so reopening one is free.
 const insideJourneys = new Map<string, Promise<JourneyArtifact>>();
 
-/** What enters and leaves a block in the model's walkthrough, so the inside one continues it. */
-function blockEnds(blockId: string) {
-  const main = artifacts.get("journey") as JourneyArtifact | undefined;
-  const at = main?.steps.findIndex((s) => s.block_id === blockId) ?? -1;
-  return {
-    entering: at > 0 ? main!.steps[at - 1]!.views : at === 0 ? main!.input.views : null,
-    leaving: at >= 0 ? main!.steps[at]!.views : null,
-  };
-}
-
 /** Show the open inside view's own walkthrough in the Walkthrough tab (generating it the first time). */
 async function openInsideJourney(blockId: string) {
   const g = graph;
@@ -555,7 +545,7 @@ async function openInsideJourney(blockId: string) {
         <div class="skeleton"><i></i><i></i><i></i><i></i><i></i></div>
         <p class="learn-progress">${escapeHtml(`Claude is following the input inside ${label}…`)}</p>
       </div>`;
-    const p = requestInsideLearn(g.arxiv_id, blockId, "journey", { graph: g, inside: at.english, ...blockEnds(blockId) }, storedKey(), (m) =>
+    const p = requestInsideLearn(g.arxiv_id, blockId, "journey", { graph: g, inside: at.english, ...blockEnds(artifacts.get("journey") as JourneyArtifact | undefined, blockId) }, storedKey(), (m) =>
       root.querySelector(".learn-progress")?.replaceChildren(m),
     ).then((r) => r.artifact as JourneyArtifact);
     insideJourneys.set(blockId, (pending = p));

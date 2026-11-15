@@ -16,6 +16,7 @@ import {
   type InsideLearnKind,
   type LearnEvent,
   View,
+  blockEnds,
   cleanJourney,
 } from "../shared/learn";
 import { cleanMotion, motionFits, type MotionArtifact } from "../shared/motion";
@@ -348,6 +349,15 @@ export async function insideLearnHandler(req: Request, overrides: Partial<LearnD
         shared = false;
       }
 
+      // What enters and leaves the block: from the main walkthrough everyone sees. A visitor's own
+      // (posted) ends are used when there's none, and then the result is theirs only.
+      const main = (published ? ((await d.store.getArtifact(id, "journey").catch(() => null)) as JourneyArtifact | null) : null) ??
+        (await readJson(join(d.samplesDir, `${fileId(id)}.journey.json`), (v) => JourneyArtifact.parse(v)));
+      const views = (v: unknown) => (Array.isArray(v) ? v.map((x) => View.safeParse(x)).filter((r) => r.success).map((r) => r.data!) : null);
+      const ends = main ? blockEnds(main, blockId) : { entering: views(body?.entering), leaving: views(body?.leaving) };
+      // Ends the visitor posted shape what Claude writes, so that result stays theirs.
+      const ownEnds = kind === "journey" && !main;
+
       let journey: JourneyArtifact | null = null;
       if (kind === "motion") {
         journey = shared && published ? ((await d.store.getInsideLearn(id, blockId, "journey").catch(() => null)) as JourneyArtifact | null) : null;
@@ -376,13 +386,12 @@ export async function insideLearnHandler(req: Request, overrides: Partial<LearnD
       }
 
       emit({ type: "status", message: kind === "journey" ? `Claude is following the input inside ${block.label}…` : `Claude is animating inside ${block.label}…` });
-      const views = (v: unknown) => (Array.isArray(v) ? v.map((x) => View.safeParse(x)).filter((r) => r.success).map((r) => r.data!) : null);
       const pages = await d.loadPages(id);
-      const made = await d.insideLearn(kind, { pages, graph, block, inside, journey: journey ?? undefined, entering: views(body?.entering), leaving: views(body?.leaving), apiKey });
+      const made = await d.insideLearn(kind, { pages, graph, block, inside, journey: journey ?? undefined, ...ends, apiKey });
       const artifact = kind === "journey" ? cleanJourney(made as JourneyArtifact, inside) : cleanMotion(made as MotionArtifact, inside, journey);
       if (!isUsable(kind, artifact) || !fits(artifact)) return fail(UNUSABLE[kind]);
 
-      if (!published || !shared) return done(artifact, "claude", false);
+      if (!published || !shared || ownEnds) return done(artifact, "claude", false);
       try {
         const result = await d.store.putInsideLearn(id, blockId, kind, artifact, { replace: unusable });
         const stored = result === "exists" ? await d.store.getInsideLearn(id, blockId, kind) : artifact;

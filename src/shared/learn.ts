@@ -128,6 +128,16 @@ export function cleanJourney(a: JourneyArtifact, graph: Architecture): JourneyAr
   };
 }
 
+/**
+ * What enters and leaves a block in a walkthrough: the step before's views (the input's, for the
+ * first block) and the block's own. A block's inside walkthrough starts and ends on these.
+ */
+export function blockEnds(journey: JourneyArtifact | null | undefined, blockId: string): { entering: View[] | null; leaving: View[] | null } {
+  const at = journey?.steps.findIndex((s) => s.block_id === blockId) ?? -1;
+  if (!journey || at < 0) return { entering: null, leaving: null };
+  return { entering: at > 0 ? journey.steps[at - 1]!.views : journey.input.views, leaving: journey.steps[at]!.views };
+}
+
 export const ARTIFACT_SCHEMA = {
   pytorch: PytorchArtifact,
   journey: JourneyArtifact,

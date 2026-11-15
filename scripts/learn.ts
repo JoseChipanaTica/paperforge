@@ -5,7 +5,7 @@
 // --write saves it as the committed sample (samples/<id>.<kind>.json, or <id>.inside.<block>.<kind>.json).
 import { Architecture } from "../src/shared/graph";
 import { join } from "node:path";
-import { artifactBlockCount, cleanJourney, JourneyArtifact, LearnKind, pruneArtifact, type AnyArtifact } from "../src/shared/learn";
+import { artifactBlockCount, blockEnds, cleanJourney, JourneyArtifact, LearnKind, pruneArtifact, type AnyArtifact } from "../src/shared/learn";
 import { cleanMotion, type MotionArtifact } from "../src/shared/motion";
 import { forge, loadPaperPages } from "../src/server/forge";
 import { generateArtifact, generateInsideLearn } from "../src/server/tutor";
@@ -44,9 +44,7 @@ if (blockId) {
   if (!block) throw new Error(`No block ${blockId} in ${graph.model_name}`);
   const inside = await need(`inside.${blockId}`, (v) => Architecture.parse(v), "open the block's inside view first");
   const main = await need("journey", (v) => JourneyArtifact.parse(v), "generate the main journey first");
-  const at = main.steps.findIndex((s) => s.block_id === blockId);
-  const entering = at > 0 ? main.steps[at - 1]!.views : at === 0 ? main.input.views : null;
-  const leaving = at >= 0 ? main.steps[at]!.views : null;
+  const { entering, leaving } = blockEnds(main, blockId);
   const journey = kind.data === "motion" ? await need(`inside.${blockId}.journey`, (v) => JourneyArtifact.parse(v), "generate the inside journey first") : undefined;
   const made = await generateInsideLearn(kind.data as "journey" | "motion", { pages, graph, block, inside, entering, leaving, journey });
   artifact = kind.data === "motion" ? cleanMotion(made as MotionArtifact, inside, journey!) : cleanJourney(made as JourneyArtifact, inside);
