@@ -80,3 +80,27 @@
 .code-body .ln.lit { background: var(--highlighter); box-shadow: inset 2px 0 0 var(--ink); }
 .code-notes { margin: 0; padding: var(--s3) var(--s5) var(--s4) calc(var(--s5) + 16px); font: var(--t-sm) / 1.55 var(--serif); color: var(--ink-soft); border-top: 1px solid var(--rule); max-height: 28%; overflow: auto; }
 
+
+/* ---------- phones: the panel becomes a bottom sheet ---------- */
+.sheet-handle { display: none; }
+@media (max-width: 899px) {
+  .panel.sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; height: var(--sheet-h, 64px);
+    border-left: 0; border-top: 1.5px solid var(--ink); border-radius: 14px 14px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    transition: height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .panel.sheet.dragging { transition: none; }
+  .sheet-handle {
+    display: flex; justify-content: center; flex: none; width: 100%; padding: 8px 0 2px;
+    border: 0; background: none; touch-action: none; cursor: grab; border-radius: 14px 14px 0 0;
+  }
+  .sheet-handle span { width: 40px; height: 4px; border-radius: 2px; background: var(--rule-strong); }
+  .tablist { padding: 0 var(--s2); }
+  .tab { padding: 6px 10px 10px; }
+  .tabpanel { padding: var(--s4); }
+  .steps { padding: var(--s4); }
+  .step-nav { padding: var(--s2) var(--s4); }
+  .code-head, .code-note { padding-left: var(--s4); padding-right: var(--s4); }
+  .code-body .ln { padding: 0 var(--s4); }
+}

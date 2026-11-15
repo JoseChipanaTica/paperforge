@@ -26,7 +26,20 @@
 body:not(.has-paper) .topbar .forge-form { visibility: hidden; }
 
 .key { display: flex; align-items: center; gap: var(--s2); margin-left: auto; }
+.key .btn { white-space: nowrap; }
 .key .btn.set { color: var(--ink); }
 .key .btn.set::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #5f8a4f; }
 .key input { width: 230px; background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: var(--r-control); font: var(--t-xs) var(--mono); padding: 7px 9px; outline: 0; }
 .key input:focus { border-color: var(--ink); }
+
+@media (max-width: 899px) {
+  .topbar { padding: 0 var(--s3); gap: var(--s2); }
+  /* The paste box takes the bar while you type in it. */
+  .topbar:focus-within .brand { display: none; }
+  .forge-form { flex: 1 1 auto; box-shadow: 2px 2px 0 var(--ink); }
+  .forge-form input { font-size: 16px; padding: 5px 8px; } /* 16px stops iOS zooming in */
+  .forge-form .btn-primary { padding: 5px 12px; }
+  body.has-paper .brand { font-size: 0; gap: 0; } /* logo only once a paper is open */
+  .key input { position: absolute; top: calc(var(--topbar-h) + 4px); right: var(--s3); width: min(320px, calc(100vw - 24px)); box-shadow: var(--print); }
+  .key .btn { padding: 6px 8px; font-size: var(--t-xs); }
+}

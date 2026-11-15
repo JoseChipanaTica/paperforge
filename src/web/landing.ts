@@ -44,6 +44,7 @@ export function initLanding(root: HTMLElement, deps: LandingDeps) {
       heroStage.append(deps.stage);
       deps.scene.showAssembled(PREVIEW, 1.15);
       deps.scene.setViewShift(0.04); // left-hand labels need more room than right-hand ones
+      deps.scene.sway = !matchMedia("(prefers-reduced-motion: reduce)").matches;
     },
     /** Hand the stage back to the workspace for a real forge. */
     hide() {

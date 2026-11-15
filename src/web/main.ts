@@ -17,6 +17,7 @@ import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
 import type { TabId } from "./panelState";
 import { Overview } from "./overview";
+import { Sheet } from "./sheet";
 import { StudyPanel } from "./studyPanel";
 import { assemble } from "./timeline";
 import { renderSteps } from "./stepsView";
@@ -31,6 +32,14 @@ const statusEl = $("#status");
 const controls = $("#controls");
 const driver = new TourDriver(scene);
 const panel = new StudyPanel($("#panel"));
+const sheet = new Sheet($("#panel"), $<HTMLButtonElement>(".sheet-handle"));
+// On phones, tapping a tab opens the sheet to half.
+$("#panel").addEventListener("click", (e) => {
+  if ((e.target as HTMLElement).closest('[role="tab"]')) sheet.reveal();
+});
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+// Labels crowd a phone-sized stage; start with them off there (the toolbar brings them back).
+if (sheet.active) document.body.classList.add("labels-off");
 const overview = new Overview(panel.tab("overview"), {
   onStart: (kind) => panel.select(kind),
   onShowInPaper: (blockId) => void openPaper(blockId),
@@ -159,6 +168,7 @@ async function handle(e: ForgeEvent, myRun: Run) {
       $("#title").hidden = true;
       paper.setPaper(e.arxiv_id, e.pages);
       panel.select("paper");
+      sheet.snapTo("half"); // phones: the sweep happens in the sheet
       paper.show(true);
       paper.startReading();
       history.replaceState(null, "", `?paper=${encodeURIComponent(e.arxiv_id)}`);
@@ -187,11 +197,13 @@ async function play(myRun = (run = new Run())) {
   document.body.classList.add("assembling");
   controls.hidden = false;
   paper.root.classList.remove("inspect");
-  scene.sway = true;
+  scene.sway = !reducedMotion();
+  if (reducedMotion()) myRun.skip(); // straight to the finished model
   await assemble(scene, paper, graph, myRun);
   if (myRun === run) {
     document.body.classList.remove("assembling");
     panel.select("overview");
+    sheet.snapTo("tabs"); // phones: hand the screen to the model
   }
   toolbar.sync();
   void refreshKinds();
@@ -225,6 +237,7 @@ scene.onClick = (id) => {
   pinned = id;
   inspect(id);
   if (!id) return;
+  sheet.reveal();
   const active = panel.state.active;
   if (active === "pytorch") revealSymbol(panel.tab("pytorch"), id);
   else if (active === "paper") void openPaper(id);
@@ -467,6 +480,7 @@ window.addEventListener("keydown", (e) => {
   if (e.key === " " && document.body.classList.contains("assembling")) run.skip();
   if (e.key === "Escape") {
     if (driver.active) driver.stop();
+    else sheet.snapTo("tabs");
   }
   // Arrow keys step through a tour, unless they're moving between tabs.
   const inTour = driver.active && (panel.state.active === "walkthrough" || panel.state.active === "example");

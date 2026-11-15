@@ -44,3 +44,8 @@ body:not(.has-paper) .bl-title { font-size: var(--t-xs); }
   .hero-stage { height: 52vh; order: -1; }
   .how ol { grid-template-columns: 1fr; gap: var(--s5); }
 }
+
+/* On phones the preview is too narrow for side labels: let the printed model speak alone. */
+@media (max-width: 899px) {
+  body:not(.has-paper) .block-label, body:not(.has-paper) .group-label { display: none; }
+}

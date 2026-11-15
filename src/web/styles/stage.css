@@ -31,3 +31,14 @@ body.has-paper .workspace {
 .assembling .toolbar .skip { display: inline-flex; }
 .assembling .toolbar .btn:not(.skip) { display: none; }
 .toolbar .publish { color: var(--vermilion); border-color: var(--vermilion); }
+
+@media (max-width: 899px) {
+  body.has-paper .workspace { grid-template-columns: 1fr; }
+  .title-card { left: var(--s4); top: var(--s3); max-width: calc(100% - 32px); }
+  .tc-model { font-size: var(--t-lg); }
+  .tc-hparams { display: none; }
+  /* Sit above the collapsed sheet's tabs. */
+  .toolbar { left: var(--s3); right: var(--s3); bottom: calc(64px + var(--s3)); gap: 4px; }
+  .toolbar .btn { padding: 6px 10px; font-size: var(--t-xs); }
+  .status { top: auto; bottom: calc(64px + 56px); }
+}
