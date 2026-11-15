@@ -3,14 +3,15 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Architecture } from "../shared/graph";
-import type { AnyArtifact, AskEvent, InsideEvent, JourneyArtifact, LearnEvent, LearnKind } from "../shared/learn";
-import { askHandler, insideHandler, kindsHandler, learnHandler, type LearnDeps } from "./learn-api";
+import type { AnyArtifact, AskEvent, InsideEvent, InsideLearnEvent, JourneyArtifact, LearnEvent, LearnKind } from "../shared/learn";
+import { askHandler, insideHandler, insideLearnHandler, kindsHandler, learnHandler, type LearnDeps } from "./learn-api";
 import { createStore, type Store } from "./store";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
 const graph = Architecture.parse(await Bun.file(join(SAMPLES, "1706.03762.json")).json());
 const journey = (await Bun.file(join(SAMPLES, "1706.03762.journey.json")).json()) as JourneyArtifact;
 const ID = "2401.00001"; // no committed sample for this id
+const innerGraph = Architecture.parse(await Bun.file(join(SAMPLES, "1706.03762.inside.encoder_self_attention.json")).json());
 
 let calls: { kind: LearnKind; graph: Architecture; apiKey?: string; journey?: JourneyArtifact }[];
 let next: AnyArtifact;
@@ -346,5 +347,81 @@ describe("POST /api/learn, motion", () => {
     const e = await learn({ arxiv_id: ID, kind: "motion" }, deps(store));
     expect(e).toMatchObject({ type: "error", message: "Couldn't animate this model." });
     expect(await store.getArtifact(ID, "motion")).toBeNull();
+  });
+});
+
+describe("POST /api/inside-learn", () => {
+  const B = "encoder_self_attention";
+  const innerIds = innerGraph.blocks.map((b) => b.id);
+  // A journey through the inside graph, built from the main sample's step shape.
+  const innerJourney: JourneyArtifact = { ...journey, steps: innerIds.map((id, i) => ({ ...journey.steps[i % journey.steps.length]!, block_id: id })) };
+  const linear = { kind: "linear", caption: "Mix", tokens: [], input: [[1, 2]], weights: [[1], [1]], extra: [], fn: "", size: 1, stride: 1, count: 1, svg: "" };
+  const innerMotion = { steps: innerIds.map((block_id) => ({ block_id, ops: [linear] })) } as AnyArtifact;
+  let made: { kind: string; inside: Architecture; journey?: JourneyArtifact }[];
+  let produce: AnyArtifact;
+  const withLearn = (store: Store) =>
+    deps(store, {
+      insideLearn: async (kind, o) => {
+        made.push({ kind, inside: o.inside, journey: o.journey });
+        return produce;
+      },
+    });
+  const ask = async (body: unknown, d: Partial<LearnDeps>) =>
+    (await events<InsideLearnEvent>(await insideLearnHandler(post("/api/inside-learn", body), d))).find((e) => e.type !== "status")!;
+
+  beforeEach(() => {
+    made = [];
+    produce = innerJourney;
+  });
+
+  test("serves the committed sample with no key and no Claude call", async () => {
+    await Bun.write(join(samplesDir, `${ID}.inside.${B}.json`), JSON.stringify(innerGraph));
+    await Bun.write(join(samplesDir, `${ID}.inside.${B}.journey.json`), JSON.stringify(innerJourney));
+    const e = await ask({ arxiv_id: ID, block_id: B, kind: "journey", graph }, withLearn(createStore("sqlite://:memory:")));
+    expect(e).toMatchObject({ type: "inside_learn", block_id: B, kind: "journey", source: "sample", saved: false });
+    expect(made).toEqual([]);
+  });
+
+  test("needs the inside graph, and motion needs the walkthrough", async () => {
+    const store = createStore("sqlite://:memory:");
+    expect(await ask({ arxiv_id: ID, block_id: B, kind: "journey", graph }, withLearn(store))).toMatchObject({ code: "bad_input", message: "Open the block's inside view first." });
+    expect(await ask({ arxiv_id: ID, block_id: B, kind: "motion", graph, inside: innerGraph }, withLearn(store))).toMatchObject({ code: "bad_input", message: "Open the walkthrough first." });
+  });
+
+  test("built from a posted inside graph: shown, never saved, even for a published paper", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    const e = await ask({ arxiv_id: ID, block_id: B, kind: "journey", inside: innerGraph }, withLearn(store));
+    expect(e).toMatchObject({ type: "inside_learn", source: "claude", saved: false });
+    expect(made[0]!.inside.blocks.map((b) => b.id)).toEqual(innerIds);
+    expect(await store.getInsideLearn(ID, B, "journey")).toBeNull();
+  });
+
+  test("a published paper's inside walkthrough and motion are saved, then served from the gallery", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    await store.putInside(ID, B, innerGraph);
+    expect(await ask({ arxiv_id: ID, block_id: B, kind: "journey" }, withLearn(store))).toMatchObject({ source: "claude", saved: true });
+    produce = innerMotion;
+    expect(await ask({ arxiv_id: ID, block_id: B, kind: "motion" }, withLearn(store))).toMatchObject({ source: "claude", saved: true });
+    expect(made[1]!.journey!.steps.map((s) => s.block_id)).toEqual(innerIds);
+    expect(await ask({ arxiv_id: ID, block_id: B, kind: "journey" }, withLearn(store))).toMatchObject({ source: "gallery" });
+    expect(made.length).toBe(2);
+  });
+
+  test("a stored journey that doesn't fit the inside graph is regenerated and replaced", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    await store.putInside(ID, B, innerGraph);
+    await store.putInsideLearn(ID, B, "journey", journey); // the main model's steps, not the inside's
+    const e = await ask({ arxiv_id: ID, block_id: B, kind: "journey" }, withLearn(store));
+    expect(e).toMatchObject({ source: "claude", saved: true });
+    expect(((await store.getInsideLearn(ID, B, "journey")) as JourneyArtifact).steps.map((s) => s.block_id)).toEqual(innerIds);
+  });
+
+  test("a journey with fewer than 2 usable steps fails", async () => {
+    produce = { ...innerJourney, steps: [innerJourney.steps[0]!] };
+    const e = await ask({ arxiv_id: ID, block_id: B, kind: "journey", graph, inside: innerGraph }, withLearn(createStore("sqlite://:memory:")));
+    expect(e).toMatchObject({ type: "error", message: "Couldn't build the walkthrough. Try again." });
   });
 });

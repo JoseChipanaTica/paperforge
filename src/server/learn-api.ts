@@ -12,7 +12,11 @@ import {
   type AskEvent,
   type AskTurn,
   type InsideEvent,
+  type InsideLearnEvent,
+  type InsideLearnKind,
   type LearnEvent,
+  View,
+  cleanJourney,
 } from "../shared/learn";
 import { cleanMotion, motionFits, type MotionArtifact } from "../shared/motion";
 import { DEFAULT_LEVEL, Lang, Level } from "../shared/translate";
@@ -20,7 +24,7 @@ import { errorMessage } from "./api";
 import { parseArxivId } from "./arxiv";
 import { loadPaperPages } from "./forge";
 import { getStore, type Store } from "./store";
-import { askStream, generateArtifact, generateInside } from "./tutor";
+import { askStream, generateArtifact, generateInside, generateInsideLearn } from "./tutor";
 
 /** Routes for the learning features: /api/learn (generate or fetch), /api/ask, GET /api/learn (kinds), /api/inside. */
 
@@ -29,6 +33,7 @@ export interface LearnDeps {
   generate: typeof generateArtifact;
   ask: typeof askStream;
   inside: typeof generateInside;
+  insideLearn: typeof generateInsideLearn;
   loadPages: (id: string) => Promise<string[]>;
   samplesDir: string;
 }
@@ -39,6 +44,7 @@ export function defaultLearnDeps(): LearnDeps {
     generate: generateArtifact,
     ask: askStream,
     inside: generateInside,
+    insideLearn: generateInsideLearn,
     loadPages: (id) => loadPaperPages(id),
     samplesDir: join(import.meta.dir, "..", "..", "samples"),
   };
@@ -282,6 +288,108 @@ export async function insideHandler(req: Request, overrides: Partial<LearnDeps> 
       } catch (err) {
         console.error("inside view save failed:", err);
         done(inside, "claude", false);
+      }
+    } catch (err) {
+      console.error(err);
+      emit({ type: "error", ...errorMessage(err) });
+    }
+  });
+}
+
+/** Every step on a block of this graph, and at least two of them. */
+const journeyFits = (j: JourneyArtifact, graph: Architecture) => j.steps.length >= 2 && cleanJourney(j, graph).steps.length === j.steps.length;
+
+/** Read and validate a committed sample file, or null. */
+async function readJson<T>(path: string, parse: (v: unknown) => T): Promise<T | null> {
+  const f = Bun.file(path);
+  if (!(await f.exists())) return null;
+  try {
+    return parse(await f.json());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * POST /api/inside-learn { arxiv_id, block_id, kind: "journey" | "motion", graph?, inside?, journey?,
+ * entering?, leaving? }: a walkthrough of a block's inside view, or its motion. Same order as
+ * /api/learn: gallery → committed sample → Claude. Saved only for a published paper, and only when
+ * everything it was built from (the inside graph, and for motion the journey) is shared too.
+ */
+export async function insideLearnHandler(req: Request, overrides: Partial<LearnDeps> = {}): Promise<Response> {
+  const d = { ...defaultLearnDeps(), ...overrides };
+  const body = await readBody(req);
+  const apiKey = keyOf(req);
+
+  return ndjson<InsideLearnEvent>(async (emit) => {
+    const fail = (message: string, code?: "bad_input") => emit({ type: "error", message, ...(code && { code }) });
+    const id = parseArxivId(String(body?.arxiv_id ?? ""));
+    const blockId = typeof body?.block_id === "string" ? body.block_id : "";
+    const kind = body?.kind === "journey" || body?.kind === "motion" ? (body.kind as InsideLearnKind) : null;
+    if (!id || !/^[\w-]{1,100}$/.test(blockId) || !kind) return fail("Expected an arXiv id, a block_id and a kind (journey or motion).", "bad_input");
+
+    try {
+      const published = await publishedGraph(d.store, id);
+      const posted = Architecture.safeParse(body?.graph);
+      const graph = published ?? (posted.success ? posted.data : null);
+      if (!graph) return fail("Forge the paper first, then try again.", "bad_input");
+      const block = graph.blocks.find((b) => b.id === blockId);
+      if (!block) return fail("That block isn't in this model.", "bad_input");
+      const base = `${fileId(id)}.inside.${blockId}`;
+
+      // The inside graph: gallery, then sample, then the visitor's (which makes the result theirs only).
+      let shared = true;
+      let inside = published ? await d.store.getInside(id, blockId).catch(() => null) : null;
+      inside ??= await readJson(join(d.samplesDir, `${base}.json`), (v) => Architecture.parse(v));
+      if (!inside) {
+        const p = Architecture.safeParse(body?.inside);
+        if (!p.success) return fail("Open the block's inside view first.", "bad_input");
+        inside = p.data;
+        shared = false;
+      }
+
+      let journey: JourneyArtifact | null = null;
+      if (kind === "motion") {
+        journey = shared && published ? ((await d.store.getInsideLearn(id, blockId, "journey").catch(() => null)) as JourneyArtifact | null) : null;
+        journey ??= shared ? await readJson(join(d.samplesDir, `${base}.journey.json`), (v) => JourneyArtifact.parse(v)) : null;
+        if (!journey) {
+          const p = JourneyArtifact.safeParse(body?.journey);
+          if (!p.success) return fail("Open the walkthrough first.", "bad_input");
+          journey = p.data;
+          shared = false;
+        }
+      }
+      const g = inside;
+      const fits = (a: AnyArtifact) => (kind === "journey" ? journeyFits(a as JourneyArtifact, g) : motionFits(a as MotionArtifact, journey!));
+      const done = (artifact: AnyArtifact, source: "gallery" | "sample" | "claude", saved: boolean) =>
+        emit({ type: "inside_learn", block_id: blockId, kind, artifact, source, saved });
+
+      let unusable = false;
+      if (published && shared) {
+        const saved = await d.store.getInsideLearn(id, blockId, kind).catch(() => null);
+        if (saved && fits(saved)) return done(saved, "gallery", true);
+        unusable = saved !== null;
+      }
+      if (shared) {
+        const sample = await readJson(join(d.samplesDir, `${base}.${kind}.json`), (v) => ARTIFACT_SCHEMA[kind].parse(v) as AnyArtifact);
+        if (sample && fits(sample)) return done(sample, "sample", false);
+      }
+
+      emit({ type: "status", message: kind === "journey" ? `Claude is following the input inside ${block.label}…` : `Claude is animating inside ${block.label}…` });
+      const views = (v: unknown) => (Array.isArray(v) ? v.map((x) => View.safeParse(x)).filter((r) => r.success).map((r) => r.data!) : null);
+      const pages = await d.loadPages(id);
+      const made = await d.insideLearn(kind, { pages, graph, block, inside, journey: journey ?? undefined, entering: views(body?.entering), leaving: views(body?.leaving), apiKey });
+      const artifact = kind === "journey" ? cleanJourney(made as JourneyArtifact, inside) : cleanMotion(made as MotionArtifact, inside, journey);
+      if (!isUsable(kind, artifact) || !fits(artifact)) return fail(UNUSABLE[kind]);
+
+      if (!published || !shared) return done(artifact, "claude", false);
+      try {
+        const result = await d.store.putInsideLearn(id, blockId, kind, artifact, { replace: unusable });
+        const stored = result === "exists" ? await d.store.getInsideLearn(id, blockId, kind) : artifact;
+        done(stored ?? artifact, "claude", true);
+      } catch (err) {
+        console.error("inside walkthrough save failed:", err);
+        done(artifact, "claude", false);
       }
     } catch (err) {
       console.error(err);

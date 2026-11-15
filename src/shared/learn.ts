@@ -170,6 +170,12 @@ export type InsideEvent =
   | { type: "inside"; block_id: string; graph: Architecture; source: "gallery" | "sample" | "claude"; saved: boolean }
   | LearnError;
 
+/** A block's inside walkthrough or its motion (POST /api/inside-learn). */
+export type InsideLearnEvent =
+  | { type: "status"; message: string }
+  | { type: "inside_learn"; block_id: string; kind: InsideLearnKind; artifact: AnyArtifact; source: "gallery" | "sample" | "claude"; saved: boolean }
+  | LearnError;
+
 export interface AskTurn {
   role: "user" | "assistant";
   text: string;

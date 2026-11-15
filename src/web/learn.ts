@@ -1,5 +1,5 @@
 import type { Architecture, LocatedArchitecture } from "../shared/graph";
-import type { AnyArtifact, AskEvent, AskTurn, InsideEvent, JourneyArtifact, LearnEvent, LearnKind } from "../shared/learn";
+import type { AnyArtifact, AskEvent, AskTurn, InsideEvent, InsideLearnEvent, InsideLearnKind, JourneyArtifact, LearnEvent, LearnKind, View } from "../shared/learn";
 import type { Lang, Level } from "../shared/translate";
 
 /** Browser side of the learning features: the /api/learn and /api/ask clients and the code panel. */
@@ -103,6 +103,29 @@ export async function requestInside(
   for await (const e of lines<InsideEvent>(res)) {
     if (e.type === "status") onStatus(e.message);
     else if (e.type === "inside") return e.graph;
+    else throw new LearnError(e.message, e.code);
+  }
+  throw new LearnError("The server stopped before finishing.");
+}
+
+/** A block's inside walkthrough or its motion, built from (or for) the inside graph shown. */
+export async function requestInsideLearn(
+  id: string,
+  blockId: string,
+  kind: InsideLearnKind,
+  body: { graph: Architecture; inside: Architecture; journey?: JourneyArtifact; entering?: View[] | null; leaving?: View[] | null },
+  key: string,
+  onStatus: (message: string) => void,
+): Promise<{ artifact: AnyArtifact; source: string; saved: boolean }> {
+  const res = await fetch("/api/inside-learn", {
+    method: "POST",
+    headers: headers(key),
+    body: JSON.stringify({ arxiv_id: id, block_id: blockId, kind, ...body }),
+  }).catch(() => null);
+  if (!res?.body) throw new LearnError("Can't reach the Paperforge server.");
+  for await (const e of lines<InsideLearnEvent>(res)) {
+    if (e.type === "status") onStatus(e.message);
+    else if (e.type === "inside_learn") return e;
     else throw new LearnError(e.message, e.code);
   }
   throw new LearnError("The server stopped before finishing.");
