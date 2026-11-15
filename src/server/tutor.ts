@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { Architecture, type Block } from "../shared/graph";
-import { ARTIFACT_SCHEMA, type AnyArtifact, type AskTurn, type JourneyArtifact, type LearnKind } from "../shared/learn";
+import { ARTIFACT_SCHEMA, type AnyArtifact, type AskTurn, type InsideLearnKind, type JourneyArtifact, type LearnKind, type View } from "../shared/learn";
 import { MotionArtifact } from "../shared/motion";
 import { HIGHLIGHTER, INK, SHEET, VERMILION } from "../shared/palette";
 import { DEFAULT_LEVEL, languageName, levelReader, type Lang, type Level } from "../shared/translate";
@@ -105,6 +105,45 @@ ${JSON.stringify(journey)}
 </journey>`;
 }
 
+/**
+ * A walkthrough of a block's inside view: the main walkthrough's input followed through the inside
+ * graph, starting from what enters the block and ending at what leaves it (when the main
+ * walkthrough is known), so the two walkthroughs line up.
+ */
+export function insideJourneyTask(block: Block, inside: Architecture, entering: View[] | null, leaving: View[] | null): string {
+  const ends =
+    entering && leaving
+      ? `- Start exactly from <entering> (the data reaching "${block.id}" in the model's main walkthrough) and end matching <leaving> (what leaves it), keeping the same row labels.
+
+<entering>
+${JSON.stringify(entering)}
+</entering>
+
+<leaving>
+${JSON.stringify(leaving)}
+</leaving>`
+      : `- The model's main walkthrough isn't known: choose one small, concrete input that fits the paper and what enters "${block.id}" (input_shape ${block.input_shape}).`;
+  return `Follow one input through the inside of the block "${block.id}" (${block.label}), whose internal structure is <inside> (JSON, same shape as <graph>).
+- steps: one per block of <inside>, using <inside>'s ids (not <graph>'s), in data-flow order.
+${ends}
+${LEARN_TASK.journey}
+
+<inside>
+${JSON.stringify(inside)}
+</inside>`;
+}
+
+export function insideJourneyRequest(
+  pages: string[],
+  graph: Architecture,
+  block: Block,
+  inside: Architecture,
+  entering: View[] | null,
+  leaving: View[] | null,
+) {
+  return tutorRequest(pages, graph, `${insideJourneyTask(block, inside, entering, leaving)}\n\nWrite it as the "journey" shape of artifact.`, ANY_ARTIFACT);
+}
+
 export function motionRequest(pages: string[], graph: Architecture, journey: JourneyArtifact) {
   return tutorRequest(pages, graph, motionTask(journey), MOTION_ARTIFACT);
 }
@@ -187,6 +226,34 @@ export async function generateArtifact(
   const request = kind === "motion" ? motionRequest(pages, graph, journey!) : learnRequest(kind, pages, graph);
   const response = await client(apiKey).beta.messages.parse(request);
   logUsage(kind, response.usage);
+  if (response.stop_reason === "refusal") {
+    throw new Error(`Claude declined to write this (${response.stop_details?.category ?? "unspecified"}).`);
+  }
+  if (response.stop_reason === "max_tokens") throw new Error("Claude ran out of output tokens before finishing.");
+  const parsed = ARTIFACT_SCHEMA[kind].safeParse(response.parsed_output?.artifact);
+  if (!parsed.success) throw new Error("Claude returned something that didn't match the expected format.");
+  return parsed.data as AnyArtifact;
+}
+
+/** A block's inside walkthrough (journey) or its motion: the same artifacts, for the inside graph. */
+export async function generateInsideLearn(
+  kind: InsideLearnKind,
+  o: {
+    pages: string[];
+    graph: Architecture;
+    block: Block;
+    inside: Architecture;
+    entering?: View[] | null;
+    leaving?: View[] | null;
+    journey?: JourneyArtifact;
+    apiKey?: string;
+  },
+): Promise<AnyArtifact> {
+  if (kind === "motion" && !o.journey) throw new Error("Motion needs the walkthrough it animates.");
+  const request =
+    kind === "motion" ? motionRequest(o.pages, o.graph, o.journey!) : insideJourneyRequest(o.pages, o.graph, o.block, o.inside, o.entering ?? null, o.leaving ?? null);
+  const response = await client(o.apiKey).beta.messages.parse(request);
+  logUsage(`inside ${o.block.id} ${kind}`, response.usage);
   if (response.stop_reason === "refusal") {
     throw new Error(`Claude declined to write this (${response.stop_details?.category ?? "unspecified"}).`);
   }

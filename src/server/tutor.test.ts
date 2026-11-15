@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Architecture } from "../shared/graph";
-import { askRequest, cleanInside, insideRequest, learnRequest, motionRequest } from "./tutor";
+import { askRequest, cleanInside, insideJourneyRequest, insideRequest, learnRequest, motionRequest } from "./tutor";
 import type { JourneyArtifact } from "../shared/learn";
 
 const graph = Architecture.parse(await Bun.file(join(import.meta.dir, "../../samples/1706.03762.json")).json());
@@ -114,5 +114,37 @@ describe("motionRequest", () => {
     const task = (firstContent(motion) as { text: string }[])[2]!.text;
     expect(task).toContain("<journey>");
     for (const s of journey.steps) expect(task).toContain(s.block_id);
+  });
+});
+
+describe("insideJourneyRequest", () => {
+  const SAMPLES = join(import.meta.dir, "../../samples");
+  const loadInside = async () => Architecture.parse(await Bun.file(join(SAMPLES, "1706.03762.inside.encoder_self_attention.json")).json());
+
+  test("shares the system prompt, paper prefix and format with the main journey", async () => {
+    const inside = await loadInside();
+    const req = insideJourneyRequest(pages, graph, block, inside, null, null);
+    const main = learnRequest("journey", pages, graph);
+    expect(req.system).toBe(main.system);
+    expect(prefix(firstContent(req))).toBe(prefix(firstContent(main)));
+    expect(JSON.stringify(req.output_config.format.schema)).toBe(JSON.stringify(main.output_config.format.schema));
+  });
+
+  test("names every inside block and carries what enters and leaves the block", async () => {
+    const inside = await loadInside();
+    const journey = (await Bun.file(join(SAMPLES, "1706.03762.journey.json")).json()) as JourneyArtifact;
+    const at = journey.steps.findIndex((s) => s.block_id === block.id);
+    const req = insideJourneyRequest(pages, graph, block, inside, journey.steps[at - 1]!.views, journey.steps[at]!.views);
+    const task = (firstContent(req) as { text: string }[])[2]!.text;
+    for (const b of inside.blocks) expect(task).toContain(b.id);
+    expect(task).toContain("<entering>");
+    expect(task).toContain(journey.steps[at]!.views[0]!.caption);
+    expect(task).toContain('"journey" shape');
+  });
+
+  test("without the main walkthrough it lets Claude choose a small input", async () => {
+    const task = (firstContent(insideJourneyRequest(pages, graph, block, await loadInside(), null, null)) as { text: string }[])[2]!.text;
+    expect(task).not.toContain("<entering>");
+    expect(task).toContain("choose");
   });
 });
