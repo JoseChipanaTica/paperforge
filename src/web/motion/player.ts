@@ -49,7 +49,11 @@ export class Player {
     if (!last) return;
     const keep = new Set(last.items.map((i) => i.id));
     for (const [id, el] of this.els) if (!keep.has(id)) this.drop(id, el);
-    for (const item of last.items) this.apply(item, this.element(item), 1, item.attrs);
+    for (const item of last.items) {
+      const el = this.element(item);
+      this.apply(item, el, 1, item.attrs);
+      this.svg.appendChild(el);
+    }
   }
 
   stop() {
@@ -106,6 +110,8 @@ export class Player {
       if (item.text !== undefined) el.textContent = item.text;
       return { item, el, from };
     });
+    // SVG paints in document order: keep the frame's order (ghosts listed first stay behind).
+    for (const { el } of starts) this.svg.appendChild(el);
     const begin = this.now();
     return new Promise((resolve) => {
       const step = (time: number) => {

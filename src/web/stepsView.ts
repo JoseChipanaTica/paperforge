@@ -13,6 +13,7 @@ import { shapeHtml } from "./trace";
 export function stepHtml(s: TourStep, traced: string | null): string {
   return `
     <p class="step-what"><b>${escapeHtml(s.what)}</b></p>
+    <div class="step-figure" hidden></div>
     <p>${escapeHtml(s.body)}</p>
     ${s.shape ? `<p class="step-shape">${shapeHtml(s.shape, traced)}</p>` : ""}
     ${s.views.length ? `<ul class="step-views" aria-label="On the card">${s.views.map((v) => `<li>${escapeHtml(v.caption)}</li>`).join("")}</ul>` : ""}`;
@@ -53,7 +54,7 @@ export function renderSteps(
               <span class="step-n">${i + 1}</span>
               <span class="step-title">${escapeHtml(s.title || label(s.block_id))}</span>
             </button>
-            <div class="step-body">${stepHtml(s, traced)}<div class="step-figure" hidden></div></div>
+            <div class="step-body">${stepHtml(s, traced)}</div>
           </li>`,
           )
           .join("")}

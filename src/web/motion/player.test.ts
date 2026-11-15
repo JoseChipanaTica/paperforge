@@ -17,6 +17,7 @@ class FakeEl {
     return this.attrs.get(k) ?? null;
   }
   appendChild(c: FakeEl) {
+    c.remove(); // like the DOM: appending an existing child moves it
     c.parent = this;
     this.children.push(c);
     return c;
@@ -113,6 +114,17 @@ describe("Player", () => {
     await done;
     expect(svg.children.find((e) => e.attrs.get("data-id") === "a")!.attrs.get("x")).toBe(before);
     expect(c.pending).toBe(0);
+  });
+
+  test("paint order follows the frame's item order, even for items added later", async () => {
+    const svg = new FakeEl("svg");
+    const c = clock();
+    const p = new Player(svg as never, doc as never, c.raf, c.now);
+    const behind: Frame = { dur: 10, items: [{ id: "ghost", tag: "rect", attrs: { x: 0 } }, { id: "a", tag: "rect", attrs: { x: 0 } }] };
+    const done = p.play([{ dur: 10, items: [{ id: "a", tag: "rect", attrs: { x: 0 } }] }, behind]);
+    for (let i = 0; i < 6; i++) await c.tick(10);
+    await done;
+    expect(svg.children.map((e) => e.attrs.get("data-id"))).toEqual(["ghost", "a"]);
   });
 
   test("showFinal draws the last frame at once", () => {

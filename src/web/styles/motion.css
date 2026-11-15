@@ -1,5 +1,5 @@
 /* Step motion: under the current walkthrough step, a printed figure of the block doing its work. */
-.step-figure { margin-top: var(--s3); }
+.step-figure { margin: var(--s3) 0; }
 .motion { margin: 0; }
 .motion-stage {
   background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: var(--r-print);

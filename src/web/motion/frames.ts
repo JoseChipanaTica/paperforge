@@ -97,6 +97,9 @@ export function grid(
 ): Item[] {
   const [lo, hi] = o.scale ?? range(m);
   const items: Item[] = [];
+  // One number size for the whole grid, sized for its longest number (monospace digits ≈ 0.6 em).
+  const longest = Math.max(1, ...m.flat().map((v) => fmt(v).length));
+  const size = Math.min(9, (cell - 3) / (longest * 0.6));
   m.forEach((row, i) =>
     row.forEach((v, j) => {
       const cx = x + j * cell;
@@ -106,7 +109,7 @@ export function grid(
         tag: "rect",
         attrs: { x: cx, y: cy, width: cell - 1, height: cell - 1, fill: o.fill?.(i, j, v) ?? shade(v, lo, hi), stroke: COLOR.ink, "stroke-width": 0.5, opacity: o.opacity?.(i, j) ?? 1 },
       });
-      if ((o.numbers ?? cell >= 18) && Number.isFinite(v)) items.push(label(`${id}-n-${i}-${j}`, fmt(v), cx + (cell - 1) / 2, cy + (cell - 1) / 2, { size: Math.min(9, cell * 0.42) }));
+      if ((o.numbers ?? cell >= 18) && Number.isFinite(v)) items.push(label(`${id}-n-${i}-${j}`, fmt(v), cx + (cell - 1) / 2, cy + (cell - 1) / 2, { size }));
     }),
   );
   return items;

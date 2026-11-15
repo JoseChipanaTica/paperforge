@@ -65,13 +65,14 @@ const convolution: Template = (op, x, r) => {
         grid("out", out, ox, oy, oc, { scale: os, opacity: (i, j) => (filled.has(`${i}-${j}`) ? 1 : 0.12) }),
         cur && box("win", ix + cur.p[1]! * c - 1, iy + cur.p[0]! * c - 1, ((k.length - 1) * dil + 1) * c + 1, ((cols(k) - 1) * dil + 1) * c + 1, { stroke: COLOR.result, width: 2, dash: dil > 1 }),
         cur && box("hit", ox + cur.j * oc - 1, oy + cur.i * oc - 1, oc + 1, oc + 1, { stroke: COLOR.result, width: 2 }),
-        cur && label("sum", `Σ window × kernel = ${fmt(out[cur.i]![cur.j]!)}`, 236, 190, { anchor: "start", size: 9 }),
+        cur && label("sum", `Σ window × kernel = ${fmt(out[cur.i]![cur.j]!)}`, W / 2, 206, { size: 9 }),
       );
     }),
   );
   if (op.count > 1) {
-    const ghosts = [3, 2, 1].map((g) => box(`ghost-${g}`, ox + g * 5, oy - g * 5, cols(out) * oc, out.length * oc, { stroke: COLOR.soft, opacity: 0.6 }));
-    frames.push(frame(STEP * 2, base, ghosts, grid("out", out, ox, oy, oc, { scale: os }), label("sum", `× ${op.count} filters, one map each`, 236, 190, { anchor: "start", size: 9, weight: 600 })));
+    // The other filters' maps, stacked behind this one like a deck of cards.
+    const ghosts = [3, 2, 1].map((g) => box(`ghost-${g}`, ox + g * 4, oy + g * 4, cols(out) * oc, out.length * oc, { fill: COLOR.paper, stroke: COLOR.soft, opacity: 0.8 }));
+    frames.push(frame(STEP * 2, base, ghosts, grid("out", out, ox, oy, oc, { scale: os }), label("sum", `× ${op.count} filters, one map each`, W / 2, 206, { size: 9, weight: 600 })));
   }
   return frames;
 };
@@ -117,7 +118,8 @@ const pooling: Template = (op, x, r) => {
       base,
       grid("out", out, ox, oy, oc, { scale: xs, opacity: (i, j) => (filled.has(`${i}-${j}`) ? 1 : 0.12) }),
       cur && box("win", ix + (op.fn === "avg" ? cur[1]! : cur[1]! - ((cur[1]! - cur[3]! * op.stride) % op.size)) * c - 1, iy + (op.fn === "avg" ? cur[0]! : cur[0]! - ((cur[0]! - cur[2]! * op.stride) % op.size)) * c - 1, op.size * c + 1, op.size * c + 1, { stroke: COLOR.result, width: 2 }),
-      cur && op.fn !== "avg" && dot("pick", ix + cur[1]! * c + c / 2, iy + cur[0]! * c + c / 2, Math.min(5, c / 3)),
+      // A ring, not a dot: the picked number stays readable.
+      cur && op.fn !== "avg" && box("pick", ix + cur[1]! * c + 1, iy + cur[0]! * c + 1, c - 3, c - 3, { stroke: COLOR.result, width: 2.5 }),
     );
   });
 };
@@ -128,8 +130,8 @@ const attention: Template = (op, _x, r) => {
   const m = cols(scores!);
   const rowsL = names(op, n, "q");
   const colsL = op.fn === "cross" ? Array.from({ length: m }, (_, j) => op.tokens[n + j] ?? `k${j + 1}`) : names(op, m, "k");
-  const c = fit(n, m, 120, 120);
-  const [gx, gy] = [70, 36];
+  const c = fit(n, m, 130, 130, 34);
+  const [gx, gy] = [64, 36];
   const vc = fit(1, cols(v!), 70, 20, 14);
   const header = [...rowLabels("rl", rowsL, gx, gy, c), ...colsL.map((t, j) => label(`cl-${j}`, t.slice(0, 6), gx + j * c + c / 2, gy - 8, { size: 8 }))];
   const sc = range(scores!);
