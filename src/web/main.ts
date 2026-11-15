@@ -1,6 +1,6 @@
 import "katex/dist/katex.min.css";
 import type { ForgeEvent, LocatedArchitecture } from "../shared/graph";
-import type { AskTurn, ExampleArtifact, LearnKind, PytorchArtifact, WalkthroughArtifact } from "../shared/learn";
+import type { AnyArtifact, AskTurn, ExampleArtifact, LearnKind, PytorchArtifact, WalkthroughArtifact } from "../shared/learn";
 import { Run, ease } from "./anim";
 import { TYPE_COLOR } from "./blocks";
 import { loadGallery } from "./gallery";
@@ -17,6 +17,8 @@ import {
 } from "./learn";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
+import type { TabId } from "./panelState";
+import { StudyPanel } from "./studyPanel";
 import { assemble } from "./timeline";
 import { Tour, tourSteps } from "./tour";
 
@@ -28,7 +30,16 @@ const statusEl = $("#status");
 const inspector = $("#inspector");
 const controls = $("#controls");
 const codePanel = $("#code");
-const tour = new Tour(scene, $("#tour"));
+const tourRoot = $("#tour");
+const tour = new Tour(scene, tourRoot);
+const panel = new StudyPanel($("#panel"));
+panel.tab("overview").append(inspector);
+panel.tab("paper").append($("#paper"));
+panel.tab("pytorch").append(codePanel);
+const learnSlot: Record<"walkthrough" | "example", HTMLElement> = {
+  walkthrough: panel.tab("walkthrough").appendChild(document.createElement("div")),
+  example: panel.tab("example").appendChild(document.createElement("div")),
+};
 
 let run = new Run();
 let graph: LocatedArchitecture | null = null;
@@ -94,9 +105,9 @@ async function forgePaper(input: string, refresh = false) {
   run.cancel();
   run = new Run();
   const myRun = run;
-  document.body.classList.remove("empty");
+  document.body.classList.add("has-paper");
   setStatus("Fetching paper…");
-  inspector.hidden = true;
+  inspector.replaceChildren();
   pinned = null;
   rawGraph = saveToken = shareUrl = null;
   syncPublish();
@@ -140,6 +151,7 @@ async function handle(e: ForgeEvent, myRun: Run) {
       scene.clear();
       $("#title").hidden = true;
       paper.setPaper(e.arxiv_id, e.pages);
+      panel.select("paper");
       paper.show(true);
       paper.startReading();
       history.replaceState(null, "", `?paper=${encodeURIComponent(e.arxiv_id)}`);
@@ -169,7 +181,10 @@ async function play(myRun = (run = new Run())) {
   paper.root.classList.remove("inspect");
   scene.sway = true;
   await assemble(scene, paper, graph, myRun);
-  if (myRun === run) document.body.classList.remove("assembling");
+  if (myRun === run) {
+    document.body.classList.remove("assembling");
+    panel.select("overview");
+  }
   syncToggles();
   void refreshKinds();
 }
@@ -192,16 +207,15 @@ let shownView: string | null = null;
 function inspect(id: string | null) {
   const sb = id ? scene.blocks.get(id) : null;
   if (!sb) {
-    inspector.hidden = true;
+    inspector.replaceChildren();
     shownView = null;
     return;
   }
   const view = `${id}${id === pinned ? ":pinned" : ""}:${askHistory.get(id!)?.length ?? 0}`;
-  if (view === shownView && !inspector.hidden) return;
+  if (view === shownView && inspector.childElementCount) return;
   shownView = view;
   const b = sb.block;
   const page = b.source ? `p. ${b.source.page + 1}` : null;
-  inspector.hidden = false;
   inspector.innerHTML = `
     <div class="in-type">${escapeHtml(b.type.replace(/_/g, " "))}${b.group ? ` · ${escapeHtml(b.group)}` : ""}</div>
     <div class="in-title"><span class="dot" style="background:${TYPE_COLOR[b.type]}"></span>${escapeHtml(b.label)}</div>
@@ -210,7 +224,7 @@ function inspect(id: string | null) {
     ${b.equation ? `<div class="in-eq">${renderTex(b.equation, true)}</div>` : ""}
     <p class="in-desc">${escapeHtml(b.description)}</p>
     <blockquote class="in-quote">“${escapeHtml(b.source_quote)}”</blockquote>
-    <div class="in-cite ${page ? "" : "missing"}">${page ? `From the paper, ${page} · click the block to open it` : "Quote not found verbatim in the extracted text"}</div>
+    <div class="in-cite ${page ? "" : "missing"}">${page ? `From the paper, ${page}` : "Quote not found verbatim in the extracted text"}</div>
     ${id && id === pinned ? askSection(id) : ""}`;
 }
 
@@ -223,36 +237,19 @@ scene.onClick = (id) => {
   if (document.body.classList.contains("assembling")) return;
   pinned = id;
   inspect(id);
-  if (id && !codePanel.hidden) revealSymbol(codePanel, id);
-  const sb = id ? scene.blocks.get(id) : null;
-  if (sb?.block.source) void openPaper(sb.block.id);
-  else closePaper();
+  if (!id) return;
+  const active = panel.state.active;
+  if (active === "pytorch") revealSymbol(codePanel, id);
+  else if (active === "paper") void openPaper(id);
+  else if (active !== "overview" && !tour.active) panel.select("overview");
 };
 
-let shift = new Run();
-function shiftView(to: number) {
-  shift.cancel();
-  shift = new Run();
-  const from = scene.viewShift;
-  void shift.tween(700, (t) => scene.setViewShift(from + (to - from) * t), ease.inOutCubic);
-}
-
+/** Show the paper at a block's source sentence (the Paper tab). */
 async function openPaper(blockId?: string) {
   if (!graph) return;
-  paper.root.classList.add("inspect");
-  shiftView(0.17);
+  panel.select("paper");
   const block = graph.blocks.find((b) => b.id === blockId) ?? graph.blocks.find((b) => b.source);
-  if (block) await paper.reveal(block, new Run());
-  else paper.show(true);
-  syncToggles();
-}
-
-function closePaper() {
-  if (!paper.visible) return;
-  paper.show(false);
-  paper.root.classList.remove("inspect");
-  shiftView(0);
-  syncToggles();
+  if (block?.source) await paper.reveal(block, new Run());
 }
 
 // ---------- publishing ----------
@@ -294,7 +291,24 @@ async function publish() {
 
 // ---------- learning: PyTorch, walkthrough, easy example, ask ----------
 
-const learnButtons = () => controls.querySelectorAll<HTMLButtonElement>("[data-learn]");
+// Artifacts opened for this paper, so revisiting a tab never pays for a second generation.
+const artifacts = new Map<LearnKind, AnyArtifact>();
+const isKind = (t: TabId): t is LearnKind => t === "walkthrough" || t === "example" || t === "pytorch";
+
+panel.onSelect = (tab) => {
+  if (!isKind(tab) || !graph) return;
+  const status = panel.state.status[tab];
+  if (artifacts.has(tab) || status === "ready") void openLearn(tab);
+  else if (status !== "generating") renderGenerate(tab);
+};
+
+/** Interim tab body for a kind that needs a Claude call (Task 6 replaces it). */
+function renderGenerate(kind: LearnKind) {
+  const root = kind === "pytorch" ? codePanel : learnSlot[kind];
+  if (kind === "pytorch") codePanel.hidden = false;
+  root.innerHTML = `<div class="learn-empty"><p>Claude writes this for the paper on your API key; it takes about half a minute.</p><button type="button" class="btn btn-primary" data-generate>Generate</button></div>`;
+  root.querySelector("[data-generate]")!.addEventListener("click", () => void openLearn(kind));
+}
 
 // One request per kind at a time; a repeat click joins it instead of paying again.
 const learning = new InFlight<Awaited<ReturnType<typeof requestArtifact>>>();
@@ -310,8 +324,12 @@ function resetLearn() {
   learning.reset();
   tour.stop(false);
   codePanel.hidden = true;
+  codePanel.replaceChildren();
+  learnSlot.walkthrough.replaceChildren();
+  learnSlot.example.replaceChildren();
+  artifacts.clear();
   askHistory.clear();
-  learnButtons().forEach((b) => b.classList.remove("ready"));
+  panel.dispatch({ type: "reset" });
 }
 
 async function refreshKinds() {
@@ -319,23 +337,27 @@ async function refreshKinds() {
   if (!id) return;
   const kinds = await fetchKinds(id);
   if (graph?.arxiv_id !== id) return;
-  learnButtons().forEach((b) => b.classList.toggle("ready", kinds.includes(b.dataset.learn as LearnKind)));
+  panel.dispatch({ type: "kinds", ready: kinds });
 }
 
 async function openLearn(kind: LearnKind) {
   if (!graph) return;
   const g = graph;
-  setStatus("Loading…");
+  const cached = artifacts.get(kind);
+  if (!cached) {
+    panel.dispatch({ type: "generate", kind });
+    setStatus("Loading…");
+  }
   try {
-    const { value, current } = await learning.run(kind, () =>
-      requestArtifact(g.arxiv_id, kind, g, storedKey(), (m) => setStatus(m)),
-    );
+    const { value, current } = cached
+      ? { value: { artifact: cached }, current: true }
+      : await learning.run(kind, () => requestArtifact(g.arxiv_id, kind, g, storedKey(), (m) => setStatus(m)));
     if (graph !== g) return; // the visitor moved on to another paper meanwhile
-    if (!learning.busy) setStatus(null);
-    else setStatus("Still generating…");
-    if (!current) return; // the visitor asked for something else since; don't yank the view
+    if (!cached) setStatus(learning.busy ? "Still generating…" : null);
     const { artifact } = value;
-    controls.querySelector(`[data-learn="${kind}"]`)?.classList.add("ready");
+    artifacts.set(kind, artifact);
+    panel.dispatch({ type: "loaded", kind });
+    if (!current || panel.state.active !== kind) return; // the visitor is looking at something else
     if (kind === "pytorch") {
       tour.stop(false);
       showCode(codePanel, artifact as PytorchArtifact, (blockId) => {
@@ -343,15 +365,15 @@ async function openLearn(kind: LearnKind) {
         void scene.focusOn(blockId, new Run());
       });
     } else {
-      codePanel.hidden = true;
-      closePaper();
       const script =
         kind === "walkthrough" ? tourSteps(kind, artifact as WalkthroughArtifact) : tourSteps(kind, artifact as ExampleArtifact);
+      learnSlot[kind].replaceChildren(tourRoot);
       tour.start(script, g);
     }
   } catch (err) {
     if (graph !== g) return;
     const e = err instanceof LearnError ? err : new LearnError(String(err));
+    panel.dispatch({ type: "failed", kind, message: e.message, needsKey: e.code === "needs_key" });
     setStatus(e.message, true);
     if (e.code === "needs_key") openKey();
   }
@@ -397,37 +419,24 @@ inspector.addEventListener("submit", async (e) => {
   }
 });
 
-function startAsk() {
-  if (!graph) return;
-  const id = pinned ?? graph.blocks[0]?.id ?? null;
-  pinned = id;
-  inspect(id);
-  inspector.querySelector<HTMLInputElement>(".ask-form input")?.focus();
-}
-
 // ---------- controls ----------
 
 function syncToggles() {
   controls.querySelector('[data-action="explode"]')!.classList.toggle("on", scene.explode > 0.5);
   controls.querySelector('[data-action="labels"]')!.classList.toggle("on", !document.body.classList.contains("labels-off"));
   controls.querySelector('[data-action="pulse"]')!.classList.toggle("on", scene.pulsing);
-  controls.querySelector('[data-action="paper"]')!.classList.toggle("on", paper.visible);
 }
 
 let explodeRun = new Run();
 controls.addEventListener("click", (e) => {
-  const button = (e.target as HTMLElement).closest<HTMLElement>("button");
-  const learn = button?.dataset.learn;
-  if (learn === "ask") return startAsk();
-  if (learn) return void openLearn(learn as LearnKind);
-  const action = button?.dataset.action;
+  const action = (e.target as HTMLElement).closest<HTMLElement>("button")?.dataset.action;
   switch (action) {
     case "skip":
       run.skip();
       break;
     case "replay":
       pinned = null;
-      inspector.hidden = true;
+      inspector.replaceChildren();
       if (graph) {
         paper.setPaper(graph.arxiv_id, pages);
         void play();
@@ -457,15 +466,9 @@ controls.addEventListener("click", (e) => {
     case "publish":
       void publish();
       break;
-    case "paper":
-      if (paper.visible) closePaper();
-      else void openPaper(pinned ?? undefined);
-      break;
   }
   syncToggles();
 });
-
-$("#paper .paper-close").addEventListener("click", closePaper);
 
 $<HTMLFormElement>("#forge-form").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -485,14 +488,12 @@ window.addEventListener("keydown", (e) => {
   if (e.key === " " && document.body.classList.contains("assembling")) run.skip();
   if (e.key === "Escape") {
     if (tour.active) tour.stop();
-    else if (!codePanel.hidden) codePanel.hidden = true;
-    else closePaper();
   }
   if (tour.active && e.key === "ArrowRight") tour.next();
   if (tour.active && e.key === "ArrowLeft") tour.back();
 });
 
-if (document.body.classList.contains("empty")) {
+if (!document.body.classList.contains("has-paper")) {
   void loadGallery($("#gallery"), (id) => {
     $<HTMLInputElement>("#url").value = id.includes("/") ? id : `https://arxiv.org/abs/${id}`;
     void forgePaper(id);

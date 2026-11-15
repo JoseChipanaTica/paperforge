@@ -1,0 +1,20 @@
+/* 3D block labels: small paper tags pinned beside each block. */
+.block-label {
+  pointer-events: none; padding: 3px 8px 4px; max-width: 300px; white-space: nowrap;
+  background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: var(--r-print);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.block-label.hot { border-color: var(--ink); box-shadow: 2px 2px 0 var(--highlighter); }
+.block-label.left { text-align: right; }
+.bl-title { font: 500 var(--t-sm) var(--serif); display: flex; align-items: center; gap: 6px; color: var(--ink); }
+.block-label.left .bl-title { justify-content: flex-end; }
+.bl-title .dot { width: 8px; height: 8px; border-radius: 1px; border: 1px solid var(--ink); flex: none; }
+.bl-shape { font: 400 10.5px var(--mono); color: var(--ink-faint); margin-left: 4px; }
+.bl-eq { font-size: 10.5px; color: var(--ink-soft); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; }
+.bl-eq .katex { font-size: 1em; }
+.labels-off .block-label { display: none; }
+.assembling .bl-eq { display: none; }
+
+/* Repeated groups: "Encoder layer ×6" in the model's own sentence case. */
+.group-label { pointer-events: none; display: flex; gap: 6px; align-items: baseline; font: italic var(--t-sm) var(--serif); color: var(--ink-soft); }
+.group-label b { font: 600 var(--t-base) var(--mono); font-style: normal; color: var(--ink); }

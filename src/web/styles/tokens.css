@@ -1,0 +1,54 @@
+/* Paper & ink design tokens. Values come from docs/superpowers/specs/2026-11-15-ui-overhaul-design.md;
+   blocks.ts mirrors --ink, --highlighter and --vermilion for the 3D scene. */
+:root {
+  --paper: #f4efe4;
+  --sheet: #fffdf7;
+  --rule: #d9d0bd;
+  --ink: #1e1d1a;
+  --ink-soft: #5d574b;
+  --ink-faint: #6f6758;
+  --vermilion: #c2410c;
+  --highlighter: #f6d77a;
+
+  /* derived */
+  --rule-strong: #c9bfa9;
+  --wash: rgba(30, 29, 26, 0.04); /* hover tint on paper */
+  --mark: linear-gradient(transparent 52%, var(--highlighter) 52%, var(--highlighter) 92%, transparent 92%);
+
+  --display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --serif: "Source Serif 4", Georgia, serif;
+  --ui: "Instrument Sans", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* type scale: 1.25 ratio from a 15px body */
+  --t-xs: 12px;
+  --t-sm: 13.5px;
+  --t-base: 15px;
+  --t-md: 18.75px;
+  --t-lg: 23.5px;
+  --t-xl: 29.25px;
+  --t-hero: clamp(40px, 5.6vw, 76px);
+
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 72px;
+
+  /* Radii carry hierarchy: printed things are nearly square, controls are soft. */
+  --r-print: 3px;
+  --r-control: 8px;
+  --r-pill: 999px;
+
+  /* The hard print shadow, reserved for things that are "printed": blocks, the paste box, start cards. */
+  --print: 3px 3px 0 var(--ink);
+  --print-lift: 5px 5px 0 var(--ink);
+
+  --focus: 0 0 0 2px var(--sheet), 0 0 0 4px var(--ink);
+
+  --panel-w: clamp(360px, 36vw, 520px);
+  --topbar-h: 56px;
+}

@@ -2,85 +2,91 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Paperforge</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='6' y='4' width='20' height='6' rx='2' fill='%23ff6f8e'/><rect x='6' y='13' width='20' height='6' rx='2' fill='%234cc9f0'/><rect x='6' y='22' width='20' height='6' rx='2' fill='%23ffd166'/></svg>" />
+    <meta name="theme-color" content="#f4efe4" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='6' y='4' width='20' height='6' rx='1' fill='%23c2410c' stroke='%231e1d1a' stroke-width='1.5'/><rect x='6' y='13' width='20' height='6' rx='1' fill='%231e3a5f' stroke='%231e1d1a' stroke-width='1.5'/><rect x='6' y='22' width='20' height='6' rx='1' fill='%23e0b04c' stroke='%231e1d1a' stroke-width='1.5'/></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400..500&family=Instrument+Sans:wght@400..600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles/tokens.css" />
+    <link rel="stylesheet" href="./styles/base.css" />
+    <link rel="stylesheet" href="./styles/topbar.css" />
+    <link rel="stylesheet" href="./styles/landing.css" />
+    <link rel="stylesheet" href="./styles/stage.css" />
+    <link rel="stylesheet" href="./styles/labels.css" />
+    <link rel="stylesheet" href="./styles/panel.css" />
   </head>
-  <body class="empty">
-    <div id="stage"></div>
-
-    <div class="hero">
-      <div>
-        <h2>Watch a paper build itself.</h2>
-        <p>Paste an arXiv link. Claude reads the method section, and the architecture assembles in 3D.</p>
-      </div>
-    </div>
-
+  <body>
     <header class="topbar">
-      <div class="brand"><span class="logo"><i></i><i></i><i></i></span>Paperforge</div>
-      <form id="forge-form" class="forge-form" autocomplete="off">
-        <input id="url" type="text" spellcheck="false" placeholder="Paste an arXiv link — e.g. https://arxiv.org/abs/1706.03762" />
-        <button type="submit">Forge</button>
+      <a class="brand" href="/" aria-label="Paperforge home"><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>Paperforge</a>
+      <form id="forge-form" class="forge-form" autocomplete="off" role="search">
+        <label class="sr-only" for="url">arXiv link or id</label>
+        <input id="url" type="text" spellcheck="false" placeholder="Paste an arXiv link, e.g. arxiv.org/abs/1706.03762" />
+        <button type="submit" class="btn btn-primary">Forge</button>
       </form>
-      <div class="examples">
-        <span>Try</span>
-        <button data-paper="1706.03762">Attention Is All You Need</button>
-        <button data-paper="1512.03385">ResNet</button>
-        <button data-paper="2010.11929">ViT</button>
-      </div>
       <div class="key">
-        <button id="key-toggle" type="button" title="Your Anthropic API key stays in this browser">API key</button>
-        <input id="key" type="password" spellcheck="false" autocomplete="off" placeholder="sk-ant-…" hidden />
+        <button id="key-toggle" type="button" class="btn btn-quiet" title="Your Anthropic key stays in this browser">API key</button>
+        <input id="key" type="password" spellcheck="false" autocomplete="off" placeholder="sk-ant-…" aria-label="Anthropic API key" hidden />
       </div>
     </header>
 
-    <section id="gallery" class="gallery"></section>
+    <main id="landing" class="landing">
+      <section class="hero">
+        <div class="hero-text">
+          <h1>Every paper has a machine inside.</h1>
+          <p>Paste an arXiv link. Claude reads the method section, and the architecture builds itself in 3D, every block tied to the sentence it came from.</p>
+          <div class="examples">
+            <span>Try</span>
+            <button type="button" class="btn" data-paper="1706.03762">Transformer</button>
+            <button type="button" class="btn" data-paper="1512.03385">ResNet</button>
+            <button type="button" class="btn" data-paper="2010.11929">ViT</button>
+          </div>
+        </div>
+        <div class="hero-stage" id="hero-stage"></div>
+      </section>
+      <section id="gallery" class="gallery"></section>
+    </main>
 
-    <section id="title" class="title-card" hidden>
-      <div class="tc-paper"></div>
-      <h1 class="tc-model"></h1>
-      <p class="tc-summary"></p>
-      <div class="tc-hparams"></div>
-    </section>
+    <div class="workspace">
+      <section class="stage-wrap" aria-label="3D model">
+        <div id="stage"></div>
+        <section id="title" class="title-card" hidden>
+          <h1 class="tc-model"></h1>
+          <p class="tc-paper"></p>
+          <p class="tc-summary"></p>
+          <div class="tc-hparams"></div>
+        </section>
+        <div id="status" class="status" role="status" hidden><span class="spinner"></span><span class="status-text"></span></div>
+        <nav id="controls" class="toolbar" aria-label="Model controls" hidden>
+          <button data-action="skip" class="btn skip">Skip</button>
+          <button data-action="replay" class="btn">Replay</button>
+          <button data-action="explode" class="btn">Explode</button>
+          <button data-action="labels" class="btn on">Labels</button>
+          <button data-action="pulse" class="btn on">Pulse</button>
+          <button data-action="publish" class="btn publish" hidden>Publish to gallery</button>
+        </nav>
+      </section>
+      <aside id="panel" class="panel" aria-label="Study panel"></aside>
+    </div>
 
-    <div id="status" class="status" hidden><span class="spinner"></span><span class="status-text"></span></div>
-
-    <section id="paper" class="paper">
-      <div class="paper-stack"></div>
-      <div class="paper-sheet">
-        <div class="paper-head"><span class="paper-id"></span><span class="paper-page"></span></div>
-        <div class="paper-body"></div>
-        <div class="paper-scan"></div>
-        <button class="paper-close" title="Close">×</button>
-      </div>
-    </section>
-
-    <aside id="code" class="code-panel" hidden></aside>
-
-    <aside id="inspector" class="inspector" hidden></aside>
-
-    <section id="tour" class="tour" hidden></section>
-
-    <nav id="controls" class="controls" hidden>
-      <button data-action="skip" class="skip">Skip ▸▸</button>
-      <button data-action="replay">↺ Replay</button>
-      <button data-action="explode">Explode</button>
-      <button data-action="labels" class="on">Labels</button>
-      <button data-action="pulse" class="on">Pulse</button>
-      <button data-action="paper">Paper</button>
-      <button data-action="publish" class="publish" hidden>Publish to gallery</button>
-      <span class="sep"></span>
-      <button data-learn="pytorch" title="PyTorch code for this architecture">PyTorch</button>
-      <button data-learn="walkthrough" title="Guided tour, block by block">Walkthrough</button>
-      <button data-learn="example" title="An everyday analogy and a toy example">Easy example</button>
-      <button data-learn="ask" title="Ask Claude about a block">Ask</button>
-    </nav>
-
-    <div id="hint" class="hint">Hover any block to see the sentence it came from · drag to orbit · scroll to zoom</div>
+    <!-- Mounted into the study panel's tabs by main.ts. -->
+    <div hidden>
+      <section id="paper" class="paper">
+        <div class="paper-sheet">
+          <div class="paper-head"><span class="paper-id"></span><span class="paper-page"></span></div>
+          <div class="paper-body"></div>
+          <div class="paper-scan"></div>
+          <button class="paper-close" title="Close" hidden>×</button>
+        </div>
+      </section>
+      <div id="inspector" class="inspector"></div>
+      <div id="code" class="code-panel" hidden></div>
+      <section id="tour" class="tour" hidden></section>
+    </div>
 
     <script type="module" src="./main.ts"></script>
   </body>

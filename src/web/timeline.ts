@@ -4,7 +4,7 @@ import { Run, ease } from "./anim";
 import type { PaperView } from "./paper";
 import type { ForgeScene, SceneBlock } from "./scene";
 
-const PAPER_SHIFT = 0.17; // model sits right of the paper card while it's open
+const PAPER_SHIFT = 0; // the paper lives in the study panel now, beside the stage
 
 /**
  * The demo moment: highlights sweep the paper, each block flies out of its sentence into
