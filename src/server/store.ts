@@ -2,7 +2,7 @@ import { SQL } from "bun";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Architecture, type PaperSummary } from "../shared/graph";
-import { ARTIFACT_SCHEMA, LEARN_KINDS, type AnyArtifact, type LearnKind } from "../shared/learn";
+import { ARTIFACT_SCHEMA, LEARN_KINDS, type AnyArtifact, type InsideLearnKind, type LearnKind } from "../shared/learn";
 import { TEXT_SCHEMA, type Lang, type Level, type TranslateKind, type TranslatedText } from "../shared/translate";
 
 /**
@@ -33,6 +33,9 @@ export interface Store {
   /** A block's inside view for a published paper; first save wins, like artifacts. */
   getInside(id: string, blockId: string): Promise<Architecture | null>;
   putInside(id: string, blockId: string, inside: Architecture): Promise<"created" | "exists">;
+  /** A block's inside walkthrough (journey) and its motion; first save wins, `replace` as for artifacts. */
+  getInsideLearn(id: string, blockId: string, kind: InsideLearnKind): Promise<AnyArtifact | null>;
+  putInsideLearn(id: string, blockId: string, kind: InsideLearnKind, artifact: AnyArtifact, opts?: { replace?: boolean }): Promise<"created" | "exists">;
 }
 
 export function createStore(url: string): Store {
@@ -83,6 +86,14 @@ export function createStore(url: string): Store {
         content ${json} not null,
         created_at text not null,
         primary key (arxiv_id, block_id)
+      )`);
+      await db.unsafe(`create table if not exists inside_learn (
+        arxiv_id text not null,
+        block_id text not null,
+        kind text not null,
+        content ${json} not null,
+        created_at text not null,
+        primary key (arxiv_id, block_id, kind)
       )`);
     })().catch((err) => {
       ready = undefined;
@@ -184,6 +195,26 @@ export function createStore(url: string): Store {
         on conflict (arxiv_id, block_id) do nothing`;
       return result.count > 0 ? "created" : "exists";
     },
+
+    async getInsideLearn(id, blockId, kind) {
+      await init();
+      const [row] = await db`select content from inside_learn where arxiv_id = ${id} and block_id = ${blockId} and kind = ${kind}`;
+      return row ? (ARTIFACT_SCHEMA[kind].parse(fromJson(row.content)) as AnyArtifact) : null;
+    },
+
+    async putInsideLearn(id, blockId, kind, artifact, opts = {}) {
+      const a = ARTIFACT_SCHEMA[kind].parse(artifact);
+      await init();
+      const [content, at] = [toJson(a), new Date().toISOString()];
+      const result = opts.replace
+        ? await db`
+            insert into inside_learn (arxiv_id, block_id, kind, content, created_at) values (${id}, ${blockId}, ${kind}, ${content}, ${at})
+            on conflict (arxiv_id, block_id, kind) do update set content = excluded.content, created_at = excluded.created_at`
+        : await db`
+            insert into inside_learn (arxiv_id, block_id, kind, content, created_at) values (${id}, ${blockId}, ${kind}, ${content}, ${at})
+            on conflict (arxiv_id, block_id, kind) do nothing`;
+      return result.count > 0 ? "created" : "exists";
+    },
   };
 }
 
@@ -201,6 +232,8 @@ function unavailableStore(reason: string): Store {
     putTranslation: fail,
     getInside: fail,
     putInside: fail,
+    getInsideLearn: fail,
+    putInsideLearn: fail,
   };
 }
 

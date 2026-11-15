@@ -137,6 +137,9 @@ export const ARTIFACT_SCHEMA = {
 export type Artifact<K extends LearnKind> = z.infer<(typeof ARTIFACT_SCHEMA)[K]>;
 export type AnyArtifact = PytorchArtifact | JourneyArtifact | MotionArtifact;
 
+/** What a block's inside view can have of its own: a walkthrough of the inside graph, and its motion. */
+export type InsideLearnKind = "journey" | "motion";
+
 /** Drop steps (or code mappings) that point at blocks the graph doesn't have; journeys are also clamped. */
 export function pruneArtifact(kind: LearnKind, artifact: AnyArtifact, graph: Architecture): AnyArtifact {
   if (kind === "journey") return cleanJourney(artifact as JourneyArtifact, graph);

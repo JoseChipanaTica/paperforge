@@ -104,3 +104,21 @@ describe("artifacts", () => {
     await expect(memory().putArtifact("x", "journey", { nope: 1 } as never)).rejects.toThrow();
   });
 });
+
+describe("inside_learn", () => {
+  const load = (kind: string) => Bun.file(join(import.meta.dir, `../../samples/1706.03762.${kind}.json`)).json();
+
+  test("round-trips per block and kind; first save wins; replace overwrites", async () => {
+    const store = memory();
+    const j = await load("journey");
+    expect(await store.getInsideLearn("1706.03762", "encoder_ffn", "journey")).toBeNull();
+    expect(await store.putInsideLearn("1706.03762", "encoder_ffn", "journey", j)).toBe("created");
+    expect(await store.getInsideLearn("1706.03762", "encoder_ffn", "journey")).toEqual(j);
+    expect(await store.getInsideLearn("1706.03762", "encoder_self_attention", "journey")).toBeNull();
+    expect(await store.getInsideLearn("1706.03762", "encoder_ffn", "motion")).toBeNull();
+    expect(await store.putInsideLearn("1706.03762", "encoder_ffn", "journey", { ...j, intro: "Imposter" })).toBe("exists");
+    expect(await store.getInsideLearn("1706.03762", "encoder_ffn", "journey")).toEqual(j);
+    await store.putInsideLearn("1706.03762", "encoder_ffn", "journey", { ...j, intro: "Better" }, { replace: true });
+    expect(((await store.getInsideLearn("1706.03762", "encoder_ffn", "journey")) as { intro: string }).intro).toBe("Better");
+  });
+});

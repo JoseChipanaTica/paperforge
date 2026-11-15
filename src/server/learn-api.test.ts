@@ -60,6 +60,8 @@ const broken: Store = {
   putTranslation: () => Promise.reject(new Error("db down")),
   getInside: () => Promise.reject(new Error("db down")),
   putInside: () => Promise.reject(new Error("db down")),
+  getInsideLearn: () => Promise.reject(new Error("db down")),
+  putInsideLearn: () => Promise.reject(new Error("db down")),
 };
 
 beforeEach(() => {
