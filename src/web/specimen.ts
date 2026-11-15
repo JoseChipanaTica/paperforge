@@ -103,6 +103,7 @@ export class Specimen {
     this.tip.visible = false;
     scene.scene.add(this.tip);
     scene.frameHooks.push(() => this.frame());
+    scene.occluders = () => (this.current ? [this.current.group] : []);
   }
 
   get visible() {
@@ -218,6 +219,7 @@ export class Specimen {
     const mesh = new THREE.InstancedMesh(this.cellGeometry, new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0 }), cells.length);
     cells.forEach((c, i) => mesh.setColorAt(i, shadeColor(c, splits[i]!)));
     mesh.userData.cells = cells;
+    mesh.userData.occludes = true;
     group.add(mesh);
     const captions = laid.map((l, i) => this.decorate(group, l, views[i]!));
     const minX = Math.min(...laid.map((l) => (l.cells[0] ? Math.min(...l.cells.map((c) => c.x - c.w / 2)) : 0)));
@@ -234,6 +236,7 @@ export class Specimen {
     const plane = (color: string, dx: number, dy: number, z: number, pad: number) => {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w + pad, h + pad), new THREE.MeshBasicMaterial({ color }));
       m.position.set(cx + dx, dy, z);
+      m.userData.occludes = true;
       return m;
     };
     group.add(plane(INK, 0.09, -0.09, -0.06, 0), plane(INK, 0, 0, -0.05, 0.05), plane(SHEET, 0, 0, -0.04, 0));

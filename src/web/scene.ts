@@ -99,6 +99,8 @@ export class ForgeScene {
   onDoubleClick: (id: string) => void = () => {};
   onHover: (id: string | null) => void = () => {};
   onClick: (id: string | null) => void = () => {};
+  /** Things drawn in front of the model (the specimen card) that the pointer can't reach through. */
+  occluders: () => THREE.Object3D[] = () => [];
   /** Called every frame before rendering (the specimen faces the camera and tracks hover). */
   frameHooks: ((dt: number) => void)[] = [];
 
@@ -591,8 +593,7 @@ export class ForgeScene {
     let hit: string | null = null;
     if (this.blocks.size && Math.abs(this.pointer.x) <= 1) {
       this.raycaster.setFromCamera(this.pointer, this.camera);
-      const hits = this.raycaster.intersectObjects(this.model.children, true);
-      hit = (hits.find((h) => h.object.userData.blockId && h.object.visible)?.object.userData.blockId as string) ?? null;
+      hit = blockUnder(this.raycaster.intersectObjects([...this.model.children, ...this.occluders()], true));
     }
     if (hit !== this.hovered) {
       this.hovered = hit;
@@ -635,6 +636,15 @@ function disposeChildren(group: THREE.Group) {
     (child.material as THREE.Material | undefined)?.dispose();
   }
   group.clear();
+}
+
+/**
+ * The block under the pointer: the nearest visible block, unless an occluder (the specimen card)
+ * is in front of it. Group frames and other see-through things don't count.
+ */
+export function blockUnder(hits: THREE.Intersection[]): string | null {
+  const first = hits.find((h) => h.object.visible && (h.object.userData.blockId || h.object.userData.occludes));
+  return (first?.object.userData.blockId as string | undefined) ?? null;
 }
 
 export function escapeHtml(s: string): string {
