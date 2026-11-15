@@ -21,6 +21,19 @@ export function figureState(motion: MotionArtifact | null, status: FigureStatus,
   return step?.ops.length ? { kind: "ops", ops: step.ops } : { kind: "none" };
 }
 
+/**
+ * What the tour's Play waits on before the next step: the current figure's whole run (localizing
+ * its captions, then playing). Set synchronously, so Play never reads a promise from before the
+ * step changed; a failing run settles too, so Play can't get stuck.
+ */
+export class FigureSlot {
+  played: Promise<void> = Promise.resolve();
+
+  set(run: (() => Promise<void>) | null) {
+    this.played = run ? run().catch(() => {}) : Promise.resolve();
+  }
+}
+
 const NS = "http://www.w3.org/2000/svg";
 const BETWEEN_OPS = 700;
 const CUSTOM_MS = 3500; // a custom SVG animates itself; give it this long before the next op

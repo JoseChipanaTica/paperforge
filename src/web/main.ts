@@ -2,7 +2,7 @@ import "katex/dist/katex.min.css";
 import type { ForgeEvent, LocatedArchitecture } from "../shared/graph";
 import type { AnyArtifact, JourneyArtifact, LearnKind, PytorchArtifact } from "../shared/learn";
 import type { MotionArtifact } from "../shared/motion";
-import { StepFigure, figureState, type FigureStatus } from "./motion/figure";
+import { FigureSlot, StepFigure, figureState, type FigureStatus } from "./motion/figure";
 import { locateQuote } from "../shared/locate";
 import { isOriginal, type TranslateKind } from "../shared/translate";
 import { Run } from "./anim";
@@ -40,7 +40,7 @@ const statusEl = $("#status");
 const controls = $("#controls");
 const specimen = new Specimen(scene);
 // Play holds each step until its animation has played (figurePlay, below).
-const driver = new TourDriver(scene, specimen, { waitFor: () => figurePlay });
+const driver = new TourDriver(scene, specimen, { waitFor: () => figureSlot.played });
 const panel = new StudyPanel($("#panel"));
 const sheet = new Sheet($("#panel"), $<HTMLButtonElement>(".sheet-handle"));
 // On phones, tapping a tab opens the sheet to half.
@@ -506,7 +506,7 @@ async function showArtifact(kind: TabKind, english: AnyArtifact, g: LocatedArchi
   tourKind = kind;
   renderSteps(panel.tab(kind), script, view, driver, at, (token) => trace(token === tracing ? null : token), tracing, (el, blockId) => {
     figureAt = el && blockId ? { el, blockId } : null;
-    void refreshFigure();
+    refreshFigure();
   });
   loadMotion(g);
 }
@@ -518,7 +518,7 @@ let motionStatus: FigureStatus = "loading";
 let motionFor: string | null = null; // the paper it was requested for
 let figure: StepFigure | null = null;
 let figureAt: { el: HTMLElement; blockId: string } | null = null;
-let figurePlay: Promise<void> = Promise.resolve();
+const figureSlot = new FigureSlot();
 
 /** Fetch the motion artifact once per paper, in the background; the walkthrough never waits on it. */
 function loadMotion(g: LocatedArchitecture) {
@@ -532,39 +532,40 @@ function loadMotion(g: LocatedArchitecture) {
       if (graph !== g) return;
       motion = artifact as MotionArtifact;
       motionStatus = "ready";
-      void refreshFigure();
+      refreshFigure();
     })
     .catch((err: unknown) => {
       if (graph !== g) return;
       motionStatus = err instanceof LearnError && err.code === "needs_key" ? "needs_key" : "error";
       motionFor = null; // Retry asks again
-      void refreshFigure();
+      refreshFigure();
     });
 }
 
-/** Show the current step's figure: its animation in the visitor's language, or why there isn't one. */
-async function refreshFigure() {
+/** Show the current step's figure; Play waits on all of it (figureSlot), set before any await. */
+function refreshFigure() {
   figure?.stop();
   figure = null;
-  figurePlay = Promise.resolve();
   const at = figureAt;
-  if (!at) return;
+  figureSlot.set(at ? () => showFigure(at) : null);
+}
+
+/** The figure's animation in the visitor's language, or why there isn't one. */
+async function showFigure(at: { el: HTMLElement; blockId: string }) {
   const english = motion;
   const shown = english ? await localized("motion", english) : null;
   if (figureAt !== at) return; // the visitor moved to another step meanwhile
   const f = new StepFigure(at.el, reducedMotion());
   figure = f;
   const state = figureState(shown, motionStatus, at.blockId);
-  if (state.kind === "ops") figurePlay = f.show(state.ops);
-  else {
-    const retry = () => graph && loadMotion(graph);
-    f.message(state.kind, retry, (key) => (saveKey(key), retry()));
-  }
+  if (state.kind === "ops") return f.show(state.ops);
+  const retry = () => graph && loadMotion(graph);
+  f.message(state.kind, retry, (key) => (saveKey(key), retry()));
 }
 
 function stopFigure() {
   figureAt = null;
-  void refreshFigure();
+  refreshFigure();
 }
 
 // ---------- language and level ----------
