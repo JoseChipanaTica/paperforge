@@ -18,6 +18,7 @@ import {
   inspectTarget,
   requestArtifact,
   requestInside,
+  requestInsideLearn,
 } from "./learn";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
@@ -356,8 +357,12 @@ const artifacts = new Map<LearnKind, AnyArtifact>();
 const isKind = isTabKind;
 type TourKind = "journey";
 // Where each tour was left, so switching tabs mid-tour picks up at the same step.
-const tourAt: Partial<Record<TourKind, number>> = {};
+// Keyed by scope: "main" for the model's walkthrough, a block id for that block's inside walkthrough.
+const tourAt: Record<string, number> = {};
 let tourKind: TourKind | null = null;
+let tourScope = "main";
+/** Which walkthrough the visitor is in: the model's, or the open inside view's. */
+const scopeNow = () => inside?.blockId ?? "main";
 const progress: Partial<Record<TabKind, string>> = {};
 
 const NAMES: Record<TabKind, string> = { journey: "walkthrough", pytorch: "PyTorch code" };
@@ -365,7 +370,7 @@ const NAMES: Record<TabKind, string> = { journey: "walkthrough", pytorch: "PyTor
 let openTab: TabId | null = null;
 panel.onSelect = (tab) => {
   if (tourKind && tab !== tourKind && driver.active) {
-    tourAt[tourKind] = driver.index;
+    tourAt[tourScope] = driver.index;
     driver.pause();
     specimen.hide(); // it comes back on the same step when the tab does
     stopFigure();
@@ -373,7 +378,9 @@ panel.onSelect = (tab) => {
   const again = tab === openTab;
   openTab = tab;
   if (!isKind(tab) || !graph) return;
-  closeInside(); // tours and code point at the model's blocks
+  // Inside a block, the walkthrough is that block's own; code still points at the model's blocks.
+  if (tab === "journey" && inside) return void openInsideJourney(inside.blockId);
+  closeInside();
   if (again && artifacts.has(tab)) return; // already showing (e.g. a tap to open the phone sheet)
   if (artifacts.has(tab) || panel.state.status[tab] === "ready") void openLearn(tab);
   else renderState(tab);
@@ -436,11 +443,12 @@ function resetLearn() {
     panel.tab(k).replaceChildren();
     delete progress[k];
   }
-  delete tourAt.journey;
+  for (const k of Object.keys(tourAt)) delete tourAt[k];
+  tourScope = "main";
   artifacts.clear();
+  insideJourneys.clear();
   translations.clear();
-  motion = null;
-  motionFor = null;
+  motions.clear();
   stopFigure();
   insides.clear();
   panel.dispatch({ type: "reset" });
@@ -500,45 +508,116 @@ async function showArtifact(kind: TabKind, english: AnyArtifact, g: LocatedArchi
     });
     return;
   }
-  const script = tourSteps(artifact as JourneyArtifact);
+  renderJourney(artifact as JourneyArtifact, "main", view);
+}
+
+/** The step list for a walkthrough (already in the reader's language) against the graph it walks. */
+function renderJourney(journey: JourneyArtifact, scope: string, shownGraph: LocatedArchitecture) {
+  const script = tourSteps(journey);
   // A language or level change mid-tour keeps the visitor on the same step.
-  const at = driver.active && tourKind === kind ? driver.index : (tourAt[kind] ?? -1);
-  tourKind = kind;
-  renderSteps(panel.tab(kind), script, view, driver, at, (token) => trace(token === tracing ? null : token), tracing, (el, blockId) => {
-    figureAt = el && blockId ? { el, blockId } : null;
+  const at = driver.active && tourKind === "journey" && tourScope === scope ? driver.index : (tourAt[scope] ?? -1);
+  tourKind = "journey";
+  tourScope = scope;
+  renderSteps(panel.tab("journey"), script, shownGraph, driver, at, (token) => trace(token === tracing ? null : token), tracing, (el, blockId) => {
+    figureAt = el && blockId ? { el, blockId, scope } : null;
     refreshFigure();
   });
-  loadMotion(g);
+  loadMotion(scope);
+}
+
+// ---------- the walkthrough inside a block ----------
+
+// Inside walkthroughs for this paper (English), by block id, so reopening one is free.
+const insideJourneys = new Map<string, Promise<JourneyArtifact>>();
+
+/** What enters and leaves a block in the model's walkthrough, so the inside one continues it. */
+function blockEnds(blockId: string) {
+  const main = artifacts.get("journey") as JourneyArtifact | undefined;
+  const at = main?.steps.findIndex((s) => s.block_id === blockId) ?? -1;
+  return {
+    entering: at > 0 ? main!.steps[at - 1]!.views : at === 0 ? main!.input.views : null,
+    leaving: at >= 0 ? main!.steps[at]!.views : null,
+  };
+}
+
+/** Show the open inside view's own walkthrough in the Walkthrough tab (generating it the first time). */
+async function openInsideJourney(blockId: string) {
+  const g = graph;
+  const at = inside;
+  if (!g || !at || at.blockId !== blockId) return;
+  const root = panel.tab("journey");
+  const label = view?.blocks.find((b) => b.id === blockId)?.label ?? blockId;
+  const still = () => graph === g && inside?.blockId === blockId && panel.state.active === "journey";
+  let pending = insideJourneys.get(blockId);
+  if (!pending) {
+    root.innerHTML = `
+      <div class="learn-state" aria-busy="true">
+        <div class="skeleton"><i></i><i></i><i></i><i></i><i></i></div>
+        <p class="learn-progress">${escapeHtml(`Claude is following the input inside ${label}…`)}</p>
+      </div>`;
+    const p = requestInsideLearn(g.arxiv_id, blockId, "journey", { graph: g, inside: at.english, ...blockEnds(blockId) }, storedKey(), (m) =>
+      root.querySelector(".learn-progress")?.replaceChildren(m),
+    ).then((r) => r.artifact as JourneyArtifact);
+    insideJourneys.set(blockId, (pending = p));
+    p.catch(() => insideJourneys.get(blockId) === p && insideJourneys.delete(blockId));
+  }
+  try {
+    const english = await pending;
+    if (!still()) return;
+    const asked = reading;
+    const shown = await localized("journey", english, blockId);
+    if (!still() || reading !== asked) return;
+    renderJourney(shown, blockId, inside!.shown);
+  } catch (err) {
+    if (!still()) return;
+    const e = err instanceof LearnError ? err : new LearnError(String(err));
+    root.innerHTML = `
+      <div class="learn-state">
+        <h3>${e.code === "needs_key" ? "Add your Anthropic API key" : `The walkthrough inside ${escapeHtml(label)} didn't come through`}</h3>
+        <p>${escapeHtml(e.code === "needs_key" ? "Claude writes this walkthrough using your key. Add it in the top bar, then try again." : e.message)}</p>
+        <button type="button" class="btn btn-primary" data-retry>Try again</button>
+      </div>`;
+    root.querySelector("[data-retry]")!.addEventListener("click", () => void openInsideJourney(blockId));
+    if (e.code === "needs_key") openKey();
+  }
 }
 
 // ---------- step motion: each walkthrough step animates its block's work ----------
 
-let motion: MotionArtifact | null = null; // English, for this paper
-let motionStatus: FigureStatus = "loading";
-let motionFor: string | null = null; // the paper it was requested for
+// Motion for this paper (English) by scope: "main", or a block id for its inside walkthrough.
+const motions = new Map<string, { motion: MotionArtifact | null; status: FigureStatus; asked: boolean }>();
 let figure: StepFigure | null = null;
-let figureAt: { el: HTMLElement; blockId: string } | null = null;
+let figureAt: { el: HTMLElement; blockId: string; scope: string } | null = null;
 const figureSlot = new FigureSlot();
 
-/** Fetch the motion artifact once per paper, in the background; the walkthrough never waits on it. */
-function loadMotion(g: LocatedArchitecture) {
-  if (motionFor === g.arxiv_id) return;
-  motionFor = g.arxiv_id;
-  motionStatus = "loading";
-  motion = null;
-  const journey = artifacts.get("journey") as JourneyArtifact | undefined;
-  requestArtifact(g.arxiv_id, "motion", g, storedKey(), () => {}, journey)
+/** Fetch a walkthrough's motion once, in the background; the walkthrough never waits on it. */
+function loadMotion(scope: string) {
+  const g = graph;
+  if (!g || motions.get(scope)?.asked) return;
+  const state = { motion: null as MotionArtifact | null, status: "loading" as FigureStatus, asked: true };
+  motions.set(scope, state);
+  const request =
+    scope === "main"
+      ? requestArtifact(g.arxiv_id, "motion", g, storedKey(), () => {}, artifacts.get("journey") as JourneyArtifact | undefined)
+      : insideJourneys
+          .get(scope)!
+          .then((journey) =>
+            inside?.blockId === scope
+              ? requestInsideLearn(g.arxiv_id, scope, "motion", { graph: g, inside: inside.english, journey }, storedKey(), () => {})
+              : Promise.reject(new LearnError("closed")),
+          );
+  request
     .then(({ artifact }) => {
-      if (graph !== g) return;
-      motion = artifact as MotionArtifact;
-      motionStatus = "ready";
-      refreshFigure();
+      if (graph !== g || motions.get(scope) !== state) return;
+      state.motion = artifact as MotionArtifact;
+      state.status = "ready";
+      if (figureAt?.scope === scope) refreshFigure();
     })
     .catch((err: unknown) => {
-      if (graph !== g) return;
-      motionStatus = err instanceof LearnError && err.code === "needs_key" ? "needs_key" : "error";
-      motionFor = null; // Retry asks again
-      refreshFigure();
+      if (graph !== g || motions.get(scope) !== state) return;
+      state.status = err instanceof LearnError && err.code === "needs_key" ? "needs_key" : "error";
+      state.asked = false; // Retry asks again
+      if (figureAt?.scope === scope) refreshFigure();
     });
 }
 
@@ -551,15 +630,16 @@ function refreshFigure() {
 }
 
 /** The figure's animation in the visitor's language, or why there isn't one. */
-async function showFigure(at: { el: HTMLElement; blockId: string }) {
-  const english = motion;
-  const shown = english ? await localized("motion", english) : null;
+async function showFigure(at: { el: HTMLElement; blockId: string; scope: string }) {
+  const m = motions.get(at.scope);
+  const english = m?.motion ?? null;
+  const shown = english ? await localized("motion", english, at.scope === "main" ? undefined : at.scope) : null;
   if (figureAt !== at) return; // the visitor moved to another step meanwhile
   const f = new StepFigure(at.el, reducedMotion());
   figure = f;
-  const state = figureState(shown, motionStatus, at.blockId);
+  const state = figureState(shown, m?.status ?? "loading", at.blockId);
   if (state.kind === "ops") return f.show(state.ops);
-  const retry = () => graph && loadMotion(graph);
+  const retry = () => loadMotion(at.scope);
   f.message(state.kind, retry, (key) => (saveKey(key), retry()));
 }
 
@@ -666,6 +746,7 @@ async function openInside(blockId: string) {
   const g = graph;
   const block = view?.blocks.find((b) => b.id === blockId);
   if (!g || !view || !block || inside) return; // one level deep
+  if (tourKind && driver.active) tourAt[tourScope] = driver.index; // "← Whole model" comes back here
   driver.stop();
   let pending = insides.get(blockId);
   if (!pending) {
@@ -704,6 +785,14 @@ async function openInside(blockId: string) {
 /** Back from a block's inside view to the whole model, assembled. */
 function closeInside() {
   if (!inside || !view) return;
+  // The inside walkthrough's tour points at inside blocks: remember its step and put it away.
+  if (tourScope !== "main") {
+    if (driver.active) tourAt[tourScope] = driver.index;
+    driver.stop();
+    stopFigure();
+    tourKind = null;
+    tourScope = "main";
+  }
   run.cancel(); // an inside assembly may still be playing
   run = new Run();
   document.body.classList.remove("assembling");
@@ -717,6 +806,8 @@ function closeInside() {
   showTitle();
   inspect(null);
   toolbar.sync();
+  // Back on the model with its walkthrough open: show the model's own, at the step it was left on.
+  if (panel.state.active === "journey" && artifacts.has("journey")) void openLearn("journey");
 }
 
 // ---------- controls ----------
