@@ -27,10 +27,17 @@ make that 30-second moment look better or work more reliably. Polish what the ca
   followed through every block, each step with typed `View`s of the data — tokens, vectors, heads, matrix,
   patches, signal, frames, probs, tensor) and the `/api/learn` + `/api/ask` stream events. Every step carries
   a graph `block_id`; `cleanJourney` clamps views so the front end can always draw them.
+- `src/shared/motion.ts` — step motion: per walkthrough step, a chain of 1–3 ops (convolution, attention, linear,
+  normalization… 23 kinds, or a Claude-written `custom` SVG) with small inputs only; the browser recomputes every
+  number. `cleanMotion` clamps to 8×8 and turns ops it can't compute into captioned placeholders.
+- `src/shared/svg.ts` — `sanitizeSvg`: rebuilds Claude's SVG from allowlisted elements/attributes (no DOMParser, so
+  server and browser run the same code). The only way generated markup reaches the page.
+- `src/shared/palette.ts` — the ink colours, shared by the 3D scene, the motion figures and the tutor's SVG rules
 - `src/server/tutor.ts` — Claude calls for learning features. All share one system prompt and one
   `[paper, graph]` prefix with a cache breakpoint; keep it byte-identical and effort fixed. The output
   format is part of the cache: learning kinds share `ANY_ARTIFACT`, inside views `INSIDE_ARTIFACT` (the
-  journey and the block graph together exceed the API's grammar size limit).
+  journey and the block graph together exceed the API's grammar size limit), motion `MOTION_ARTIFACT` (with the
+  walkthrough after the breakpoint).
 - `src/shared/translate.ts` — languages, reading levels (Beginner / Engineer / Researcher), and the prose
   of each graph/artifact (`pickText` / `applyText`). Claude always writes English for an engineer; a
   "translation" rewrites only labels, descriptions and narration for another language and/or level, never
@@ -49,7 +56,8 @@ make that 30-second moment look better or work more reliably. Polish what the ca
     `studyPanel.ts` (ARIA tabs; state in `panelState.ts`), `sheet.ts` (bottom sheet < 900 px),
     `overview.ts` (summary, block detail, Ask), `stepsView.ts` + `tour.ts` (the walkthrough, i.e. the journey),
     `specimenLayout.ts` (a `View` → cells, pure) + `specimen.ts` (the data as a printed card beside the current
-    block; between steps it flies along the wire as a packet),
+    block; between steps it flies along the wire as a packet), `motion/` (step motion: `compute.ts` the math per op,
+    `templates.ts` op → frames, `player.ts` tweens SVG items by id, `figure.ts` the figure under each step),
     `codeView.ts` (PyTorch), `learn.ts` (learn/ask/inside clients, request bookkeeping), `lang.ts`
     (language + level pickers, translate client), `trace.ts` (shape tracing: dimensions, aliases via
     hyperparameters, splits like 512 = h × d_k). `main.ts` keeps `graph` (English, signed, sent to the
@@ -57,7 +65,7 @@ make that 30-second moment look better or work more reliably. Polish what the ca
   - `styles/tokens.css` holds every colour, font and spacing token; `blocks.ts` mirrors ink /
     highlighter / vermilion and owns the block palette. One CSS file per component.
 - `samples/` — committed block graphs (`<id>.json`), learning artifacts (`<id>.<kind>.json`, kind `pytorch` or
-  `journey`; `bun run learn <url> <kind> --write` regenerates one) and inside
+  `journey` or `motion`; `bun run learn <url> <kind> --write` regenerates one, motion from the committed journey) and inside
   views (`<id>.inside.<block_id>.json`) that seed the cache, so the demo runs without an API key
 
 ## Conventions
