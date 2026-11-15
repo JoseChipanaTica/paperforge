@@ -60,14 +60,18 @@ async function readJson(path: string): Promise<unknown> {
 
 /** Is this the English everyone sees for the paper (published or a committed sample)? */
 async function isPublic(d: TranslateDeps, id: string, kind: TranslateKind, hash: string, blockId: string): Promise<boolean> {
+  // A block's own walkthrough or motion (block_id given) is shared like the model's.
+  const ofBlock = blockId !== "" && (kind === "journey" || kind === "motion");
   const stored =
     kind === "graph" ? d.store.getPaper(id)
     : kind === "expansion" ? d.store.getInside(id, blockId)
+    : ofBlock ? d.store.getInsideLearn(id, blockId, kind)
     : d.store.getArtifact(id, kind);
   const published = await stored.catch(() => null);
   const file =
     kind === "graph" ? `${fileId(id)}.json`
     : kind === "expansion" ? `${fileId(id)}.inside.${blockId}.json`
+    : ofBlock ? `${fileId(id)}.inside.${blockId}.${kind}.json`
     : `${fileId(id)}.${kind}.json`;
   const sample = await readJson(join(d.samplesDir, file)); // blockId is checked to be [\w-] by the handler
   return [published, sample].some((c) => {
@@ -96,6 +100,7 @@ export async function translateHandler(req: Request, overrides: Partial<Translat
     return bad("Expected an arXiv id, a kind, and a language or reading level to rewrite for.");
   }
   if (kind.data === "expansion" && !/^[\w-]{1,100}$/.test(blockId)) return bad("An expansion needs its block_id.");
+  if (blockId && !/^[\w-]{1,100}$/.test(blockId)) return bad("That block_id isn't valid.");
   const k = kind.data;
   const l = lang.data;
   const lv = level.data;

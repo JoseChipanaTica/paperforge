@@ -80,6 +80,26 @@ describe("POST /api/translate", () => {
     expect(await store.getTranslation(hashText("journey", pickText("journey", journey)), "ja", "engineer", "journey")).not.toBeNull();
   });
 
+  test("a block's inside walkthrough (committed sample) is shared text too", async () => {
+    const inner = await Bun.file(join(SAMPLES, "1706.03762.inside.encoder_ffn.journey.json")).json();
+    await translate({ arxiv_id: SAMPLE_ID, kind: "journey", lang: "es", content: inner, block_id: "encoder_ffn" });
+    expect(await store.getTranslation(hashText("journey", pickText("journey", inner)), "es", "engineer", "journey")).not.toBeNull();
+  });
+
+  test("a published paper's inside motion is shared text", async () => {
+    const id = "2401.00001";
+    const motion = await Bun.file(join(SAMPLES, "1706.03762.inside.encoder_ffn.motion.json")).json();
+    await store.publishPaper(id, graph);
+    await store.putInsideLearn(id, "encoder_ffn", "motion", motion);
+    await translate({ arxiv_id: id, kind: "motion", lang: "es", content: motion, block_id: "encoder_ffn" });
+    expect(await store.getTranslation(hashText("motion", pickText("motion", motion)), "es", "engineer", "motion")).not.toBeNull();
+  });
+
+  test("a block id that isn't a plain id is refused", async () => {
+    const res = await translate({ arxiv_id: SAMPLE_ID, kind: "journey", lang: "es", content: journey, block_id: "../x" });
+    expect(res.status).toBe(400);
+  });
+
   test("text that isn't published or a sample stays out of the gallery", async () => {
     const edited = { ...graph, summary: "Something a visitor made up." };
     const res = await translate({ arxiv_id: SAMPLE_ID, kind: "graph", lang: "es", content: edited });
