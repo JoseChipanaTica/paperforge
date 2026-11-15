@@ -1,11 +1,14 @@
 import "katex/dist/katex.min.css";
 import type { ForgeEvent, LocatedArchitecture } from "../shared/graph";
+import type { AskTurn, ExampleArtifact, LearnKind, PytorchArtifact, WalkthroughArtifact } from "../shared/learn";
 import { Run, ease } from "./anim";
 import { TYPE_COLOR } from "./blocks";
 import { loadGallery } from "./gallery";
+import { LearnError, askBlock, fetchKinds, requestArtifact, revealSymbol, showCode } from "./learn";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
 import { assemble } from "./timeline";
+import { Tour, tourSteps } from "./tour";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 
@@ -14,6 +17,8 @@ const paper = new PaperView($("#paper"));
 const statusEl = $("#status");
 const inspector = $("#inspector");
 const controls = $("#controls");
+const codePanel = $("#code");
+const tour = new Tour(scene, $("#tour"));
 
 let run = new Run();
 let graph: LocatedArchitecture | null = null;
@@ -22,6 +27,8 @@ let pinned: string | null = null;
 // The graph exactly as the server signed it: publishing re-checks the signature, so never mutate this.
 let rawGraph: LocatedArchitecture | null = null;
 let saveToken: string | null = null;
+// Ask-about-a-block conversations, per block, for the current paper only.
+const askHistory = new Map<string, AskTurn[]>();
 
 // ---------- API key (bring your own; stays in this browser) ----------
 
@@ -83,6 +90,7 @@ async function forgePaper(input: string, refresh = false) {
   pinned = null;
   rawGraph = saveToken = shareUrl = null;
   syncPublish();
+  resetLearn();
 
   const key = storedKey();
   let res: Response;
@@ -153,6 +161,7 @@ async function play(myRun = (run = new Run())) {
   await assemble(scene, paper, graph, myRun);
   if (myRun === run) document.body.classList.remove("assembling");
   syncToggles();
+  void refreshKinds();
 }
 
 function showTitle(g: LocatedArchitecture) {
@@ -184,17 +193,20 @@ function inspect(id: string | null) {
     ${b.equation ? `<div class="in-eq">${renderTex(b.equation, true)}</div>` : ""}
     <p class="in-desc">${escapeHtml(b.description)}</p>
     <blockquote class="in-quote">“${escapeHtml(b.source_quote)}”</blockquote>
-    <div class="in-cite ${page ? "" : "missing"}">${page ? `From the paper, ${page} · click the block to open it` : "Quote not found verbatim in the extracted text"}</div>`;
+    <div class="in-cite ${page ? "" : "missing"}">${page ? `From the paper, ${page} · click the block to open it` : "Quote not found verbatim in the extracted text"}</div>
+    ${id && id === pinned ? askSection(id) : ""}`;
 }
 
 scene.onHover = (id) => {
-  if (!document.body.classList.contains("assembling")) inspect(id ?? pinned);
+  // A pinned block keeps the inspector (and any question being typed) until another click.
+  if (!document.body.classList.contains("assembling")) inspect(pinned ?? id);
 };
 
 scene.onClick = (id) => {
   if (document.body.classList.contains("assembling")) return;
   pinned = id;
   inspect(id);
+  if (id && !codePanel.hidden) revealSymbol(codePanel, id);
   const sb = id ? scene.blocks.get(id) : null;
   if (sb?.block.source) void openPaper(sb.block.id);
   else closePaper();
@@ -263,6 +275,101 @@ async function publish() {
   }
 }
 
+// ---------- learning: PyTorch, walkthrough, easy example, ask ----------
+
+const learnButtons = () => controls.querySelectorAll<HTMLButtonElement>("[data-learn]");
+
+function resetLearn() {
+  tour.stop(false);
+  codePanel.hidden = true;
+  askHistory.clear();
+  learnButtons().forEach((b) => b.classList.remove("ready"));
+}
+
+async function refreshKinds() {
+  const id = graph?.arxiv_id;
+  if (!id) return;
+  const kinds = await fetchKinds(id);
+  if (graph?.arxiv_id !== id) return;
+  learnButtons().forEach((b) => b.classList.toggle("ready", kinds.includes(b.dataset.learn as LearnKind)));
+}
+
+async function openLearn(kind: LearnKind) {
+  if (!graph) return;
+  const g = graph;
+  setStatus("Loading…");
+  try {
+    const { artifact } = await requestArtifact(g.arxiv_id, kind, g, storedKey(), (m) => setStatus(m));
+    if (graph !== g) return; // the visitor moved on to another paper meanwhile
+    setStatus(null);
+    controls.querySelector(`[data-learn="${kind}"]`)?.classList.add("ready");
+    if (kind === "pytorch") {
+      tour.stop(false);
+      showCode(codePanel, artifact as PytorchArtifact, (blockId) => {
+        scene.highlight(blockId);
+        void scene.focusOn(blockId, new Run());
+      });
+    } else {
+      codePanel.hidden = true;
+      closePaper();
+      const script =
+        kind === "walkthrough" ? tourSteps(kind, artifact as WalkthroughArtifact) : tourSteps(kind, artifact as ExampleArtifact);
+      tour.start(script, g);
+    }
+  } catch (err) {
+    if (graph !== g) return;
+    const e = err instanceof LearnError ? err : new LearnError(String(err));
+    setStatus(e.message, true);
+    if (e.code === "needs_key") openKey();
+  }
+}
+
+function askSection(id: string): string {
+  const turns = askHistory.get(id) ?? [];
+  return `
+    <div class="in-ask">
+      ${turns.map((t) => `<p class="ask-${t.role}">${escapeHtml(t.text)}</p>`).join("")}
+      <form class="ask-form"><input name="q" maxlength="1000" placeholder="Ask about this block…" autocomplete="off" /><button>Ask</button></form>
+    </div>`;
+}
+
+inspector.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target as HTMLFormElement;
+  const input = form.elements.namedItem("q") as HTMLInputElement;
+  const question = input.value.trim();
+  const blockId = pinned;
+  if (!question || !blockId || !graph) return;
+  const g = graph;
+  const history = askHistory.get(blockId) ?? [];
+  const answer = document.createElement("p");
+  answer.className = "ask-assistant streaming";
+  form.before(Object.assign(document.createElement("p"), { className: "ask-user", textContent: question }), answer);
+  input.value = "";
+  input.disabled = true;
+  let text = "";
+  try {
+    await askBlock(g.arxiv_id, blockId, question, history, g, storedKey(), (d) => (answer.textContent = text += d));
+    if (graph === g) askHistory.set(blockId, [...history, { role: "user", text: question }, { role: "assistant", text }]);
+  } catch (err) {
+    const le = err instanceof LearnError ? err : new LearnError(String(err));
+    answer.textContent = le.message;
+    answer.classList.add("ask-error");
+    if (le.code === "needs_key") openKey();
+  } finally {
+    answer.classList.remove("streaming");
+    input.disabled = false;
+  }
+});
+
+function startAsk() {
+  if (!graph) return;
+  const id = pinned ?? graph.blocks[0]?.id ?? null;
+  pinned = id;
+  inspect(id);
+  inspector.querySelector<HTMLInputElement>(".ask-form input")?.focus();
+}
+
 // ---------- controls ----------
 
 function syncToggles() {
@@ -274,7 +381,11 @@ function syncToggles() {
 
 let explodeRun = new Run();
 controls.addEventListener("click", (e) => {
-  const action = (e.target as HTMLElement).closest<HTMLElement>("button")?.dataset.action;
+  const button = (e.target as HTMLElement).closest<HTMLElement>("button");
+  const learn = button?.dataset.learn;
+  if (learn === "ask") return startAsk();
+  if (learn) return void openLearn(learn as LearnKind);
+  const action = button?.dataset.action;
   switch (action) {
     case "skip":
       run.skip();
@@ -337,7 +448,13 @@ document.querySelectorAll<HTMLButtonElement>(".examples button").forEach((btn) =
 window.addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
   if (e.key === " " && document.body.classList.contains("assembling")) run.skip();
-  if (e.key === "Escape") closePaper();
+  if (e.key === "Escape") {
+    if (tour.active) tour.stop();
+    else if (!codePanel.hidden) codePanel.hidden = true;
+    else closePaper();
+  }
+  if (tour.active && e.key === "ArrowRight") tour.next();
+  if (tour.active && e.key === "ArrowLeft") tour.back();
 });
 
 if (document.body.classList.contains("empty")) {

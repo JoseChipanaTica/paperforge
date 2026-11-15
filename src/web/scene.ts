@@ -8,6 +8,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import type { Edge, LocatedArchitecture, LocatedBlock } from "../shared/graph";
+import type { Run } from "./anim";
 import { buildBlock, buildGroupFrame, type BlockObject } from "./blocks";
 import { layoutGraph, type Layout, type PlacedBlock, type PlacedGroup } from "./layout";
 
@@ -84,6 +85,8 @@ export class ForgeScene {
   private swayTime = 0;
   fitDistance = 30;
   private hovered: string | null = null;
+  /** A block lit up by the tour or the code panel, independent of the mouse. */
+  private highlighted: string | null = null;
   onHover: (id: string | null) => void = () => {};
   onClick: (id: string | null) => void = () => {};
 
@@ -299,6 +302,38 @@ export class ForgeScene {
     this.buildPulses();
   }
 
+  /** Light up one block (tour step, code symbol) until cleared with null. */
+  highlight(id: string | null) {
+    this.highlighted = id;
+    if (id) this.flash(id, 0.9);
+  }
+
+  /** Fly the camera to a block, or back to the whole model with null. */
+  focusOn(id: string | null, run: Run): Promise<void> {
+    const sb = id ? this.blocks.get(id) : null;
+    if (id && !sb) return Promise.resolve();
+    this.sway = false;
+    const fromTarget = this.controls.target.clone();
+    const fromCam = this.camera.position.clone();
+    let toTarget: THREE.Vector3;
+    let toCam: THREE.Vector3;
+    if (sb) {
+      toTarget = sb.obj.root.position.clone();
+      // Keep the current viewing direction, closer in.
+      const dir = fromCam.clone().sub(fromTarget).normalize();
+      toCam = toTarget.clone().addScaledVector(dir, this.fitDistance * 0.45);
+    } else {
+      const b = this.layout?.bounds;
+      const dist = this.fitDistance;
+      toTarget = new THREE.Vector3(0, b ? (b.minY + b.maxY) / 2 : 0, 0);
+      toCam = new THREE.Vector3(dist * 0.28, toTarget.y + dist * 0.12, dist * 0.95);
+    }
+    return run.tween(700, (t) => {
+      this.controls.target.lerpVectors(fromTarget, toTarget, t);
+      this.camera.position.lerpVectors(fromCam, toCam, t);
+    });
+  }
+
   flash(id: string, amount = 1) {
     const sb = this.blocks.get(id);
     if (sb) sb.glow = Math.max(sb.glow, amount);
@@ -452,10 +487,11 @@ export class ForgeScene {
     }
     for (const sb of this.blocks.values()) {
       sb.glow = Math.max(0, sb.glow - dt * 1.6);
-      const base = sb.block.id === this.hovered ? 0.45 : 0.05;
+      const lit = sb.block.id === this.hovered || sb.block.id === this.highlighted;
+      const base = lit ? 0.45 : 0.05;
       for (const m of sb.obj.materials) m.emissiveIntensity = base + sb.glow * 1.4;
       (sb.label.element as HTMLElement).style.opacity = String(this.labelAlpha * (sb.obj.root.visible ? 1 : 0));
-      sb.label.element.classList.toggle("hot", sb.block.id === this.hovered);
+      sb.label.element.classList.toggle("hot", lit);
     }
     for (const g of this.groupFrames) {
       const a = this.groupAlpha * (1 - this.explode);
