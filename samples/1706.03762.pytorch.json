@@ -1,0 +1,84 @@
+{
+  "filename": "transformer.py",
+  "code": "\"\"\"The Transformer (base model) from \"Attention Is All You Need\" (Vaswani et al., 2017).\n\nHyperparameters from the paper: N = 6, d_model = 512, d_ff = 2048, h = 8,\nd_k = d_v = 64, P_drop = 0.1.\n\"\"\"\nimport math\n\nimport torch\nimport torch.nn as nn\nimport torch.nn.functional as F\n\nD_MODEL, D_FF, HEADS, LAYERS, DROPOUT = 512, 2048, 8, 6, 0.1\n\n\nclass TokenEmbedding(nn.Module):\n    \"\"\"Input / Output Embedding: token ids -> vectors, scaled by sqrt(d_model).\"\"\"\n\n    def __init__(self, vocab_size: int, d_model: int = D_MODEL):\n        super().__init__()\n        self.embed = nn.Embedding(vocab_size, d_model)\n        self.d_model = d_model\n\n    def forward(self, tokens: torch.Tensor) -> torch.Tensor:  # [B, n] -> [B, n, d_model]\n        return self.embed(tokens) * math.sqrt(self.d_model)\n\n\nclass PositionalEncoding(nn.Module):\n    \"\"\"Fixed sinusoids: PE(pos, 2i) = sin(pos / 10000^(2i/d_model)), cos for odd dims.\"\"\"\n\n    def __init__(self, d_model: int = D_MODEL, max_len: int = 5000, dropout: float = DROPOUT):\n        super().__init__()\n        pos = torch.arange(max_len).unsqueeze(1)\n        div = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))\n        pe = torch.zeros(max_len, d_model)\n        pe[:, 0::2] = torch.sin(pos * div)\n        pe[:, 1::2] = torch.cos(pos * div)\n        self.register_buffer(\"pe\", pe)\n        self.dropout = nn.Dropout(dropout)\n\n    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [B, n, d_model] -> same\n        return self.dropout(x + self.pe[: x.size(1)])\n\n\nclass MultiHeadAttention(nn.Module):\n    \"\"\"MultiHead(Q, K, V) = Concat(head_1..head_h) W^O, head_i = softmax(Q K^T / sqrt(d_k)) V.\n\n    Used for encoder self-attention, masked decoder self-attention and encoder-decoder\n    (cross) attention; only the inputs and the mask differ.\n    \"\"\"\n\n    def __init__(self, d_model: int = D_MODEL, heads: int = HEADS):\n        super().__init__()\n        self.h, self.d_k = heads, d_model // heads  # d_k = 64\n        self.w_q = nn.Linear(d_model, d_model)\n        self.w_k = nn.Linear(d_model, d_model)\n        self.w_v = nn.Linear(d_model, d_model)\n        self.w_o = nn.Linear(d_model, d_model)\n\n    def forward(self, q, k, v, mask=None):  # q: [B, m, d], k/v: [B, n, d] -> [B, m, d]\n        B = q.size(0)\n        split = lambda x: x.view(B, -1, self.h, self.d_k).transpose(1, 2)  # [B, h, len, d_k]\n        q, k, v = split(self.w_q(q)), split(self.w_k(k)), split(self.w_v(v))\n        scores = q @ k.transpose(-2, -1) / math.sqrt(self.d_k)  # [B, h, m, n]\n        if mask is not None:\n            scores = scores.masked_fill(mask == 0, float(\"-inf\"))\n        out = F.softmax(scores, dim=-1) @ v  # [B, h, m, d_k]\n        return self.w_o(out.transpose(1, 2).reshape(B, -1, self.h * self.d_k))\n\n\nclass AddNorm(nn.Module):\n    \"\"\"LayerNorm(x + Dropout(Sublayer(x))): the residual connection around every sub-layer.\"\"\"\n\n    def __init__(self, d_model: int = D_MODEL, dropout: float = DROPOUT):\n        super().__init__()\n        self.norm = nn.LayerNorm(d_model)\n        self.dropout = nn.Dropout(dropout)\n\n    def forward(self, x: torch.Tensor, sublayer_out: torch.Tensor) -> torch.Tensor:\n        return self.norm(x + self.dropout(sublayer_out))\n\n\nclass FeedForward(nn.Module):\n    \"\"\"FFN(x) = max(0, x W_1 + b_1) W_2 + b_2, applied to each position separately.\"\"\"\n\n    def __init__(self, d_model: int = D_MODEL, d_ff: int = D_FF):\n        super().__init__()\n        self.net = nn.Sequential(nn.Linear(d_model, d_ff), nn.ReLU(), nn.Linear(d_ff, d_model))\n\n    def forward(self, x: torch.Tensor) -> torch.Tensor:  # [B, n, 512] -> [B, n, 2048] -> [B, n, 512]\n        return self.net(x)\n\n\nclass EncoderLayer(nn.Module):\n    def __init__(self):\n        super().__init__()\n        self.self_attn, self.norm1 = MultiHeadAttention(), AddNorm()\n        self.ffn, self.norm2 = FeedForward(), AddNorm()\n\n    def forward(self, x, src_mask=None):\n        x = self.norm1(x, self.self_attn(x, x, x, src_mask))\n        return self.norm2(x, self.ffn(x))\n\n\nclass DecoderLayer(nn.Module):\n    def __init__(self):\n        super().__init__()\n        self.masked_attn, self.norm1 = MultiHeadAttention(), AddNorm()\n        self.cross_attn, self.norm2 = MultiHeadAttention(), AddNorm()\n        self.ffn, self.norm3 = FeedForward(), AddNorm()\n\n    def forward(self, y, memory, tgt_mask, src_mask=None):\n        y = self.norm1(y, self.masked_attn(y, y, y, tgt_mask))\n        y = self.norm2(y, self.cross_attn(y, memory, memory, src_mask))  # queries from decoder, keys/values from encoder\n        return self.norm3(y, self.ffn(y))\n\n\ndef causal_mask(m: int) -> torch.Tensor:\n    \"\"\"Masked attention: position i may only attend to positions <= i.\"\"\"\n    return torch.tril(torch.ones(m, m, dtype=torch.bool))\n\n\nclass Transformer(nn.Module):\n    def __init__(self, src_vocab: int, tgt_vocab: int, layers: int = LAYERS):\n        super().__init__()\n        self.src_embed, self.tgt_embed = TokenEmbedding(src_vocab), TokenEmbedding(tgt_vocab)\n        self.src_pos, self.tgt_pos = PositionalEncoding(), PositionalEncoding()\n        self.encoder = nn.ModuleList(EncoderLayer() for _ in range(layers))\n        self.decoder = nn.ModuleList(DecoderLayer() for _ in range(layers))\n        self.generator = nn.Linear(D_MODEL, tgt_vocab)  # final Linear\n\n    def forward(self, src: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:\n        x = self.src_pos(self.src_embed(src))  # [B, n, 512]\n        for layer in self.encoder:\n            x = layer(x)\n        y = self.tgt_pos(self.tgt_embed(tgt))  # [B, m, 512]\n        mask = causal_mask(tgt.size(1))\n        for layer in self.decoder:\n            y = layer(y, x, mask)\n        return F.softmax(self.generator(y), dim=-1)  # [B, m, V] next-token probabilities\n\n\nif __name__ == \"__main__\":\n    model = Transformer(src_vocab=37000, tgt_vocab=37000)\n    src = torch.randint(0, 37000, (2, 10))  # inputs: 2 sentences of 10 tokens\n    tgt = torch.randint(0, 37000, (2, 9))  # outputs (shifted right)\n    probs = model(src, tgt)\n    print(probs.shape)  # torch.Size([2, 9, 37000])\n",
+  "block_map": [
+    {
+      "block_id": "inputs",
+      "symbol": "src"
+    },
+    {
+      "block_id": "input_embedding",
+      "symbol": "TokenEmbedding"
+    },
+    {
+      "block_id": "encoder_positional",
+      "symbol": "PositionalEncoding"
+    },
+    {
+      "block_id": "encoder_self_attention",
+      "symbol": "MultiHeadAttention"
+    },
+    {
+      "block_id": "encoder_add_norm_1",
+      "symbol": "AddNorm"
+    },
+    {
+      "block_id": "encoder_ffn",
+      "symbol": "FeedForward"
+    },
+    {
+      "block_id": "encoder_add_norm_2",
+      "symbol": "EncoderLayer"
+    },
+    {
+      "block_id": "outputs",
+      "symbol": "tgt"
+    },
+    {
+      "block_id": "output_embedding",
+      "symbol": "tgt_embed"
+    },
+    {
+      "block_id": "decoder_positional",
+      "symbol": "tgt_pos"
+    },
+    {
+      "block_id": "decoder_masked_attention",
+      "symbol": "causal_mask"
+    },
+    {
+      "block_id": "decoder_add_norm_1",
+      "symbol": "DecoderLayer"
+    },
+    {
+      "block_id": "decoder_cross_attention",
+      "symbol": "cross_attn"
+    },
+    {
+      "block_id": "decoder_add_norm_2",
+      "symbol": "norm2"
+    },
+    {
+      "block_id": "decoder_ffn",
+      "symbol": "ffn"
+    },
+    {
+      "block_id": "decoder_add_norm_3",
+      "symbol": "norm3"
+    },
+    {
+      "block_id": "final_linear",
+      "symbol": "generator"
+    },
+    {
+      "block_id": "softmax",
+      "symbol": "softmax"
+    }
+  ],
+  "notes": [
+    "Dropout is applied to each sub-layer output before the residual add and to the embeddings plus positional encodings, as Section 5.4 describes.",
+    "The paper shares weights between the two embedding layers and the final linear layer; this code keeps them separate for readability.",
+    "Padding masks for variable-length batches are omitted; only the decoder's causal mask is built.",
+    "Vocabulary size 37000 matches the shared byte-pair vocabulary used for English-German."
+  ]
+}

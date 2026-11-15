@@ -1,0 +1,100 @@
+{
+  "analogy": {
+    "title": "A room of translators passing notes",
+    "text": "Picture each word of the sentence as a person in a room. On every round, each person asks the whole room a question (\"who here is my subject?\"), listens most to the people whose answers fit, and updates their own notes. After six rounds, everyone's notes describe not just their own word but its role in the sentence. A second team then writes the translation one word at a time, checking their own draft and asking the first team for help before each new word."
+  },
+  "toy_input": "the cat sat",
+  "steps": [
+    {
+      "block_id": "inputs",
+      "what_happens": "The sentence is split into tokens and each becomes an id.",
+      "toy_value": "[\"the\", \"cat\", \"sat\"] → [5, 812, 2290]"
+    },
+    {
+      "block_id": "input_embedding",
+      "what_happens": "Each id becomes a list of 512 numbers that capture its meaning.",
+      "toy_value": "\"cat\" → [0.12, -0.40, 0.88, … 512 numbers]"
+    },
+    {
+      "block_id": "encoder_positional",
+      "what_happens": "A position pattern is added so \"cat\" knows it is word 2.",
+      "toy_value": "\"cat\"@2 → [0.12+0.91, -0.40+0.42, …]"
+    },
+    {
+      "block_id": "encoder_self_attention",
+      "what_happens": "Every word checks every other word; \"sat\" pays most attention to \"cat\", its subject.",
+      "toy_value": "\"sat\" attends: the 0.10 · cat 0.75 · sat 0.15"
+    },
+    {
+      "block_id": "encoder_add_norm_1",
+      "what_happens": "The new notes are added to the old ones and rescaled, so nothing is lost.",
+      "toy_value": "\"sat\" = old \"sat\" + (mostly \"cat\") → normalized"
+    },
+    {
+      "block_id": "encoder_ffn",
+      "what_happens": "Each word privately digests what it heard.",
+      "toy_value": "\"sat\" now encodes \"past-tense action done by the cat\""
+    },
+    {
+      "block_id": "encoder_add_norm_2",
+      "what_happens": "Notes are combined and tidied; this whole round repeats 6 times.",
+      "toy_value": "3 vectors × 512, each aware of the full sentence"
+    },
+    {
+      "block_id": "outputs",
+      "what_happens": "The decoder starts with a start token plus whatever it has written so far.",
+      "toy_value": "[<start>, \"die\", \"Katze\"]"
+    },
+    {
+      "block_id": "output_embedding",
+      "what_happens": "The German words so far become vectors too.",
+      "toy_value": "\"Katze\" → [0.33, 0.05, … 512 numbers]"
+    },
+    {
+      "block_id": "decoder_positional",
+      "what_happens": "They also get position patterns.",
+      "toy_value": "\"Katze\"@3 → vector + position 3 pattern"
+    },
+    {
+      "block_id": "decoder_masked_attention",
+      "what_happens": "Each German word looks only at the words before it, never ahead.",
+      "toy_value": "\"Katze\" sees: <start>, \"die\", \"Katze\" — not the future"
+    },
+    {
+      "block_id": "decoder_add_norm_1",
+      "what_happens": "Add and tidy, as before.",
+      "toy_value": "draft vectors, normalized"
+    },
+    {
+      "block_id": "decoder_cross_attention",
+      "what_happens": "The draft asks the English sentence what comes next; it listens mostly to \"sat\".",
+      "toy_value": "next-word query attends: the 0.05 · cat 0.20 · sat 0.75"
+    },
+    {
+      "block_id": "decoder_add_norm_2",
+      "what_happens": "The answer is added to the draft's notes.",
+      "toy_value": "draft now carries \"sat\"'s meaning"
+    },
+    {
+      "block_id": "decoder_ffn",
+      "what_happens": "Each position digests that on its own.",
+      "toy_value": "position 3 leans toward a past-tense verb"
+    },
+    {
+      "block_id": "decoder_add_norm_3",
+      "what_happens": "Add and tidy; the decoder round also repeats 6 times.",
+      "toy_value": "final draft vectors"
+    },
+    {
+      "block_id": "final_linear",
+      "what_happens": "Every vocabulary word gets a score.",
+      "toy_value": "\"saß\" 9.1 · \"sitzt\" 6.0 · \"Hund\" -2.3 …"
+    },
+    {
+      "block_id": "softmax",
+      "what_happens": "Scores become probabilities and the most likely word is written next.",
+      "toy_value": "\"saß\" 0.93 → output: \"die Katze saß\""
+    }
+  ],
+  "takeaway": "Attention lets every word gather exactly the context it needs from every other word at once, instead of reading the sentence left to right."
+}
