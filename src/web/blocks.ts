@@ -7,6 +7,7 @@ import type { PlacedBlock } from "./layout";
 export const INK = "#1e1d1a";
 export const HIGHLIGHTER = "#f6d77a";
 export const VERMILION = "#c2410c";
+export const SHEET = "#fffdf7";
 
 /** The printed palette: one earthy ink per block type. */
 export const TYPE_COLOR: Record<BlockType, string> = {

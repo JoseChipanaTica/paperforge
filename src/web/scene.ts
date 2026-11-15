@@ -10,6 +10,7 @@ import type { Edge, LocatedArchitecture, LocatedBlock } from "../shared/graph";
 import type { Run } from "./anim";
 import { INK, VERMILION, buildBlock, buildGroupFrame, type BlockObject } from "./blocks";
 import { layoutGraph, type Layout, type PlacedBlock, type PlacedGroup } from "./layout";
+import { arcBetween } from "./specimen";
 
 export interface SceneBlock {
   block: LocatedBlock;
@@ -97,6 +98,8 @@ export class ForgeScene {
   onDoubleClick: (id: string) => void = () => {};
   onHover: (id: string | null) => void = () => {};
   onClick: (id: string | null) => void = () => {};
+  /** Called every frame before rendering (the specimen faces the camera and tracks hover). */
+  frameHooks: ((dt: number) => void)[] = [];
 
   constructor(private container: HTMLElement) {
     // Transparent canvas: the CSS paper shows through.
@@ -416,6 +419,32 @@ export class ForgeScene {
     if (sb) sb.glow = Math.max(sb.glow, amount);
   }
 
+  /** Where a block sits now, for things placed beside it. */
+  blockAnchor(id: string): THREE.Vector3 | null {
+    return this.blocks.get(id)?.obj.root.position.clone() ?? null;
+  }
+
+  /** A block's larger side, in world units. */
+  blockSize(id: string): number {
+    const p = this.blocks.get(id)?.placed;
+    return p ? Math.max(p.w, p.h) : 1;
+  }
+
+  /** The wire from one block to another, or an arc over the model when no edge joins them. */
+  pathBetween(from: string, to: string): THREE.Curve<THREE.Vector3> | null {
+    const wire = this.edges.find((e) => e.edge.from === from && e.edge.to === to);
+    if (wire) return wire.curve;
+    const [a, b] = [this.blockAnchor(from), this.blockAnchor(to)];
+    return a && b ? arcBetween(a, b) : null;
+  }
+
+  /** What the pointer is over among these objects, nearest first. */
+  hits(objects: THREE.Object3D[]): THREE.Intersection[] {
+    if (Math.abs(this.pointer.x) > 1 || !objects.length) return [];
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    return this.raycaster.intersectObjects(objects, false);
+  }
+
   // ---------- edges and pulses ----------
 
   private anchor(sb: SceneBlock, where: "top" | "bottom" | "left" | "right"): THREE.Vector3 {
@@ -588,6 +617,7 @@ export class ForgeScene {
       (g.label.element as HTMLElement).style.opacity = String(a);
     }
 
+    for (const hook of this.frameHooks) hook(dt);
     this.composer.render();
     this.labels.render(this.scene, this.camera);
   }
