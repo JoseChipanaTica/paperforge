@@ -3,8 +3,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Architecture } from "../shared/graph";
-import type { AnyArtifact, AskEvent, LearnEvent, LearnKind } from "../shared/learn";
-import { askHandler, kindsHandler, learnHandler, type LearnDeps } from "./learn-api";
+import type { AnyArtifact, AskEvent, InsideEvent, LearnEvent, LearnKind } from "../shared/learn";
+import { askHandler, insideHandler, kindsHandler, learnHandler, type LearnDeps } from "./learn-api";
 import { createStore, type Store } from "./store";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
@@ -57,6 +57,10 @@ const broken: Store = {
   getArtifact: () => Promise.reject(new Error("db down")),
   putArtifact: () => Promise.reject(new Error("db down")),
   listArtifactKinds: () => Promise.reject(new Error("db down")),
+  getTranslation: () => Promise.reject(new Error("db down")),
+  putTranslation: () => Promise.reject(new Error("db down")),
+  getInside: () => Promise.reject(new Error("db down")),
+  putInside: () => Promise.reject(new Error("db down")),
 };
 
 beforeEach(() => {
@@ -204,5 +208,52 @@ describe("samples against a published graph", () => {
     await Bun.write(join(samplesDir, `${ID}.walkthrough.json`), JSON.stringify(walkthrough));
     const e = await learn({ arxiv_id: ID, kind: "walkthrough" }, deps(store));
     expect(e).toMatchObject({ type: "learn", source: "sample" });
+  });
+});
+
+describe("POST /api/inside", () => {
+  const BLOCK = "encoder_self_attention";
+  const inner = { ...graph, model_name: "Multi-Head Attention", blocks: graph.blocks.slice(0, 3), edges: [] };
+  let insideCalls: string[];
+  const withInside = (store: Store) =>
+    deps(store, {
+      inside: async (block) => {
+        insideCalls.push(block.id);
+        return inner;
+      },
+    });
+  const inside = async (body: unknown, d: Partial<LearnDeps>) =>
+    (await events<InsideEvent>(await insideHandler(post("/api/inside", body), d))).find((e) => e.type !== "status")!;
+
+  beforeEach(() => (insideCalls = []));
+
+  test("an unpublished paper's inside view comes from Claude and isn't saved", async () => {
+    const store = createStore("sqlite://:memory:");
+    const e = await inside({ arxiv_id: ID, block_id: BLOCK, graph }, withInside(store));
+    expect(e).toMatchObject({ type: "inside", block_id: BLOCK, source: "claude", saved: false, graph: inner });
+    expect(await store.getInside(ID, BLOCK)).toBeNull();
+  });
+
+  test("a published paper's inside view is saved once, then served with no Claude call", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    expect(await inside({ arxiv_id: ID, block_id: BLOCK }, withInside(store))).toMatchObject({ source: "claude", saved: true });
+    expect(await inside({ arxiv_id: ID, block_id: BLOCK }, withInside(store))).toMatchObject({ source: "gallery", graph: inner });
+    expect(insideCalls).toEqual([BLOCK]);
+  });
+
+  test("a committed sample is served without a key", async () => {
+    await Bun.write(join(samplesDir, `${ID}.inside.${BLOCK}.json`), JSON.stringify(inner));
+    const e = await inside({ arxiv_id: ID, block_id: BLOCK, graph }, withInside(createStore("sqlite://:memory:")));
+    expect(e).toMatchObject({ source: "sample", graph: inner });
+    expect(insideCalls).toEqual([]);
+  });
+
+  test("unknown or malformed block ids are bad_input", async () => {
+    const d = withInside(createStore("sqlite://:memory:"));
+    for (const block_id of ["no_such_block", "../../etc", ""]) {
+      expect(await inside({ arxiv_id: ID, block_id, graph }, d)).toMatchObject({ type: "error", code: "bad_input" });
+    }
+    expect(insideCalls).toEqual([]);
   });
 });

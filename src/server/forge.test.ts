@@ -47,6 +47,10 @@ describe("forge lookup order", () => {
       getArtifact: () => Promise.reject(new Error("db down")),
       putArtifact: () => Promise.reject(new Error("db down")),
       listArtifactKinds: () => Promise.reject(new Error("db down")),
+      getTranslation: () => Promise.reject(new Error("db down")),
+      putTranslation: () => Promise.reject(new Error("db down")),
+      getInside: () => Promise.reject(new Error("db down")),
+      putInside: () => Promise.reject(new Error("db down")),
     };
     const e = await run({ store: broken });
     expect(e.source).toBe("claude");

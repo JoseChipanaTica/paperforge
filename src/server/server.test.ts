@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Architecture } from "../shared/graph";
 import { parseArxivId } from "./arxiv";
-import { locateQuote } from "./locate";
+import { locateQuote } from "../shared/locate";
 
 describe("parseArxivId", () => {
   test.each([

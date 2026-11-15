@@ -99,6 +99,12 @@ export type LearnEvent =
   | { type: "learn"; kind: LearnKind; artifact: AnyArtifact; source: "gallery" | "sample" | "claude"; saved: boolean }
   | LearnError;
 
+/** A block's inside view: a small graph of its own, in the same shape as the model. */
+export type InsideEvent =
+  | { type: "status"; message: string }
+  | { type: "inside"; block_id: string; graph: Architecture; source: "gallery" | "sample" | "claude"; saved: boolean }
+  | LearnError;
+
 export interface AskTurn {
   role: "user" | "assistant";
   text: string;

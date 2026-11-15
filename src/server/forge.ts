@@ -2,14 +2,14 @@ import { join } from "node:path";
 import { Architecture, type ForgeEvent, type GraphSource, type LocatedArchitecture } from "../shared/graph";
 import { fetchArxivPdf, parseArxivId } from "./arxiv";
 import { extractArchitecture } from "./extract";
-import { locateQuote } from "./locate";
+import { locateQuote } from "../shared/locate";
 import { extractPages } from "./pdf";
 import { getStore, type Store } from "./store";
 import { getSecret, signGraph } from "./token";
 
 const ROOT = join(import.meta.dir, "..", "..");
 // Vercel functions can only write to /tmp; the cache there is per-instance and temporary.
-const CACHE = process.env.VERCEL ? "/tmp/paperforge" : join(ROOT, "data", "cache");
+export const CACHE_DIR = process.env.VERCEL ? "/tmp/paperforge" : join(ROOT, "data", "cache");
 const SAMPLES = join(ROOT, "samples");
 
 const fileId = (id: string) => id.replace(/\//g, "_");
@@ -41,7 +41,7 @@ async function loadPages(id: string, emit: (e: ForgeEvent) => void, cacheDir: st
 
 /** The paper's text, one string per page (disk cache → arXiv). Also used by the tutor. */
 export function loadPaperPages(id: string, emit: (e: ForgeEvent) => void = () => {}): Promise<string[]> {
-  return loadPages(id, emit, CACHE);
+  return loadPages(id, emit, CACHE_DIR);
 }
 
 type Extract = typeof extractArchitecture;
@@ -94,7 +94,7 @@ export async function forge(
 ): Promise<LocatedArchitecture> {
   const id = parseArxivId(input);
   if (!id) throw new Error(`That doesn't look like an arXiv link or id: "${input}"`);
-  const cacheDir = opts.cacheDir ?? CACHE;
+  const cacheDir = opts.cacheDir ?? CACHE_DIR;
 
   const pages = await (opts.loadPages ?? ((id, emit) => loadPages(id, emit, cacheDir)))(id, emit);
   emit({ type: "paper", arxiv_id: id, pages });

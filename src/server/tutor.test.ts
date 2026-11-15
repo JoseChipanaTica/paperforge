@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Architecture } from "../shared/graph";
-import { askRequest, learnRequest } from "./tutor";
+import { askRequest, cleanInside, insideRequest, learnRequest } from "./tutor";
 
 const graph = Architecture.parse(await Bun.file(join(import.meta.dir, "../../samples/1706.03762.json")).json());
 const pages = ["Page one text.", "Page two text."];
@@ -11,7 +11,8 @@ const prefix = (content: unknown) => JSON.stringify((content as unknown[]).slice
 const firstContent = (req: { messages: { content: unknown }[] }) => req.messages[0]!.content;
 
 describe("cached paper prefix", () => {
-  const reqs = (["pytorch", "walkthrough", "example"] as const).map((k) => learnRequest(k, pages, graph));
+  // Inside views share the cache with the learning features.
+  const reqs = [...(["pytorch", "walkthrough", "example"] as const).map((k) => learnRequest(k, pages, graph)), insideRequest(block, pages, graph)];
   const ask = askRequest({ pages, graph, block, question: "Why divide by sqrt(d_k)?", history: [] });
 
   test("is byte-identical for every learning kind", () => {
@@ -56,5 +57,41 @@ describe("askRequest", () => {
     expect(req.messages.map((m) => m.role)).toEqual(["user", "user", "assistant", "user"]);
     expect(JSON.stringify(req.messages[0]!.content)).toContain("encoder_self_attention");
     expect(req.messages.at(-1)!.content).toBe("And the masking?");
+  });
+
+  test("asks for the reader's language after the cached prefix", () => {
+    const es = askRequest({ pages, graph, block, question: "¿Por qué?", history: [], lang: "es" });
+    expect(prefix(firstContent(es))).toBe(prefix(firstContent(learnRequest("pytorch", pages, graph))));
+    expect(JSON.stringify(es.messages[0]!.content)).toContain("Answer in Spanish");
+    expect(JSON.stringify(askRequest({ pages, graph, block, question: "Why?", history: [] }).messages[0]!.content)).not.toContain(
+      "whatever language",
+    );
+  });
+
+  test("asks for the reader's level after the cached prefix", () => {
+    const req = askRequest({ pages, graph, block, question: "Why?", history: [], level: "beginner" });
+    expect(prefix(firstContent(req))).toBe(prefix(firstContent(learnRequest("pytorch", pages, graph))));
+    expect(JSON.stringify(req.messages[0]!.content)).toContain("Write for a curious beginner");
+  });
+});
+
+describe("cleanInside", () => {
+  test("drops duplicate blocks, dangling edges, self-loops and empty groups", () => {
+    const [a, b] = graph.blocks;
+    const messy = {
+      ...graph,
+      groups: [{ id: "heads", label: "Head", repeat: 8 }, { id: "unused", label: "x", repeat: 1 }],
+      blocks: [{ ...a!, group: "heads" }, b!, { ...b!, label: "dup" }, { ...b!, id: "lonely", group: "gone" }],
+      edges: [
+        { from: a!.id, to: b!.id, kind: "data" as const },
+        { from: b!.id, to: b!.id, kind: "data" as const },
+        { from: a!.id, to: "nowhere", kind: "data" as const },
+      ],
+    };
+    const clean = cleanInside(messy);
+    expect(clean.blocks.map((x) => x.id)).toEqual([a!.id, b!.id, "lonely"]);
+    expect(clean.blocks[2]!.group).toBe("");
+    expect(clean.groups.map((g) => g.id)).toEqual(["heads"]);
+    expect(clean.edges).toHaveLength(1);
   });
 });

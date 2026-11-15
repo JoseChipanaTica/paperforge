@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Architecture, type PaperSummary } from "../shared/graph";
 import { ARTIFACT_SCHEMA, LEARN_KINDS, type AnyArtifact, type LearnKind } from "../shared/learn";
+import { TEXT_SCHEMA, type Lang, type Level, type TranslateKind, type TranslatedText } from "../shared/translate";
 
 /**
  * The public gallery: one row per arXiv id, first save wins. Postgres (Neon) when
@@ -18,6 +19,19 @@ export interface Store {
   getArtifact(id: string, kind: LearnKind): Promise<AnyArtifact | null>;
   putArtifact(id: string, kind: LearnKind, artifact: AnyArtifact): Promise<"created" | "exists">;
   listArtifactKinds(id: string): Promise<LearnKind[]>;
+  /** Translations of published (or sample) text, keyed by a hash of the English; first save wins. */
+  getTranslation(hash: string, lang: Lang, level: Level, kind: TranslateKind): Promise<TranslatedText | null>;
+  putTranslation(
+    hash: string,
+    lang: Lang,
+    level: Level,
+    kind: TranslateKind,
+    id: string,
+    text: TranslatedText,
+  ): Promise<"created" | "exists">;
+  /** A block's inside view for a published paper; first save wins, like artifacts. */
+  getInside(id: string, blockId: string): Promise<Architecture | null>;
+  putInside(id: string, blockId: string, inside: Architecture): Promise<"created" | "exists">;
 }
 
 export function createStore(url: string): Store {
@@ -51,6 +65,23 @@ export function createStore(url: string): Store {
         content ${json} not null,
         created_at text not null,
         primary key (arxiv_id, kind)
+      )`);
+      await db.unsafe(`create table if not exists translations (
+        source_hash text not null,
+        lang text not null,
+        level text not null,
+        kind text not null,
+        arxiv_id text not null,
+        content ${json} not null,
+        created_at text not null,
+        primary key (source_hash, lang, level)
+      )`);
+      await db.unsafe(`create table if not exists insides (
+        arxiv_id text not null,
+        block_id text not null,
+        content ${json} not null,
+        created_at text not null,
+        primary key (arxiv_id, block_id)
       )`);
     })().catch((err) => {
       ready = undefined;
@@ -115,13 +146,57 @@ export function createStore(url: string): Store {
       const rows: { kind: string }[] = await db`select kind from artifacts where arxiv_id = ${id}`;
       return LEARN_KINDS.filter((k) => rows.some((r) => r.kind === k));
     },
+
+    async getTranslation(hash, lang, level, kind) {
+      await init();
+      const [row] = await db`
+        select content from translations where source_hash = ${hash} and lang = ${lang} and level = ${level}`;
+      return row ? TEXT_SCHEMA[kind].parse(fromJson(row.content)) : null;
+    },
+
+    async putTranslation(hash, lang, level, kind, id, text) {
+      const t = TEXT_SCHEMA[kind].parse(text);
+      await init();
+      const result = await db`
+        insert into translations (source_hash, lang, level, kind, arxiv_id, content, created_at)
+        values (${hash}, ${lang}, ${level}, ${kind}, ${id}, ${toJson(t)}, ${new Date().toISOString()})
+        on conflict (source_hash, lang, level) do nothing`;
+      return result.count > 0 ? "created" : "exists";
+    },
+
+    async getInside(id, blockId) {
+      await init();
+      const [row] = await db`select content from insides where arxiv_id = ${id} and block_id = ${blockId}`;
+      return row ? Architecture.parse(fromJson(row.content)) : null;
+    },
+
+    async putInside(id, blockId, inside) {
+      const a = Architecture.parse(inside);
+      await init();
+      const result = await db`
+        insert into insides (arxiv_id, block_id, content, created_at)
+        values (${id}, ${blockId}, ${toJson(a)}, ${new Date().toISOString()})
+        on conflict (arxiv_id, block_id) do nothing`;
+      return result.count > 0 ? "created" : "exists";
+    },
   };
 }
 
 /** A store whose every call rejects, so callers' "gallery unavailable" paths take over. */
 function unavailableStore(reason: string): Store {
   const fail = () => Promise.reject(new Error(reason));
-  return { getPaper: fail, listPapers: fail, publishPaper: fail, getArtifact: fail, putArtifact: fail, listArtifactKinds: fail };
+  return {
+    getPaper: fail,
+    listPapers: fail,
+    publishPaper: fail,
+    getArtifact: fail,
+    putArtifact: fail,
+    listArtifactKinds: fail,
+    getTranslation: fail,
+    putTranslation: fail,
+    getInside: fail,
+    putInside: fail,
+  };
 }
 
 export function storeFromEnv(env: Record<string, string | undefined>): Store {

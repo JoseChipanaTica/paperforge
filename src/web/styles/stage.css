@@ -8,7 +8,8 @@ body.has-paper .workspace {
 .stage-wrap { position: relative; min-width: 0; overflow: hidden; }
 #stage { position: absolute; inset: 0; }
 #stage canvas { display: block; }
-.label-layer { position: absolute; inset: 0; }
+/* CSS2DRenderer z-sorts its labels; contain that here so they stay under the title, trace card and status. */
+.label-layer { position: absolute; inset: 0; z-index: 1; }
 
 .title-card { position: absolute; left: var(--s5); top: var(--s5); z-index: 5; max-width: 340px; pointer-events: none; transition: opacity 0.5s; }
 .assembling .title-card { opacity: 0; }

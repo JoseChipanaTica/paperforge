@@ -1,8 +1,11 @@
 import "katex/dist/katex.min.css";
 import type { ForgeEvent, LocatedArchitecture } from "../shared/graph";
 import type { AnyArtifact, ExampleArtifact, LearnKind, PytorchArtifact, WalkthroughArtifact } from "../shared/learn";
+import { locateQuote } from "../shared/locate";
+import { isOriginal, type TranslateKind } from "../shared/translate";
 import { Run } from "./anim";
 import { initLanding } from "./landing";
+import { initReadingPickers, readingMessage, storedReading, translate, type Reading } from "./lang";
 import { initToolbar } from "./toolbar";
 import {
   InFlight,
@@ -12,6 +15,7 @@ import {
   fetchKinds,
   inspectTarget,
   requestArtifact,
+  requestInside,
 } from "./learn";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
@@ -20,6 +24,7 @@ import { Overview } from "./overview";
 import { Sheet } from "./sheet";
 import { StudyPanel } from "./studyPanel";
 import { assemble } from "./timeline";
+import { traceCardHtml, traceDim } from "./trace";
 import { renderSteps } from "./stepsView";
 import { TourDriver, tourSteps } from "./tour";
 import { revealSymbol, showCode } from "./codeView";
@@ -49,10 +54,13 @@ const overview = new Overview(panel.tab("overview"), {
     void openPaper(blockId);
     panel.tab("paper").focus();
   },
+  onTrace: (token) => trace(token === tracing ? null : token),
+  onLookInside: (blockId) => void openInside(blockId),
+  onOutside: () => closeInside(),
   ask: async (blockId, question, history, onDelta) => {
     if (!graph) return;
     try {
-      await askBlock(graph.arxiv_id, blockId, question, askHistoryPayload(history), graph, storedKey(), onDelta);
+      await askBlock(graph.arxiv_id, blockId, question, askHistoryPayload(history), graph, storedKey(), reading, onDelta);
     } catch (err) {
       if (err instanceof LearnError && err.code === "needs_key") openKey();
       throw err;
@@ -62,7 +70,17 @@ const overview = new Overview(panel.tab("overview"), {
 panel.tab("paper").append($("#paper"));
 
 let run = new Run();
+// The English graph: what the server signed and what learn / ask requests send.
 let graph: LocatedArchitecture | null = null;
+// What the visitor sees: the same graph with its prose for their language and level.
+let view: LocatedArchitecture | null = null;
+let reading: Reading = storedReading();
+// A block's inside view while one is open: its English (to rewrite again) and what is shown.
+let inside: { blockId: string; english: LocatedArchitecture; shown: LocatedArchitecture } | null = null;
+// The dimension being traced through what's on the stage, if any.
+let tracing: string | null = null;
+/** The graph on the stage: a block's inside view, or the whole model. */
+const displayed = () => inside?.shown ?? view;
 let pages: string[] = [];
 let pinned: string | null = null;
 // The graph exactly as the server signed it: publishing re-checks the signature, so never mutate this.
@@ -104,7 +122,10 @@ function saveKey(key: string) {
   syncKey();
 }
 
-keyInput.addEventListener("change", () => saveKey(keyInput.value.trim()));
+keyInput.addEventListener("change", () => {
+  saveKey(keyInput.value.trim());
+  if (!isOriginal(reading.lang, reading.level)) void applyReading(); // a rewrite may have been waiting for the key
+});
 keyInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     keyInput.dispatchEvent(new Event("change"));
@@ -133,7 +154,9 @@ async function forgePaper(input: string, refresh = false) {
   pinned = null;
   rawGraph = saveToken = shareUrl = null;
   syncPublish();
-  graph = null; // results for the previous paper must not land on this one
+  graph = view = inside = null; // results for the previous paper must not land on this one
+  tracing = null;
+  syncInside();
   controls.hidden = true; // Replay / Publish would act on the previous paper until this one loads
   resetLearn();
 
@@ -181,17 +204,23 @@ async function handle(e: ForgeEvent, myRun: Run) {
       paper.startReading();
       history.replaceState(null, "", `?paper=${encodeURIComponent(e.arxiv_id)}`);
       break;
-    case "graph":
+    case "graph": {
       rawGraph = structuredClone(e.graph);
       saveToken = e.save_token ?? null;
       syncPublish();
       graph = e.graph;
-      overview.setGraph(e.graph);
+      setStatus(null); // a failed rewrite below leaves its message up
+      const asked = reading;
+      const shown = await localized("graph", e.graph);
+      if (myRun !== run) return;
+      view = shown;
+      overview.setGraph(shown);
       paper.stopReading();
-      setStatus(null);
-      showTitle(e.graph);
+      showTitle();
       void play(myRun);
+      if (reading !== asked) void applyReading(); // changed while that rewrite was on its way
       break;
+    }
     case "error":
       paper.stopReading();
       setStatus(e.message, true);
@@ -200,8 +229,11 @@ async function handle(e: ForgeEvent, myRun: Run) {
   }
 }
 
+/** Assemble what's on the stage: the model (first forge, Replay) or a block's inside view. */
 async function play(myRun = (run = new Run())) {
-  if (!graph) return;
+  const g = displayed();
+  if (!g) return;
+  trace(null);
   document.body.classList.add("assembling");
   controls.hidden = false;
   paper.root.classList.remove("inspect");
@@ -209,7 +241,7 @@ async function play(myRun = (run = new Run())) {
   sheet.snapTo("half"); // phones: the sweep happens in the sheet
   scene.reduceMotion = reducedMotion();
   if (reducedMotion()) myRun.skip(); // straight to the finished model
-  await assemble(scene, paper, graph, myRun);
+  await assemble(scene, paper, g, myRun);
   if (myRun === run) {
     document.body.classList.remove("assembling");
     panel.select("overview");
@@ -219,9 +251,11 @@ async function play(myRun = (run = new Run())) {
   void refreshKinds();
 }
 
-function showTitle(g: LocatedArchitecture) {
+function showTitle() {
+  const g = displayed();
+  if (!g || !view) return;
   $("#title").hidden = false;
-  $(".tc-paper").textContent = `${g.paper_title} · arXiv:${g.arxiv_id}`;
+  $(".tc-paper").textContent = inside ? `Inside the ${view.model_name} · arXiv:${g.arxiv_id}` : `${g.paper_title} · arXiv:${g.arxiv_id}`;
   $(".tc-model").textContent = g.model_name;
   $(".tc-summary").textContent = g.summary;
   // A taste on the stage; the full list lives in Overview.
@@ -260,11 +294,16 @@ scene.onClick = (id) => {
   }
 };
 
+scene.onDoubleClick = (id) => {
+  if (!document.body.classList.contains("assembling")) void openInside(id);
+};
+
 /** Show the paper at a block's source sentence (the Paper tab). */
 async function openPaper(blockId?: string) {
-  if (!graph) return;
+  const g = displayed();
+  if (!g) return;
   panel.select("paper");
-  const block = graph.blocks.find((b) => b.id === blockId) ?? graph.blocks.find((b) => b.source);
+  const block = g.blocks.find((b) => b.id === blockId) ?? g.blocks.find((b) => b.source);
   if (block?.source) await paper.reveal(block, new Run());
 }
 
@@ -327,6 +366,7 @@ panel.onSelect = (tab) => {
   const again = tab === openTab;
   openTab = tab;
   if (!isKind(tab) || !graph) return;
+  closeInside(); // tours and code point at the model's blocks
   if (again && artifacts.has(tab)) return; // already showing (e.g. a tap to open the phone sheet)
   if (artifacts.has(tab) || panel.state.status[tab] === "ready") void openLearn(tab);
   else renderState(tab);
@@ -392,6 +432,8 @@ function resetLearn() {
   delete tourAt.walkthrough;
   delete tourAt.example;
   artifacts.clear();
+  translations.clear();
+  insides.clear();
   panel.dispatch({ type: "reset" });
 }
 
@@ -423,9 +465,10 @@ async function openLearn(kind: LearnKind) {
     if (graph !== g) return; // the visitor moved on to another paper meanwhile
     const { artifact } = value;
     artifacts.set(kind, artifact);
+    // Translate while the tab still shows its progress, then mark it ready.
+    if (panel.state.active === kind) await showArtifact(kind, artifact, g);
+    if (graph !== g) return;
     panel.dispatch({ type: "loaded", kind });
-    if (panel.state.active !== kind) return; // shown when the visitor opens the tab
-    showArtifact(kind, artifact, g);
   } catch (err) {
     if (graph !== g) return;
     const e = err instanceof LearnError ? err : new LearnError(String(err));
@@ -434,7 +477,13 @@ async function openLearn(kind: LearnKind) {
   }
 }
 
-function showArtifact(kind: LearnKind, artifact: AnyArtifact, g: LocatedArchitecture) {
+/** Render an artifact for the visitor's language and level (the original if the rewrite can't be had). */
+async function showArtifact(kind: LearnKind, english: AnyArtifact, g: LocatedArchitecture) {
+  const asked = reading;
+  if (!isOriginal(asked.lang, asked.level)) panel.tab(kind).querySelector(".learn-progress")?.replaceChildren(readingMessage(asked));
+  const artifact = await localized(kind, english);
+  // Stale: another paper, another reading since, or the visitor left the tab (it renders on return).
+  if (graph !== g || reading !== asked || panel.state.active !== kind || !view) return;
   if (kind === "pytorch") {
     showCode(panel.tab("pytorch"), artifact as PytorchArtifact, (blockId) => {
       scene.highlight(blockId);
@@ -444,8 +493,160 @@ function showArtifact(kind: LearnKind, artifact: AnyArtifact, g: LocatedArchitec
   }
   const script =
     kind === "walkthrough" ? tourSteps(kind, artifact as WalkthroughArtifact) : tourSteps(kind, artifact as ExampleArtifact);
+  // A language or level change mid-tour keeps the visitor on the same step.
+  const at = driver.active && tourKind === kind ? driver.index : (tourAt[kind] ?? -1);
   tourKind = kind;
-  renderSteps(panel.tab(kind), script, g, driver, tourAt[kind] ?? -1);
+  renderSteps(panel.tab(kind), script, view, driver, at);
+}
+
+// ---------- language and level ----------
+
+// Rewrites for this paper by kind, block, language and level, so switching back and forth never asks twice.
+const translations = new Map<string, Promise<unknown>>();
+
+/**
+ * Content for the visitor's language and level. The server keeps every rewrite it makes, so this
+ * costs a Claude call only the first time anyone asks for this text this way. On failure the
+ * original stays up and the status line says why.
+ */
+async function localized<C extends object>(kind: TranslateKind, english: C, blockId?: string): Promise<C> {
+  const r = reading;
+  if (isOriginal(r.lang, r.level) || !graph) return english;
+  const cacheKey = `${kind}:${blockId ?? ""}:${r.lang}:${r.level}`;
+  let pending = translations.get(cacheKey) as Promise<C> | undefined;
+  if (!pending) {
+    const message = readingMessage(r);
+    setStatus(message);
+    const p = translate(graph.arxiv_id, kind, r, english, storedKey(), blockId);
+    translations.set(cacheKey, (pending = p));
+    p.catch(() => translations.get(cacheKey) === p && translations.delete(cacheKey)).finally(() => {
+      if (statusEl.querySelector(".status-text")!.textContent === message) setStatus(null);
+    });
+  }
+  try {
+    return await pending;
+  } catch (err) {
+    const e = err instanceof LearnError ? err : new LearnError(String(err));
+    if (e.code === "needs_key") {
+      setStatus("Add your Anthropic API key to have Claude rewrite this for you.", true);
+      openKey();
+    } else setStatus(`Couldn't rewrite this: ${e.message}`, true);
+    return english;
+  }
+}
+
+/** Re-show the open paper for the current reading: labels, title, Overview, trace and the open learning tab. */
+async function applyReading() {
+  const g = graph;
+  if (!g || !view) return;
+  const asked = reading;
+  const shown = await localized("graph", g);
+  const open = inside;
+  const shownInside = open && (await localized("expansion", open.english, open.blockId));
+  if (graph !== g || reading !== asked || inside !== open) return;
+  view = shown;
+  if (open && shownInside) inside = { ...open, shown: shownInside };
+  const d = displayed()!;
+  scene.relabel(d);
+  showTitle();
+  overview.relabel(d);
+  refreshTrace();
+  if (!overview.askBusy) inspect(pinned);
+  const active = panel.state.active;
+  const artifact = isKind(active) ? artifacts.get(active) : undefined;
+  if (isKind(active) && artifact) await showArtifact(active, artifact, g);
+}
+
+initReadingPickers($<HTMLSelectElement>("#lang"), $<HTMLSelectElement>("#level"), (next) => {
+  reading = next;
+  if (isOriginal(next.lang, next.level)) setStatus(null); // drop a stale "couldn't rewrite"
+  void applyReading();
+});
+
+// ---------- tracing a dimension ----------
+
+const traceCard = $("#trace");
+traceCard.addEventListener("click", (e) => {
+  if ((e.target as HTMLElement).closest("[data-untrace]")) trace(null);
+});
+
+/** Trace a dimension through what's on the stage, or stop with null. */
+function trace(token: string | null) {
+  tracing = token;
+  refreshTrace();
+  if (!overview.askBusy) inspect(pinned);
+}
+
+function refreshTrace() {
+  const g = displayed();
+  const t = tracing && g ? traceDim(g, tracing) : null;
+  scene.setTrace(t ? new Set(t.blocks.keys()) : null);
+  overview.setTraced(t ? t.token : null);
+  traceCard.hidden = !t;
+  traceCard.innerHTML = t && g ? traceCardHtml(t, g) : "";
+}
+
+// ---------- looking inside a block ----------
+
+// Inside views opened for this paper (English, located in the paper), so reopening is free.
+const insides = new Map<string, Promise<LocatedArchitecture>>();
+
+/** Open a block's inside view: its internal structure, assembled from the paper like the model. */
+async function openInside(blockId: string) {
+  const g = graph;
+  const block = view?.blocks.find((b) => b.id === blockId);
+  if (!g || !view || !block || inside) return; // one level deep
+  driver.stop();
+  let pending = insides.get(blockId);
+  if (!pending) {
+    setStatus(`Looking inside ${block.label}…`);
+    const id = g.arxiv_id;
+    const p = requestInside(id, blockId, g, storedKey(), (m) => setStatus(m)).then((a) => ({
+      ...a,
+      arxiv_id: id,
+      blocks: a.blocks.map((b) => ({ ...b, source: locateQuote(pages, b.source_quote) })),
+    }));
+    insides.set(blockId, (pending = p));
+    p.catch(() => insides.get(blockId) === p && insides.delete(blockId));
+  }
+  try {
+    const english = await pending;
+    if (graph !== g || inside) return;
+    setStatus(null); // a failed rewrite below leaves its message up
+    const asked = reading;
+    const shown = await localized("expansion", english, blockId);
+    if (graph !== g || inside || !view) return;
+    inside = { blockId, english, shown };
+    pinned = null;
+    overview.setInside(shown, view.model_name);
+    syncInside();
+    showTitle();
+    if (reading !== asked) void applyReading();
+    await play();
+  } catch (err) {
+    if (graph !== g) return;
+    const e = err instanceof LearnError ? err : new LearnError(String(err));
+    setStatus(e.message, true);
+    if (e.code === "needs_key") openKey();
+  }
+}
+
+/** Back from a block's inside view to the whole model, assembled. */
+function closeInside() {
+  if (!inside || !view) return;
+  run.cancel(); // an inside assembly may still be playing
+  run = new Run();
+  document.body.classList.remove("assembling");
+  inside = null;
+  pinned = null;
+  trace(null);
+  overview.setInside(view, null);
+  paper.setBlocks(view.blocks);
+  scene.showAssembled(view);
+  syncInside();
+  showTitle();
+  inspect(null);
+  toolbar.sync();
 }
 
 // ---------- controls ----------
@@ -453,8 +654,9 @@ function showArtifact(kind: LearnKind, artifact: AnyArtifact, g: LocatedArchitec
 let explodeRun = new Run();
 const toolbar = initToolbar(controls, {
   skip: () => run.skip(),
+  outside: () => closeInside(),
   replay() {
-    if (!graph) return;
+    if (!graph || !displayed()) return;
     driver.stop();
     pinned = null;
     inspect(null);
@@ -484,6 +686,11 @@ const toolbar = initToolbar(controls, {
   }),
 });
 
+/** The toolbar's back button shows only inside a block. */
+function syncInside() {
+  toolbar.outsideButton.hidden = !inside;
+}
+
 $<HTMLFormElement>("#forge-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const value = $<HTMLInputElement>("#url").value.trim();
@@ -496,9 +703,11 @@ window.addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
   if (e.key === " " && document.body.classList.contains("assembling")) run.skip();
   if (e.key === "Escape") {
-    // Esc ends the tour you can see; otherwise it collapses the phone sheet.
+    // Esc stops a trace, then the tour you can see, then leaves a block's inside; otherwise it collapses the phone sheet.
     const tourShowing = driver.active && tourKind === panel.state.active;
-    if (tourShowing) driver.stop();
+    if (tracing) trace(null);
+    else if (tourShowing) driver.stop();
+    else if (inside) closeInside();
     else sheet.snapTo("tabs");
   }
   // Arrow keys step through a tour, unless they're moving between tabs.

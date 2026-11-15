@@ -1,8 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import type { Architecture, Block } from "../shared/graph";
+import { Architecture, type Block } from "../shared/graph";
 import { ARTIFACT_SCHEMA, type AnyArtifact, type AskTurn, type LearnKind } from "../shared/learn";
+import { DEFAULT_LEVEL, languageName, levelReader, type Lang, type Level } from "../shared/translate";
 import { formatPaper } from "./extract";
 
 /**
@@ -44,13 +45,26 @@ export const LEARN_TASK: Record<LearnKind, string> = {
 - takeaway: one sentence to remember.`,
 };
 
+/** A block's inside view: its internal structure as a small graph of its own (same shape as the model). */
+export function insideTask(block: Block): string {
+  return `Look inside the block "${block.id}" (${block.label}): describe its internal structure as a small block graph of its own, the way the paper's text and equations define it.
+- blocks: 3–10 internal components in data-flow order, with new snake_case ids (not ids from <graph>). Start with one block of type "input" for what enters (input_shape ${block.input_shape}) and end with one of type "output" for what leaves (output_shape ${block.output_shape}). Give every component the most specific type.
+- input_shape / output_shape: concrete, using the paper's hyperparameters, so the reader sees how the tensor changes inside (e.g. split into heads and back).
+- label: a short plain-text name of 1–4 words, no LaTeX or symbols such as ^ or _ (the equation field holds the math).
+- groups: when a sub-structure runs N times in parallel or in sequence (e.g. one attention head), describe ONE copy in a group with repeat = N and a label of 1–3 words such as "Attention head".
+- edges: forward data flow; "residual" for skip connections. Acyclic.
+- equation, hyperparameters and source_quote follow the same rules as <graph>: source_quote is one sentence copied verbatim from the paper text; reuse the block's own sentence if no better one exists.
+- paper_title as in <graph>; model_name: "${block.label}"; summary: one sentence on what happens inside; hyperparameters: the ones that matter inside this block.
+If the paper says nothing more about its inside, give the standard structure the paper's notation implies and say so in the summary.`;
+}
+
 /**
- * One output format for every kind. The format sits ahead of the whole prompt in the cache,
- * so a per-kind schema made every feature re-pay for the paper (measured: cache read 0).
- * The task text says which shape to write; generateArtifact checks it against that kind's schema.
+ * One output format for every kind, inside views included. The format sits ahead of the whole
+ * prompt in the cache, so a per-kind schema made every feature re-pay for the paper (measured:
+ * cache read 0). The task text says which shape to write; the caller checks it against that schema.
  */
 export const ANY_ARTIFACT = z.object({
-  artifact: z.union([ARTIFACT_SCHEMA.pytorch, ARTIFACT_SCHEMA.walkthrough, ARTIFACT_SCHEMA.example]),
+  artifact: z.union([ARTIFACT_SCHEMA.pytorch, ARTIFACT_SCHEMA.walkthrough, ARTIFACT_SCHEMA.example, Architecture]),
 });
 
 export function paperPrefix(pages: string[], graph: Architecture): Anthropic.Beta.BetaTextBlockParam[] {
@@ -61,6 +75,14 @@ export function paperPrefix(pages: string[], graph: Architecture): Anthropic.Bet
 }
 
 export function learnRequest(kind: LearnKind, pages: string[], graph: Architecture) {
+  return tutorRequest(pages, graph, `${LEARN_TASK[kind]}\n\nWrite it as the "${kind}" shape of artifact.`);
+}
+
+export function insideRequest(block: Block, pages: string[], graph: Architecture) {
+  return tutorRequest(pages, graph, `${insideTask(block)}\n\nWrite it as the block-graph shape of artifact.`);
+}
+
+function tutorRequest(pages: string[], graph: Architecture, task: string) {
   return {
     model: MODEL,
     max_tokens: 32000,
@@ -70,7 +92,7 @@ export function learnRequest(kind: LearnKind, pages: string[], graph: Architectu
     messages: [
       {
         role: "user" as const,
-        content: [...paperPrefix(pages, graph), { type: "text" as const, text: `${LEARN_TASK[kind]}\n\nWrite it as the "${kind}" shape of artifact.` }],
+        content: [...paperPrefix(pages, graph), { type: "text" as const, text: task }],
       },
     ],
   };
@@ -82,9 +104,12 @@ export interface AskInput {
   block: Block;
   question: string;
   history: AskTurn[];
+  /** The reader's language and level; after the cache breakpoint, so every reader shares the prefix. */
+  lang?: Lang;
+  level?: Level;
 }
 
-export function askRequest({ pages, graph, block, question, history }: AskInput) {
+export function askRequest({ pages, graph, block, question, history, lang = "en", level = DEFAULT_LEVEL }: AskInput) {
   const focus = `The reader is asking about this block:\n${JSON.stringify({
     id: block.id,
     label: block.label,
@@ -92,7 +117,9 @@ export function askRequest({ pages, graph, block, question, history }: AskInput)
     equation: block.equation,
     input_shape: block.input_shape,
     output_shape: block.output_shape,
-  })}\nAnswer in a few short paragraphs at most. Plain text; LaTeX only inline as $...$.`;
+  })}\nAnswer in a few short paragraphs at most. Plain text; LaTeX only inline as $...$.${
+    lang === "en" ? "" : ` Answer in ${languageName(lang)}, whatever language the question is in; refer to blocks by their ids as usual.`
+  }${level === DEFAULT_LEVEL ? "" : ` Write for ${levelReader(level)}.`}`;
   return {
     model: MODEL,
     max_tokens: 4000,
@@ -129,6 +156,32 @@ export async function generateArtifact(
   const parsed = ARTIFACT_SCHEMA[kind].safeParse(response.parsed_output?.artifact);
   if (!parsed.success) throw new Error("Claude returned something that didn't match the expected format.");
   return parsed.data as AnyArtifact;
+}
+
+/** Keep an inside view drawable: unique block ids, edges between blocks that exist, no self-loops. */
+export function cleanInside(inside: Architecture): Architecture {
+  const seen = new Set<string>();
+  const blocks = inside.blocks.filter((b) => !seen.has(b.id) && seen.add(b.id));
+  const groups = inside.groups.filter((g) => blocks.some((b) => b.group === g.id));
+  const edges = inside.edges.filter((e) => seen.has(e.from) && seen.has(e.to) && e.from !== e.to);
+  return { ...inside, groups, blocks: blocks.map((b) => (groups.some((g) => g.id === b.group) ? b : { ...b, group: "" })), edges };
+}
+
+export async function generateInside(
+  block: Block,
+  { pages, graph, apiKey }: { pages: string[]; graph: Architecture; apiKey?: string },
+): Promise<Architecture> {
+  const response = await client(apiKey).beta.messages.parse(insideRequest(block, pages, graph));
+  logUsage(`inside ${block.id}`, response.usage);
+  if (response.stop_reason === "refusal") {
+    throw new Error(`Claude declined to write this (${response.stop_details?.category ?? "unspecified"}).`);
+  }
+  if (response.stop_reason === "max_tokens") throw new Error("Claude ran out of output tokens before finishing.");
+  const parsed = Architecture.safeParse(response.parsed_output?.artifact);
+  if (!parsed.success) throw new Error("Claude returned something that didn't match the expected format.");
+  const inside = cleanInside(parsed.data);
+  if (inside.blocks.length < 2) throw new Error(`Claude found nothing inside ${block.label} to show.`);
+  return inside;
 }
 
 export async function* askStream(input: AskInput & { apiKey?: string }): AsyncIterable<string> {

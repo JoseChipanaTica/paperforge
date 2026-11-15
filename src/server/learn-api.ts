@@ -9,20 +9,23 @@ import {
   type AnyArtifact,
   type AskEvent,
   type AskTurn,
+  type InsideEvent,
   type LearnEvent,
 } from "../shared/learn";
+import { DEFAULT_LEVEL, Lang, Level } from "../shared/translate";
 import { errorMessage } from "./api";
 import { parseArxivId } from "./arxiv";
 import { loadPaperPages } from "./forge";
 import { getStore, type Store } from "./store";
-import { askStream, generateArtifact } from "./tutor";
+import { askStream, generateArtifact, generateInside } from "./tutor";
 
-/** Routes for the learning features: /api/learn (generate or fetch), /api/ask, GET /api/learn (kinds). */
+/** Routes for the learning features: /api/learn (generate or fetch), /api/ask, GET /api/learn (kinds), /api/inside. */
 
 export interface LearnDeps {
   store: Store;
   generate: typeof generateArtifact;
   ask: typeof askStream;
+  inside: typeof generateInside;
   loadPages: (id: string) => Promise<string[]>;
   samplesDir: string;
 }
@@ -32,6 +35,7 @@ export function defaultLearnDeps(): LearnDeps {
     store: getStore(),
     generate: generateArtifact,
     ask: askStream,
+    inside: generateInside,
     loadPages: (id) => loadPaperPages(id),
     samplesDir: join(import.meta.dir, "..", "..", "samples"),
   };
@@ -155,6 +159,8 @@ export async function askHandler(req: Request, overrides: Partial<LearnDeps> = {
   const id = parseArxivId(String(body?.arxiv_id ?? ""));
   const question = typeof body?.question === "string" ? body.question.trim() : "";
   const history = parseHistory(body?.history);
+  const lang = Lang.catch("en").parse(body?.lang ?? "en");
+  const level = Level.catch(DEFAULT_LEVEL).parse(body?.level ?? DEFAULT_LEVEL);
   if (!id) return bad("Expected an arXiv id.");
   if (!question || question.length > MAX_QUESTION) return bad(`Ask a question of up to ${MAX_QUESTION} characters.`);
   if (!history) return bad(`History must be at most ${MAX_TURNS} turns of up to ${MAX_TURN_TEXT} characters.`);
@@ -170,7 +176,7 @@ export async function askHandler(req: Request, overrides: Partial<LearnDeps> = {
   return ndjson<AskEvent>(async (emit) => {
     try {
       const pages = await d.loadPages(id);
-      for await (const text of d.ask({ pages, graph, block, question, history, apiKey })) emit({ type: "delta", text });
+      for await (const text of d.ask({ pages, graph, block, question, history, lang, level, apiKey })) emit({ type: "delta", text });
       emit({ type: "done" });
     } catch (err) {
       console.error(err);
@@ -189,4 +195,58 @@ export async function kindsHandler(req: Request, overrides: Partial<LearnDeps> =
     LEARN_KINDS.map(async (k) => saved.includes(k) || (await readSample(d.samplesDir, id, k, published)) !== null),
   );
   return Response.json(LEARN_KINDS.filter((_, i) => available[i]));
+}
+
+/**
+ * POST /api/inside { arxiv_id, block_id, graph }: a block's internal structure as a graph of its
+ * own. Same order as /api/learn: gallery (published papers) → committed sample → Claude, and only
+ * a published paper's inside views are saved (first save wins). Quotes are located in the browser,
+ * which already has the paper's text.
+ */
+export async function insideHandler(req: Request, overrides: Partial<LearnDeps> = {}): Promise<Response> {
+  const d = { ...defaultLearnDeps(), ...overrides };
+  const body = await readBody(req);
+  const apiKey = keyOf(req);
+
+  return ndjson<InsideEvent>(async (emit) => {
+    const fail = (message: string) => emit({ type: "error", message, code: "bad_input" });
+    const id = parseArxivId(String(body?.arxiv_id ?? ""));
+    const blockId = typeof body?.block_id === "string" ? body.block_id : "";
+    if (!id || !/^[\w-]{1,100}$/.test(blockId)) return fail("Expected an arXiv id and a block_id.");
+
+    try {
+      const published = await publishedGraph(d.store, id);
+      const parsed = Architecture.safeParse(body?.graph);
+      const graph = published ?? (parsed.success ? parsed.data : null);
+      if (!graph) return fail("Forge the paper first, then try again.");
+      const block = graph.blocks.find((b) => b.id === blockId);
+      if (!block) return fail("That block isn't in this model.");
+      const done = (inside: Architecture, source: "gallery" | "sample" | "claude", saved: boolean) =>
+        emit({ type: "inside", block_id: blockId, graph: inside, source, saved });
+
+      if (published) {
+        const saved = await d.store.getInside(id, blockId).catch(() => null);
+        if (saved) return done(saved, "gallery", true);
+      }
+      const sample = Bun.file(join(d.samplesDir, `${fileId(id)}.inside.${blockId}.json`));
+      if (await sample.exists()) return done(Architecture.parse(await sample.json()), "sample", false);
+
+      emit({ type: "status", message: `Claude is looking inside ${block.label}…` });
+      const pages = await d.loadPages(id);
+      const inside = await d.inside(block, { pages, graph, apiKey });
+      if (!published) return done(inside, "claude", false);
+      try {
+        // First save wins: if another visitor's landed meanwhile, show everyone that one.
+        const result = await d.store.putInside(id, blockId, inside);
+        const stored = result === "exists" ? await d.store.getInside(id, blockId) : inside;
+        done(stored ?? inside, "claude", true);
+      } catch (err) {
+        console.error("inside view save failed:", err);
+        done(inside, "claude", false);
+      }
+    } catch (err) {
+      console.error(err);
+      emit({ type: "error", ...errorMessage(err) });
+    }
+  });
 }

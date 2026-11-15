@@ -1,0 +1,239 @@
+{
+  "paper_title": "Attention Is All You Need",
+  "model_name": "Multi-Head Attention",
+  "summary": "The encoder's input x is used as queries, keys and values. Each of h = 8 heads projects it down to 64 dimensions and runs scaled dot-product attention. The 8 head outputs are concatenated back to 512 and mixed by W^O; this split is exactly what the paper's equations define.",
+  "hyperparameters": [
+    {
+      "name": "h",
+      "value": "8"
+    },
+    {
+      "name": "d_model",
+      "value": "512"
+    },
+    {
+      "name": "d_k",
+      "value": "64"
+    },
+    {
+      "name": "d_v",
+      "value": "64"
+    }
+  ],
+  "groups": [
+    {
+      "id": "attention_head",
+      "label": "Attention head",
+      "repeat": 8
+    }
+  ],
+  "blocks": [
+    {
+      "id": "mha_in",
+      "label": "Input x",
+      "type": "input",
+      "group": "",
+      "equation": "Q = K = V = x",
+      "input_shape": "[B, n, 512]",
+      "output_shape": "[B, n, 512]",
+      "hyperparameters": [],
+      "description": "In encoder self-attention, the previous layer's output serves as queries, keys and values all at once.",
+      "source_quote": "In a self-attention layer all of the keys, values and queries come from the same place, in this case, the output of the previous layer in the encoder."
+    },
+    {
+      "id": "query_proj",
+      "label": "Query projection",
+      "type": "linear",
+      "group": "attention_head",
+      "equation": "Q_i = Q W^Q_i,\\; W^Q_i \\in \\mathbb{R}^{d_{model} \\times d_k}",
+      "input_shape": "[B, n, 512]",
+      "output_shape": "[B, n, 64]",
+      "hyperparameters": [
+        {
+          "name": "d_k",
+          "value": "64"
+        }
+      ],
+      "description": "A learned linear map turns each 512-dim position into a 64-dim query for this head.",
+      "source_quote": "Instead of performing a single attention function with d model -dimensional keys, values and queries, we found it beneficial to linearly project the queries, keys and values h times with different, learned linear projections to d k , d k and d v dimensions, respectively."
+    },
+    {
+      "id": "key_proj",
+      "label": "Key projection",
+      "type": "linear",
+      "group": "attention_head",
+      "equation": "K_i = K W^K_i,\\; W^K_i \\in \\mathbb{R}^{d_{model} \\times d_k}",
+      "input_shape": "[B, n, 512]",
+      "output_shape": "[B, n, 64]",
+      "hyperparameters": [
+        {
+          "name": "d_k",
+          "value": "64"
+        }
+      ],
+      "description": "A separate learned linear map produces this head's 64-dim keys.",
+      "source_quote": "In this work we employ h = 8 parallel attention layers, or heads."
+    },
+    {
+      "id": "value_proj",
+      "label": "Value projection",
+      "type": "linear",
+      "group": "attention_head",
+      "equation": "V_i = V W^V_i,\\; W^V_i \\in \\mathbb{R}^{d_{model} \\times d_v}",
+      "input_shape": "[B, n, 512]",
+      "output_shape": "[B, n, 64]",
+      "hyperparameters": [
+        {
+          "name": "d_v",
+          "value": "64"
+        }
+      ],
+      "description": "A third learned linear map produces this head's 64-dim values, the content that will be mixed.",
+      "source_quote": "For each of these we use d k = d v = d model /h = 64 ."
+    },
+    {
+      "id": "scaled_scores",
+      "label": "Scaled dot product",
+      "type": "attention",
+      "group": "attention_head",
+      "equation": "S_i = \\frac{Q_i K_i^{\\top}}{\\sqrt{d_k}}",
+      "input_shape": "[B, n, 64] + [B, n, 64]",
+      "output_shape": "[B, n, n]",
+      "hyperparameters": [
+        {
+          "name": "scale",
+          "value": "1/√64 = 1/8"
+        }
+      ],
+      "description": "Scores every query against every key, giving an n×n compatibility table, scaled by 1/8 so the softmax does not saturate.",
+      "source_quote": "To counteract this effect, we scale the dot products by 1 √ d k ."
+    },
+    {
+      "id": "attn_softmax",
+      "label": "Softmax",
+      "type": "softmax",
+      "group": "attention_head",
+      "equation": "A_i = \\mathrm{softmax}(S_i)",
+      "input_shape": "[B, n, n]",
+      "output_shape": "[B, n, n]",
+      "hyperparameters": [],
+      "description": "Normalizes each row of scores into weights that sum to 1, so each position decides how much to look at every other position.",
+      "source_quote": "We compute the dot products of the query with all keys, divide each by √ d k , and apply a softmax function to obtain the weights on the values."
+    },
+    {
+      "id": "weighted_sum",
+      "label": "Weighted sum of values",
+      "type": "attention",
+      "group": "attention_head",
+      "equation": "\\mathrm{head}_i = A_i V_i = \\mathrm{softmax}\\left(\\frac{Q_iK_i^{\\top}}{\\sqrt{d_k}}\\right)V_i",
+      "input_shape": "[B, n, n] + [B, n, 64]",
+      "output_shape": "[B, n, 64]",
+      "hyperparameters": [],
+      "description": "Each position's output is the attention-weighted average of all value vectors.",
+      "source_quote": "We compute the matrix of outputs as:"
+    },
+    {
+      "id": "heads_concat",
+      "label": "Concat heads",
+      "type": "concat",
+      "group": "",
+      "equation": "\\mathrm{Concat}(\\mathrm{head}_1, \\ldots, \\mathrm{head}_h)",
+      "input_shape": "8 × [B, n, 64]",
+      "output_shape": "[B, n, 512]",
+      "hyperparameters": [
+        {
+          "name": "h · d_v",
+          "value": "512"
+        }
+      ],
+      "description": "Stacks the 8 head outputs side by side, restoring a 512-dim vector per position.",
+      "source_quote": "These are concatenated and once again projected, resulting in the final values, as depicted in Figure 2."
+    },
+    {
+      "id": "output_proj",
+      "label": "Output projection",
+      "type": "linear",
+      "group": "",
+      "equation": "\\mathrm{MultiHead}(Q,K,V) = \\mathrm{Concat}(\\mathrm{head}_1,\\ldots,\\mathrm{head}_h)W^O,\\; W^O \\in \\mathbb{R}^{hd_v \\times d_{model}}",
+      "input_shape": "[B, n, 512]",
+      "output_shape": "[B, n, 512]",
+      "hyperparameters": [
+        {
+          "name": "d_model",
+          "value": "512"
+        }
+      ],
+      "description": "A learned linear map mixes information across the heads' subspaces.",
+      "source_quote": "Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions."
+    },
+    {
+      "id": "mha_out",
+      "label": "Output",
+      "type": "output",
+      "group": "",
+      "equation": "",
+      "input_shape": "[B, n, 512]",
+      "output_shape": "[B, n, 512]",
+      "hyperparameters": [],
+      "description": "A context-mixed representation per position, passed to the Add & Norm sub-layer (encoder_add_norm_1).",
+      "source_quote": "Each position in the encoder can attend to all positions in the previous layer of the encoder."
+    }
+  ],
+  "edges": [
+    {
+      "from": "mha_in",
+      "to": "query_proj",
+      "kind": "data"
+    },
+    {
+      "from": "mha_in",
+      "to": "key_proj",
+      "kind": "data"
+    },
+    {
+      "from": "mha_in",
+      "to": "value_proj",
+      "kind": "data"
+    },
+    {
+      "from": "query_proj",
+      "to": "scaled_scores",
+      "kind": "data"
+    },
+    {
+      "from": "key_proj",
+      "to": "scaled_scores",
+      "kind": "data"
+    },
+    {
+      "from": "scaled_scores",
+      "to": "attn_softmax",
+      "kind": "data"
+    },
+    {
+      "from": "attn_softmax",
+      "to": "weighted_sum",
+      "kind": "data"
+    },
+    {
+      "from": "value_proj",
+      "to": "weighted_sum",
+      "kind": "data"
+    },
+    {
+      "from": "weighted_sum",
+      "to": "heads_concat",
+      "kind": "data"
+    },
+    {
+      "from": "heads_concat",
+      "to": "output_proj",
+      "kind": "data"
+    },
+    {
+      "from": "output_proj",
+      "to": "mha_out",
+      "kind": "data"
+    }
+  ]
+}

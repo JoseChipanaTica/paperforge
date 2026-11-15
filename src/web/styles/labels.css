@@ -8,6 +8,7 @@
 .block-label.left { text-align: right; }
 .bl-title { font: 500 var(--t-sm) var(--serif); display: flex; align-items: center; gap: 6px; color: var(--ink); }
 .block-label.left .bl-title { justify-content: flex-end; }
+.block-label.top .bl-title { justify-content: center; }
 .bl-title .dot { width: 8px; height: 8px; border-radius: 1px; border: 1px solid var(--ink); flex: none; }
 .bl-shape { font: 400 10.5px var(--mono); color: var(--ink-faint); margin-left: 4px; }
 .bl-eq { font-size: 10.5px; color: var(--ink-soft); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; }

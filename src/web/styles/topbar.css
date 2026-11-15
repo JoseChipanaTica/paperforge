@@ -25,7 +25,17 @@
 /* On the landing page the hero owns the paste box. */
 body:not(.has-paper) .topbar .forge-form { visibility: hidden; }
 
-.key { display: flex; align-items: center; gap: var(--s2); margin-left: auto; }
+/* Quiet like the key button: language and level of everything Claude wrote. */
+.reading { display: flex; margin-left: auto; }
+.reading select {
+  appearance: none; border: 1px solid transparent; border-radius: var(--r-control); cursor: pointer;
+  font: var(--t-sm) var(--ui); color: var(--ink-soft); padding: 6px 22px 6px 10px;
+  background: linear-gradient(45deg, transparent 50%, currentColor 50%) right 11px center / 4px 4px no-repeat,
+    linear-gradient(135deg, currentColor 50%, transparent 50%) right 7px center / 4px 4px no-repeat;
+}
+.reading select:hover { color: var(--ink); background-color: var(--wash); }
+.reading select:focus-visible { outline: 0; box-shadow: var(--focus); color: var(--ink); }
+.key { display: flex; align-items: center; gap: var(--s2); }
 .key .btn { white-space: nowrap; }
 .key .btn.set { color: var(--ink); }
 .key .btn.set::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #5f8a4f; }
@@ -36,10 +46,13 @@ body:not(.has-paper) .topbar .forge-form { visibility: hidden; }
   .topbar { padding: 0 var(--s3); gap: var(--s2); }
   /* The paste box takes the bar while you type in it. */
   .topbar:focus-within .brand { display: none; }
-  .forge-form { flex: 1 1 auto; box-shadow: 2px 2px 0 var(--ink); }
-  .forge-form input { font-size: 16px; padding: 5px 8px; } /* 16px stops iOS zooming in */
+  /* The paste box gives way to the pickers and key, and takes the bar back while you type in it. */
+  .forge-form { flex: 1 1 auto; min-width: 0; box-shadow: 2px 2px 0 var(--ink); }
+  .forge-form input { width: 0; font-size: 16px; padding: 5px 8px; } /* 16px stops iOS zooming in */
   .forge-form .btn-primary { padding: 5px 12px; }
   body.has-paper .brand { font-size: 0; gap: 0; } /* logo only once a paper is open */
   .key input { position: absolute; top: calc(var(--topbar-h) + 4px); right: var(--s3); width: min(320px, calc(100vw - 24px)); box-shadow: var(--print); }
   .key .btn { padding: 6px 8px; font-size: var(--t-xs); }
+  .reading select { max-width: 76px; text-overflow: ellipsis; padding: 6px 18px 6px 6px; font-size: var(--t-xs); background-position: right 9px center, right 5px center; }
+  .topbar:has(.forge-form:focus-within) .reading { display: none; } /* the paste box takes the bar while you type */
 }

@@ -36,6 +36,9 @@ interface Pulse {
 }
 
 const QUIET_TYPES = new Set(["add_norm", "layer_norm", "normalization", "residual_add", "dropout", "activation"]);
+
+const titleHtml = (block: LocatedBlock, color: THREE.Color) =>
+  `<span class="dot" style="background:${color.getStyle()}"></span>${escapeHtml(block.label)}<span class="bl-shape">${escapeHtml(block.output_shape)}</span>`;
 // Printed wires: ink for the data path, ochre for skips, vermilion between branches.
 const EDGE_COLOR = { data: INK, residual: "#e0b04c", cross: VERMILION } as const;
 const PULSE_STEP = 0.55; // seconds per rank
@@ -89,6 +92,9 @@ export class ForgeScene {
   private hovered: string | null = null;
   /** A block lit up by the tour or the code panel, independent of the mouse. */
   private highlighted: string | null = null;
+  /** Blocks a traced dimension flows through; everything else fades back. */
+  private traced: ReadonlySet<string> | null = null;
+  onDoubleClick: (id: string) => void = () => {};
   onHover: (id: string | null) => void = () => {};
   onClick: (id: string | null) => void = () => {};
 
@@ -138,6 +144,9 @@ export class ForgeScene {
     el.addEventListener("click", (e) => {
       if (Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) this.onClick(this.hovered);
     });
+    el.addEventListener("dblclick", () => {
+      if (this.hovered) this.onDoubleClick(this.hovered);
+    });
 
     new ResizeObserver(() => this.resize()).observe(container);
     this.resize();
@@ -179,6 +188,7 @@ export class ForgeScene {
     this.groupFrames = [];
     this.graph = null;
     this.layout = null;
+    this.traced = null;
   }
 
   load(graph: LocatedArchitecture) {
@@ -186,6 +196,12 @@ export class ForgeScene {
     this.graph = graph;
     const layout = (this.layout = layoutGraph(graph));
     const midX = (layout.bounds.minX + layout.bounds.maxX) / 2;
+    // Blocks side by side in one row (Q, K and V projections): the outer ones label outward, the middle ones above.
+    const rows = new Map<string, PlacedBlock[]>();
+    for (const p of layout.blocks.values()) {
+      const key = `${p.column}:${p.rank}`;
+      rows.set(key, [...(rows.get(key) ?? []), p].sort((a, b) => a.x - b.x));
+    }
 
     graph.blocks.forEach((block, index) => {
       const placed = layout.blocks.get(block.id)!;
@@ -201,18 +217,28 @@ export class ForgeScene {
         (index % 2 === 0 ? 1 : -1) * 1.1 + (placed.column % 2 ? -0.6 : 0.6),
       );
 
-      const leftSide = layout.columns > 1 && placed.x < midX;
+      const row = rows.get(`${placed.column}:${placed.rank}`)!;
+      const at = row.indexOf(placed);
+      const side =
+        row.length > 1 ? (at === 0 ? "left" : at === row.length - 1 ? "right" : "top")
+        : layout.columns > 1 && placed.x < midX ? "left"
+        : "right";
       const div = document.createElement("div");
-      div.className = `block-label ${leftSide ? "left" : "right"}`;
-      // Norm/residual blocks repeat one equation many times; keep their labels to one line.
-      const showEq = block.equation && !QUIET_TYPES.has(block.type);
+      div.className = `block-label ${side}`;
+      // Norm/residual blocks repeat one equation many times, and labels above sit between rows: one line.
+      const showEq = block.equation && !QUIET_TYPES.has(block.type) && side !== "top";
       div.innerHTML = `
-        <div class="bl-title"><span class="dot" style="background:${obj.color.getStyle()}"></span>${escapeHtml(block.label)}<span class="bl-shape">${escapeHtml(block.output_shape)}</span></div>
+        <div class="bl-title">${titleHtml(block, obj.color)}</div>
         ${showEq ? `<div class="bl-eq">${renderTex(block.equation)}</div>` : ""}`;
       div.style.opacity = "0";
       const label = new CSS2DObject(div);
-      label.center.set(leftSide ? 1 : 0, 0.5);
-      label.position.set((leftSide ? -1 : 1) * (placed.w / 2 + 0.35), 0, 0);
+      if (side === "top") {
+        label.center.set(0.5, 1);
+        label.position.set(0, placed.h / 2 + 0.2, 0);
+      } else {
+        label.center.set(side === "left" ? 1 : 0, 0.5);
+        label.position.set((side === "left" ? -1 : 1) * (placed.w / 2 + 0.35), 0, 0);
+      }
       obj.root.add(label);
 
       this.blocks.set(block.id, { block, placed, obj, label, assembled, exploded, glow: 0, index });
@@ -241,6 +267,23 @@ export class ForgeScene {
     this.buildPulses();
     this.sway = !this.reduceMotion;
     this.frame(true);
+  }
+
+  /** The same model in other words (a language change): swap the label text, keep everything else. */
+  relabel(graph: LocatedArchitecture) {
+    if (!this.graph) return;
+    this.graph = graph;
+    for (const block of graph.blocks) {
+      const sb = this.blocks.get(block.id);
+      if (!sb) continue;
+      sb.block = block;
+      sb.label.element.querySelector(".bl-title")!.innerHTML = titleHtml(block, sb.obj.color);
+    }
+    const labels = new Map(graph.groups.map((g) => [g.id, g.label]));
+    for (const g of this.groupFrames) {
+      g.placed.label = labels.get(g.placed.id) ?? g.placed.label;
+      g.label.element.querySelector("span")!.textContent = g.placed.label;
+    }
   }
 
   /** Load a graph already assembled: no flight, wires drawn, pulse running (the landing preview). */
@@ -324,6 +367,22 @@ export class ForgeScene {
   highlight(id: string | null) {
     this.highlighted = id;
     if (id) this.flash(id, 0.9);
+  }
+
+  /** Light up the blocks a traced dimension flows through and fade the rest, or clear with null. */
+  setTrace(ids: ReadonlySet<string> | null) {
+    this.traced = ids;
+    this.fadeEdges();
+  }
+
+  /** Edges off the traced path fade with their blocks. */
+  private fadeEdges() {
+    for (const { edge, mesh } of this.edges) {
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      mat.userData.base ??= mat.opacity;
+      const on = !this.traced || (this.traced.has(edge.from) && this.traced.has(edge.to));
+      mat.opacity = mat.userData.base * (on ? 1 : 0.15);
+    }
   }
 
   /** Fly the camera to a block, or back to the whole model with null. */
@@ -418,6 +477,7 @@ export class ForgeScene {
       this.edgeGroup.add(mesh);
       this.edges.push({ edge, mesh, curve });
     }
+    this.fadeEdges();
     this.setEdgeProgress(this.edgeProgress);
   }
 
@@ -506,12 +566,14 @@ export class ForgeScene {
     }
     for (const sb of this.blocks.values()) {
       sb.glow = Math.max(0, sb.glow - dt * 1.6);
-      const lit = sb.block.id === this.hovered || sb.block.id === this.highlighted;
+      const traced = this.traced?.has(sb.block.id) ?? false;
+      const lit = sb.block.id === this.hovered || sb.block.id === this.highlighted || traced;
+      const faded = this.traced !== null && !traced;
       // Highlighter halo instead of glow: on while hovered/highlighted, flashes fade out.
       const halo = Math.min(1, Math.max(lit ? 0.85 : 0, sb.glow));
       sb.obj.haloMaterial.opacity = halo * 0.9;
       sb.obj.halo.visible = halo > 0.01;
-      (sb.label.element as HTMLElement).style.opacity = String(this.labelAlpha * (sb.obj.root.visible ? 1 : 0));
+      (sb.label.element as HTMLElement).style.opacity = String(this.labelAlpha * (sb.obj.root.visible ? 1 : 0) * (faded ? 0.3 : 1));
       sb.label.element.classList.toggle("hot", lit);
     }
     for (const g of this.groupFrames) {

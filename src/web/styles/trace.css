@@ -1,0 +1,31 @@
+/* Shape tracing: dimensions are buttons; the traced one wears the highlighter, like a marked sentence. */
+.dim {
+  border: 0; background: none; padding: 0 1px; font: inherit; color: inherit; cursor: pointer;
+  border-bottom: 1px dotted var(--ink-faint);
+}
+.dim:hover { color: var(--ink); border-bottom-color: var(--ink); }
+.dim[aria-pressed="true"], button.chip[aria-pressed="true"] { background: var(--mark); color: var(--ink); border-bottom-color: transparent; }
+.dim:focus-visible, button.chip:focus-visible { outline: 0; box-shadow: var(--focus); }
+button.chip { cursor: pointer; }
+button.chip:hover { border-color: var(--rule-strong); color: var(--ink); }
+
+/* The trace card: what the traced dimension is and where it goes. */
+.trace-card {
+  position: absolute; right: var(--s5); top: var(--s5); z-index: 5; width: min(280px, calc(100% - 32px));
+  padding: var(--s3) var(--s4); background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: var(--r-print);
+  font: var(--t-xs) / 1.45 var(--serif);
+}
+.tr-head { display: flex; align-items: baseline; gap: var(--s2); }
+.tr-head b { font: 500 var(--t-md) var(--mono); background: var(--mark); padding: 0 2px; }
+.tr-head span { color: var(--ink-soft); font-size: var(--t-xs); }
+.tr-head button { margin-left: auto; border: 0; background: none; font-size: var(--t-md); color: var(--ink-soft); cursor: pointer; }
+.tr-head button:hover { color: var(--ink); }
+.trace-card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px var(--s3); margin: var(--s2) 0 0; }
+.trace-card dt { font: var(--t-xs) var(--ui); color: var(--ink-faint); padding-top: 2px; }
+.trace-card dd { margin: 0; }
+.tr-split { margin-top: var(--s2); font: var(--t-xs) var(--mono); color: var(--ink-soft); }
+.assembling .trace-card { display: none; }
+
+@media (max-width: 899px) {
+  .trace-card { top: auto; bottom: calc(64px + 56px); right: var(--s3); }
+}

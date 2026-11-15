@@ -16,7 +16,7 @@ make that 30-second moment look better or work more reliably. Polish what the ca
 - `src/server/arxiv.ts` — parse arXiv ids/URLs, download PDFs
 - `src/server/pdf.ts` — pdf.js (`pdfjs-dist/legacy`) text extraction, one string per page
 - `src/server/extract.ts` — Claude call (structured output via `betaZodOutputFormat`)
-- `src/server/locate.ts` — find each block's verbatim `source_quote` in the page text
+- `src/shared/locate.ts` — find each block's verbatim `source_quote` in the page text
 - `src/server/forge.ts` — pipeline; lookup order gallery → disk cache (`data/cache/`, `/tmp/paperforge`
   on Vercel) → `samples/` → Claude
 - `src/server/store.ts` — the public gallery (`Bun.SQL`): Neon Postgres when `DATABASE_URL` is set,
@@ -27,19 +27,31 @@ make that 30-second moment look better or work more reliably. Polish what the ca
   the `/api/learn` + `/api/ask` stream events. Every step carries a graph `block_id`.
 - `src/server/tutor.ts` — Claude calls for learning features. All share one system prompt and one
   `[paper, graph]` prefix with a cache breakpoint; keep it byte-identical and effort fixed.
+- `src/shared/translate.ts` — languages, reading levels (Beginner / Engineer / Researcher), and the prose
+  of each graph/artifact (`pickText` / `applyText`). Claude always writes English for an engineer; a
+  "translation" rewrites only labels, descriptions and narration for another language and/or level, never
+  ids, equations, shapes or source quotes. `codeSkeleton` guards PyTorch: only comments may change.
+- `src/server/translate.ts` + `translate-api.ts` — `POST /api/translate`, keyed by a hash of the English
+  text + language + level: gallery (`translations` table; only published/sample text) → disk cache →
+  Claude. Never rewrites the same text twice. Ask gets language and level after the cache breakpoint.
 - `src/server/learn-api.ts` — `POST /api/learn` (gallery → sample → Claude; saved only for published
-  papers, first save wins), `POST /api/ask` (streamed, never stored), `GET /api/learn?arxiv_id=`
+  papers, first save wins), `POST /api/ask` (streamed, never stored), `GET /api/learn?arxiv_id=`,
+  `POST /api/inside` (a block's inside view: an `Architecture` of its own, same lookup order, `insides`
+  table; the tutor writes it through the shared output format so it reads the paper from the cache)
 - `src/web/` — Three.js front end ("Paper & ink": spec `docs/superpowers/specs/2026-11-15-ui-overhaul-design.md`):
   - `scene.ts` (printed model: matte blocks, ink outline/shadow/halo shells from `blocks.ts`; labels, pulse),
     `layout.ts` (graph → positions), `timeline.ts` (assembly choreography), `paper.ts` (paper + highlights)
   - `main.ts` wires the modules: `landing.ts` (hero, live preview, how-it-works, gallery), `toolbar.ts`,
     `studyPanel.ts` (ARIA tabs; state in `panelState.ts`), `sheet.ts` (bottom sheet < 900 px),
     `overview.ts` (summary, block detail, Ask), `stepsView.ts` + `tour.ts` (walkthrough / example),
-    `codeView.ts` (PyTorch), `learn.ts` (learn/ask clients, request bookkeeping)
+    `codeView.ts` (PyTorch), `learn.ts` (learn/ask/inside clients, request bookkeeping), `lang.ts`
+    (language + level pickers, translate client), `trace.ts` (shape tracing: dimensions, aliases via
+    hyperparameters, splits like 512 = h × d_k). `main.ts` keeps `graph` (English, signed, sent to the
+    API), `view` (rewritten for the reader) and `inside` (a block's inside view, when open).
   - `styles/tokens.css` holds every colour, font and spacing token; `blocks.ts` mirrors ink /
     highlighter / vermilion and owns the block palette. One CSS file per component.
-- `samples/` — committed block graphs (`<id>.json`) and learning artifacts (`<id>.<kind>.json`) that
-  seed the cache, so the demo runs without an API key
+- `samples/` — committed block graphs (`<id>.json`), learning artifacts (`<id>.<kind>.json`) and inside
+  views (`<id>.inside.<block_id>.json`) that seed the cache, so the demo runs without an API key
 
 ## Conventions
 

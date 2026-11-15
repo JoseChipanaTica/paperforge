@@ -22,3 +22,8 @@
 .in-source { margin: var(--s4) 0 0; }
 .link { border: 0; background: none; padding: 0; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--vermilion); font-size: inherit; margin-left: var(--s2); }
 .link:hover { text-decoration-thickness: 2px; }
+
+/* A block's inside view. */
+.ov-inside { font: var(--t-xs) var(--ui); color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: var(--s1); }
+.ov-summary + [data-outside] { margin-top: var(--s5); }
+.in-inside { margin-top: var(--s4); }

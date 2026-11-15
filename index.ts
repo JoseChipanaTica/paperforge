@@ -1,7 +1,8 @@
 import index from "./src/web/index.html";
 import { errorMessage, listHandler, publishHandler } from "./src/server/api";
 import { forge } from "./src/server/forge";
-import { askHandler, kindsHandler, learnHandler } from "./src/server/learn-api";
+import { askHandler, insideHandler, kindsHandler, learnHandler } from "./src/server/learn-api";
+import { translateHandler } from "./src/server/translate-api";
 import type { ForgeEvent } from "./src/shared/graph";
 
 const server = Bun.serve({
@@ -33,6 +34,8 @@ const server = Bun.serve({
     "/api/papers": { GET: (req) => listHandler(req), POST: (req) => publishHandler(req) },
     "/api/learn": { GET: (req) => kindsHandler(req), POST: (req) => learnHandler(req) },
     "/api/ask": { POST: (req) => askHandler(req) },
+    "/api/inside": { POST: (req) => insideHandler(req) },
+    "/api/translate": { POST: (req) => translateHandler(req) },
   },
   development: process.env.NODE_ENV !== "production" && { hmr: true, console: true },
 });

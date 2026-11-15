@@ -21,6 +21,7 @@
     <link rel="stylesheet" href="./styles/panel.css" />
     <link rel="stylesheet" href="./styles/overview.css" />
     <link rel="stylesheet" href="./styles/learn.css" />
+    <link rel="stylesheet" href="./styles/trace.css" />
   </head>
   <body>
     <header class="topbar">
@@ -30,6 +31,16 @@
         <input id="url" type="text" spellcheck="false" placeholder="Paste an arXiv link, e.g. arxiv.org/abs/1706.03762" />
         <button type="submit" class="btn btn-primary">Forge</button>
       </form>
+      <div class="reading">
+        <label title="Claude's text (labels, summaries, tours, answers) in this language">
+          <span class="sr-only">Language</span>
+          <select id="lang"></select>
+        </label>
+        <label title="Who Claude explains things for">
+          <span class="sr-only">Explain for</span>
+          <select id="level"></select>
+        </label>
+      </div>
       <div class="key">
         <button id="key-toggle" type="button" class="btn btn-quiet" title="Your Anthropic key stays in this browser">API key</button>
         <input id="key" type="password" spellcheck="false" autocomplete="off" placeholder="sk-ant-…" aria-label="Anthropic API key" hidden />
@@ -77,9 +88,11 @@
           <p class="tc-summary"></p>
           <div class="tc-hparams"></div>
         </section>
+        <section id="trace" class="trace-card" aria-label="Traced dimension" aria-live="polite" hidden></section>
         <div id="status" class="status" role="status" hidden><span class="spinner"></span><span class="status-text"></span></div>
         <nav id="controls" class="toolbar" aria-label="Model controls" hidden>
           <button data-action="skip" class="btn skip">Skip</button>
+          <button data-action="outside" class="btn" hidden>← Whole model</button>
           <button data-action="replay" class="btn">Replay</button>
           <button data-action="explode" class="btn" aria-pressed="false">Explode</button>
           <button data-action="labels" class="btn" aria-pressed="true">Labels</button>

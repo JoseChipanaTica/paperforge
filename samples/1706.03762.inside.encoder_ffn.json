@@ -1,0 +1,110 @@
+{
+  "paper_title": "Attention Is All You Need",
+  "model_name": "Feed Forward",
+  "summary": "Each position's 512-dim vector is expanded to 2048 dims by a linear layer, passed through ReLU, and projected back to 512 dims, with the same weights at every position (Eq. 2); the residual add and LayerNorm sit outside this block, and dropout is applied only after the block, per Section 5.4.",
+  "hyperparameters": [
+    {
+      "name": "d_model",
+      "value": "512"
+    },
+    {
+      "name": "d_ff",
+      "value": "2048"
+    }
+  ],
+  "groups": [],
+  "blocks": [
+    {
+      "id": "ffn_in",
+      "label": "Input x",
+      "type": "input",
+      "group": "",
+      "equation": "x",
+      "input_shape": "[B, n, 512]",
+      "output_shape": "[B, n, 512]",
+      "hyperparameters": [],
+      "description": "The normalized output of the self-attention sub-layer, one 512-dim vector per position.",
+      "source_quote": "In addition to attention sub-layers, each of the layers in our encoder and decoder contains a fully connected feed-forward network, which is applied to each position separately and identically."
+    },
+    {
+      "id": "ffn_linear_1",
+      "label": "Linear W1 (expand)",
+      "type": "linear",
+      "group": "",
+      "equation": "xW_1 + b_1,\\; W_1 \\in \\mathbb{R}^{512 \\times 2048}",
+      "input_shape": "[B, n, 512]",
+      "output_shape": "[B, n, 2048]",
+      "hyperparameters": [
+        {
+          "name": "d_ff",
+          "value": "2048"
+        }
+      ],
+      "description": "Projects each position independently from d_model = 512 up to the inner dimension d_ff = 2048.",
+      "source_quote": "The dimensionality of input and output is d model = 512 , and the inner-layer has dimensionality d f f = 2048 ."
+    },
+    {
+      "id": "ffn_relu",
+      "label": "ReLU",
+      "type": "activation",
+      "group": "",
+      "equation": "\\max(0, xW_1 + b_1)",
+      "input_shape": "[B, n, 2048]",
+      "output_shape": "[B, n, 2048]",
+      "hyperparameters": [],
+      "description": "Zeroes negative values elementwise, giving the network its nonlinearity.",
+      "source_quote": "This consists of two linear transformations with a ReLU activation in between."
+    },
+    {
+      "id": "ffn_linear_2",
+      "label": "Linear W2 (project back)",
+      "type": "linear",
+      "group": "",
+      "equation": "\\max(0, xW_1 + b_1)W_2 + b_2,\\; W_2 \\in \\mathbb{R}^{2048 \\times 512}",
+      "input_shape": "[B, n, 2048]",
+      "output_shape": "[B, n, 512]",
+      "hyperparameters": [
+        {
+          "name": "d_model",
+          "value": "512"
+        }
+      ],
+      "description": "Projects back down to d_model = 512 so the residual connection can add it to x.",
+      "source_quote": "Another way of describing this is as two convolutions with kernel size 1."
+    },
+    {
+      "id": "ffn_out",
+      "label": "FFN(x)",
+      "type": "output",
+      "group": "",
+      "equation": "\\mathrm{FFN}(x) = \\max(0, xW_1 + b_1)W_2 + b_2",
+      "input_shape": "[B, n, 512]",
+      "output_shape": "[B, n, 512]",
+      "hyperparameters": [],
+      "description": "The sub-layer output, which goes on to dropout and then to encoder_add_norm_2 for the residual add and LayerNorm.",
+      "source_quote": "While the linear transformations are the same across different positions, they use different parameters from layer to layer."
+    }
+  ],
+  "edges": [
+    {
+      "from": "ffn_in",
+      "to": "ffn_linear_1",
+      "kind": "data"
+    },
+    {
+      "from": "ffn_linear_1",
+      "to": "ffn_relu",
+      "kind": "data"
+    },
+    {
+      "from": "ffn_relu",
+      "to": "ffn_linear_2",
+      "kind": "data"
+    },
+    {
+      "from": "ffn_linear_2",
+      "to": "ffn_out",
+      "kind": "data"
+    }
+  ]
+}

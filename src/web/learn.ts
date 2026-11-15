@@ -1,5 +1,6 @@
-import type { LocatedArchitecture } from "../shared/graph";
-import type { AnyArtifact, AskEvent, AskTurn, LearnEvent, LearnKind } from "../shared/learn";
+import type { Architecture, LocatedArchitecture } from "../shared/graph";
+import type { AnyArtifact, AskEvent, AskTurn, InsideEvent, LearnEvent, LearnKind } from "../shared/learn";
+import type { Lang, Level } from "../shared/translate";
 
 /** Browser side of the learning features: the /api/learn and /api/ask clients and the code panel. */
 
@@ -68,12 +69,13 @@ export async function askBlock(
   history: AskTurn[],
   graph: LocatedArchitecture,
   key: string,
+  reading: { lang: Lang; level: Level },
   onDelta: (text: string) => void,
 ): Promise<void> {
   const res = await fetch("/api/ask", {
     method: "POST",
     headers: headers(key),
-    body: JSON.stringify({ arxiv_id: id, block_id: blockId, question, history, graph }),
+    body: JSON.stringify({ arxiv_id: id, block_id: blockId, question, history, graph, ...reading }),
   }).catch(() => null);
   if (!res?.body) throw new LearnError("Can't reach the Paperforge server.");
   if (!res.ok) throw new LearnError(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Couldn't ask that.");
@@ -81,6 +83,28 @@ export async function askBlock(
     if (e.type === "delta") onDelta(e.text);
     else if (e.type === "error") throw new LearnError(e.message, e.code);
   }
+}
+
+/** A block's inside view, in English and not yet located in the paper. */
+export async function requestInside(
+  id: string,
+  blockId: string,
+  graph: LocatedArchitecture,
+  key: string,
+  onStatus: (message: string) => void,
+): Promise<Architecture> {
+  const res = await fetch("/api/inside", {
+    method: "POST",
+    headers: headers(key),
+    body: JSON.stringify({ arxiv_id: id, block_id: blockId, graph }),
+  }).catch(() => null);
+  if (!res?.body) throw new LearnError("Can't reach the Paperforge server.");
+  for await (const e of lines<InsideEvent>(res)) {
+    if (e.type === "status") onStatus(e.message);
+    else if (e.type === "inside") return e.graph;
+    else throw new LearnError(e.message, e.code);
+  }
+  throw new LearnError("The server stopped before finishing.");
 }
 
 // ---------- request bookkeeping ----------
