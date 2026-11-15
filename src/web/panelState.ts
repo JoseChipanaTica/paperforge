@@ -8,6 +8,15 @@ export type TabId = (typeof TABS)[number];
 export type TabKind = Extract<LearnKind, TabId>;
 export const isTabKind = (t: TabId): t is TabKind => t === "journey" || t === "pytorch";
 
+/**
+ * What the Walkthrough tab shows: inside a block, that block's own walkthrough; on the whole
+ * model, the model's (or its start state when not loaded yet, never a leftover inside list).
+ */
+export function walkthroughShown(insideBlock: string | null, mainLoaded: boolean): { kind: "inside"; blockId: string } | { kind: "main" } | { kind: "state" } {
+  if (insideBlock) return { kind: "inside", blockId: insideBlock };
+  return mainLoaded ? { kind: "main" } : { kind: "state" };
+}
+
 export type KindStatus = "idle" | "ready" | "generating" | "loaded" | "needs_key" | "error";
 
 export interface PanelState {

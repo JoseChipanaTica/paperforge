@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { initialPanel, panelReducer, snapSheet, type PanelAction, type PanelState } from "./panelState";
+import { initialPanel, panelReducer, snapSheet, walkthroughShown, type PanelAction, type PanelState } from "./panelState";
 
 const run = (...actions: PanelAction[]): PanelState => actions.reduce(panelReducer, initialPanel());
 
@@ -57,5 +57,17 @@ describe("snapSheet", () => {
     expect(snapSheet(400, 900, snaps)).toBe(760);
     expect(snapSheet(400, -900, snaps)).toBe(380);
     expect(snapSheet(100, -900, snaps)).toBe(64);
+  });
+});
+
+describe("walkthroughShown", () => {
+  test("inside a block, the walkthrough is that block's own (a language change included)", () => {
+    expect(walkthroughShown("encoder_ffn", true)).toEqual({ kind: "inside", blockId: "encoder_ffn" });
+    expect(walkthroughShown("encoder_ffn", false)).toEqual({ kind: "inside", blockId: "encoder_ffn" });
+  });
+
+  test("on the whole model: the model's walkthrough if loaded, else its start state (never a leftover inside list)", () => {
+    expect(walkthroughShown(null, true)).toEqual({ kind: "main" });
+    expect(walkthroughShown(null, false)).toEqual({ kind: "state" });
   });
 });

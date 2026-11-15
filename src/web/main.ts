@@ -22,7 +22,7 @@ import {
 } from "./learn";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
-import { isTabKind, type TabId, type TabKind } from "./panelState";
+import { isTabKind, walkthroughShown, type TabId, type TabKind } from "./panelState";
 import { Overview } from "./overview";
 import { Sheet } from "./sheet";
 import { StudyPanel } from "./studyPanel";
@@ -702,6 +702,7 @@ async function applyReading() {
   refreshTrace();
   if (!overview.askBusy) inspect(pinned);
   const active = panel.state.active;
+  if (active === "journey") return showWalkthrough();
   const artifact = isKind(active) ? artifacts.get(active) : undefined;
   if (isKind(active) && artifact) await showArtifact(active, artifact, g);
 }
@@ -807,7 +808,15 @@ function closeInside() {
   inspect(null);
   toolbar.sync();
   // Back on the model with its walkthrough open: show the model's own, at the step it was left on.
-  if (panel.state.active === "journey" && artifacts.has("journey")) void openLearn("journey");
+  if (panel.state.active === "journey") void showWalkthrough();
+}
+
+/** Fill the Walkthrough tab with the walkthrough that belongs here (see walkthroughShown). */
+async function showWalkthrough() {
+  const shown = walkthroughShown(inside?.blockId ?? null, artifacts.has("journey"));
+  if (shown.kind === "inside") return openInsideJourney(shown.blockId);
+  if (shown.kind === "main") return openLearn("journey");
+  renderState("journey");
 }
 
 // ---------- controls ----------
