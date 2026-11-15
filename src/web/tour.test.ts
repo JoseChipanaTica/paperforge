@@ -104,3 +104,23 @@ describe("TourDriver and the specimen", () => {
     expect(r.hidden()).toBe(2);
   });
 });
+
+describe("TourDriver Play", () => {
+  test("waits for the step's figure before moving on", async () => {
+    const fakeScene = { highlight: () => {}, focusOn: () => Promise.resolve() } as unknown as ForgeScene;
+    const script = tourSteps(journey);
+    let release!: () => void;
+    const driver = new TourDriver(fakeScene, null, { playMs: 5, waitFor: () => new Promise<void>((r) => (release = r)) });
+    driver.goTo(script, 0);
+    driver.togglePlay();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(driver.index).toBe(1); // Play's first beat is immediate
+    await new Promise((r) => setTimeout(r, 40));
+    expect(driver.index).toBe(1); // well past playMs, still waiting on step 2's figure
+    release();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(driver.index).toBe(2);
+    driver.pause();
+    expect(driver.playing).toBe(false);
+  });
+});

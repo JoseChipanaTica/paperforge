@@ -62,10 +62,19 @@ export class TourDriver {
   // Where a stopped tour was, so Next / Back / Play pick it up again after Esc.
   private resume: { script: TourScript; index: number } | null = null;
 
+  private playMs: number;
+  /** Play holds each step until this settles too (the step's animation finishing). */
+  private waitFor: () => Promise<void>;
+  private playRun = 0;
+
   constructor(
     private scene: ForgeScene,
     private specimen: SpecimenHost | null = null,
-  ) {}
+    opts: { playMs?: number; waitFor?: () => Promise<void> } = {},
+  ) {
+    this.playMs = opts.playMs ?? PLAY_MS;
+    this.waitFor = opts.waitFor ?? (() => Promise.resolve());
+  }
 
   get active() {
     return this.script !== null;
@@ -127,16 +136,22 @@ export class TourDriver {
     if (!c) return;
     this.script = c.script;
     this.index = c.index;
+    const run = ++this.playRun;
     const tick = () => {
       this.next();
-      if (this.script && this.index < this.script.steps.length) this.timer = setTimeout(tick, PLAY_MS);
-      else this.pause();
+      if (!this.script || this.index >= this.script.steps.length) return this.pause();
+      // The next step comes after the reading time and once this step's animation has played.
+      const reading = new Promise<void>((r) => (this.timer = setTimeout(r, this.playMs)));
+      void Promise.all([reading, this.waitFor()]).then(() => {
+        if (run === this.playRun && this.timer !== undefined) tick();
+      });
     };
     this.timer = setTimeout(tick, 0);
     this.onPlaying(true);
   }
 
   pause() {
+    this.playRun++;
     if (this.timer === undefined) return;
     clearTimeout(this.timer);
     this.timer = undefined;

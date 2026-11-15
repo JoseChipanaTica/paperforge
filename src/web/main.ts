@@ -1,6 +1,8 @@
 import "katex/dist/katex.min.css";
 import type { ForgeEvent, LocatedArchitecture } from "../shared/graph";
 import type { AnyArtifact, JourneyArtifact, LearnKind, PytorchArtifact } from "../shared/learn";
+import type { MotionArtifact } from "../shared/motion";
+import { StepFigure, figureState, type FigureStatus } from "./motion/figure";
 import { locateQuote } from "../shared/locate";
 import { isOriginal, type TranslateKind } from "../shared/translate";
 import { Run } from "./anim";
@@ -37,7 +39,8 @@ const paper = new PaperView($("#paper"));
 const statusEl = $("#status");
 const controls = $("#controls");
 const specimen = new Specimen(scene);
-const driver = new TourDriver(scene, specimen);
+// Play holds each step until its animation has played (figurePlay, below).
+const driver = new TourDriver(scene, specimen, { waitFor: () => figurePlay });
 const panel = new StudyPanel($("#panel"));
 const sheet = new Sheet($("#panel"), $<HTMLButtonElement>(".sheet-handle"));
 // On phones, tapping a tab opens the sheet to half.
@@ -365,6 +368,7 @@ panel.onSelect = (tab) => {
     tourAt[tourKind] = driver.index;
     driver.pause();
     specimen.hide(); // it comes back on the same step when the tab does
+    stopFigure();
   }
   const again = tab === openTab;
   openTab = tab;
@@ -435,6 +439,9 @@ function resetLearn() {
   delete tourAt.journey;
   artifacts.clear();
   translations.clear();
+  motion = null;
+  motionFor = null;
+  stopFigure();
   insides.clear();
   panel.dispatch({ type: "reset" });
 }
@@ -497,7 +504,67 @@ async function showArtifact(kind: TabKind, english: AnyArtifact, g: LocatedArchi
   // A language or level change mid-tour keeps the visitor on the same step.
   const at = driver.active && tourKind === kind ? driver.index : (tourAt[kind] ?? -1);
   tourKind = kind;
-  renderSteps(panel.tab(kind), script, view, driver, at, (token) => trace(token === tracing ? null : token), tracing);
+  renderSteps(panel.tab(kind), script, view, driver, at, (token) => trace(token === tracing ? null : token), tracing, (el, blockId) => {
+    figureAt = el && blockId ? { el, blockId } : null;
+    void refreshFigure();
+  });
+  loadMotion(g);
+}
+
+// ---------- step motion: each walkthrough step animates its block's work ----------
+
+let motion: MotionArtifact | null = null; // English, for this paper
+let motionStatus: FigureStatus = "loading";
+let motionFor: string | null = null; // the paper it was requested for
+let figure: StepFigure | null = null;
+let figureAt: { el: HTMLElement; blockId: string } | null = null;
+let figurePlay: Promise<void> = Promise.resolve();
+
+/** Fetch the motion artifact once per paper, in the background; the walkthrough never waits on it. */
+function loadMotion(g: LocatedArchitecture) {
+  if (motionFor === g.arxiv_id) return;
+  motionFor = g.arxiv_id;
+  motionStatus = "loading";
+  motion = null;
+  const journey = artifacts.get("journey") as JourneyArtifact | undefined;
+  requestArtifact(g.arxiv_id, "motion", g, storedKey(), () => {}, journey)
+    .then(({ artifact }) => {
+      if (graph !== g) return;
+      motion = artifact as MotionArtifact;
+      motionStatus = "ready";
+      void refreshFigure();
+    })
+    .catch((err: unknown) => {
+      if (graph !== g) return;
+      motionStatus = err instanceof LearnError && err.code === "needs_key" ? "needs_key" : "error";
+      motionFor = null; // Retry asks again
+      void refreshFigure();
+    });
+}
+
+/** Show the current step's figure: its animation in the visitor's language, or why there isn't one. */
+async function refreshFigure() {
+  figure?.stop();
+  figure = null;
+  figurePlay = Promise.resolve();
+  const at = figureAt;
+  if (!at) return;
+  const english = motion;
+  const shown = english ? await localized("motion", english) : null;
+  if (figureAt !== at) return; // the visitor moved to another step meanwhile
+  const f = new StepFigure(at.el, reducedMotion());
+  figure = f;
+  const state = figureState(shown, motionStatus, at.blockId);
+  if (state.kind === "ops") figurePlay = f.show(state.ops);
+  else {
+    const retry = () => graph && loadMotion(graph);
+    f.message(state.kind, retry, (key) => (saveKey(key), retry()));
+  }
+}
+
+function stopFigure() {
+  figureAt = null;
+  void refreshFigure();
 }
 
 // ---------- language and level ----------

@@ -26,6 +26,8 @@ export function renderSteps(
   start = -1,
   onTrace: (token: string) => void = () => {},
   traced: string | null = null,
+  /** The current step changed: its figure container and block (null at the intro and outro). */
+  onStep: (figure: HTMLElement | null, blockId: string | null) => void = () => {},
 ) {
   const label = (blockId: string) => graph.blocks.find((b) => b.id === blockId)?.label ?? blockId;
   const captions = (views: { caption: string }[]) =>
@@ -51,7 +53,7 @@ export function renderSteps(
               <span class="step-n">${i + 1}</span>
               <span class="step-title">${escapeHtml(s.title || label(s.block_id))}</span>
             </button>
-            <div class="step-body">${stepHtml(s, traced)}</div>
+            <div class="step-body">${stepHtml(s, traced)}<div class="step-figure" hidden></div></div>
           </li>`,
           )
           .join("")}
@@ -83,6 +85,8 @@ export function renderSteps(
     nav("next").disabled = i >= n;
     nav("next").textContent = i < 0 ? "Start" : i >= n - 1 ? "Finish" : "Next";
     root.querySelector(".step-pos")!.textContent = i < 0 ? "" : i >= n ? "Done" : `${i + 1} of ${n}`;
+    const step = script.steps[i];
+    onStep(step ? root.querySelector<HTMLElement>(`.step[data-index="${i}"] .step-figure`) : null, step?.block_id ?? null);
   };
   const playing = (on: boolean) => {
     nav("play").setAttribute("aria-pressed", String(on));
