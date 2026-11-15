@@ -19,7 +19,7 @@ import {
 } from "./learn";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
-import type { TabId } from "./panelState";
+import { isTabKind, type TabId, type TabKind } from "./panelState";
 import { Overview } from "./overview";
 import { Sheet } from "./sheet";
 import { StudyPanel } from "./studyPanel";
@@ -350,14 +350,14 @@ async function publish() {
 
 // Artifacts opened for this paper, so revisiting a tab never pays for a second generation.
 const artifacts = new Map<LearnKind, AnyArtifact>();
-const isKind = (t: TabId): t is LearnKind => t === "journey" || t === "pytorch";
+const isKind = isTabKind;
 type TourKind = "journey";
 // Where each tour was left, so switching tabs mid-tour picks up at the same step.
 const tourAt: Partial<Record<TourKind, number>> = {};
 let tourKind: TourKind | null = null;
-const progress: Partial<Record<LearnKind, string>> = {};
+const progress: Partial<Record<TabKind, string>> = {};
 
-const NAMES: Record<LearnKind, string> = { journey: "walkthrough", pytorch: "PyTorch code" };
+const NAMES: Record<TabKind, string> = { journey: "walkthrough", pytorch: "PyTorch code" };
 
 let openTab: TabId | null = null;
 panel.onSelect = (tab) => {
@@ -376,7 +376,7 @@ panel.onSelect = (tab) => {
 };
 
 /** A learning tab's body before its content exists: generate, generating, key needed, or error. */
-function renderState(kind: LearnKind) {
+function renderState(kind: TabKind) {
   const root = panel.tab(kind);
   const status = panel.state.status[kind];
   if (status === "generating") {
@@ -447,7 +447,7 @@ async function refreshKinds() {
   panel.dispatch({ type: "kinds", ready: kinds });
 }
 
-async function openLearn(kind: LearnKind) {
+async function openLearn(kind: TabKind) {
   if (!graph) return;
   const g = graph;
   const cached = artifacts.get(kind);
@@ -480,7 +480,7 @@ async function openLearn(kind: LearnKind) {
 }
 
 /** Render an artifact for the visitor's language and level (the original if the rewrite can't be had). */
-async function showArtifact(kind: LearnKind, english: AnyArtifact, g: LocatedArchitecture) {
+async function showArtifact(kind: TabKind, english: AnyArtifact, g: LocatedArchitecture) {
   const asked = reading;
   if (!isOriginal(asked.lang, asked.level)) panel.tab(kind).querySelector(".learn-progress")?.replaceChildren(readingMessage(asked));
   const artifact = await localized(kind, english);

@@ -2,7 +2,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { Architecture, type Block } from "../shared/graph";
-import { ARTIFACT_SCHEMA, type AnyArtifact, type AskTurn, type LearnKind } from "../shared/learn";
+import { ARTIFACT_SCHEMA, type AnyArtifact, type AskTurn, type JourneyArtifact, type LearnKind } from "../shared/learn";
+import { MotionArtifact } from "../shared/motion";
+import { HIGHLIGHTER, INK, SHEET, VERMILION } from "../shared/palette";
 import { DEFAULT_LEVEL, languageName, levelReader, type Lang, type Level } from "../shared/translate";
 import { formatPaper } from "./extract";
 
@@ -28,7 +30,10 @@ Whenever you refer to a block, use its exact "id" from <graph>; the viewer uses 
 
 Write for a curious engineer: plain language first, then the precise detail. Be concrete and brief.`;
 
-export const LEARN_TASK: Record<LearnKind, string> = {
+/** The kinds written through the shared learning format (motion has its own, and needs the journey). */
+export type TaskKind = Exclude<LearnKind, "motion">;
+
+export const LEARN_TASK: Record<TaskKind, string> = {
   pytorch: `Write PyTorch code that implements this architecture.
 - One nn.Module per distinct kind of block (reuse a module for repeated blocks), using the paper's hyperparameters as defaults.
 - Comment tensor shapes on the important lines.
@@ -70,6 +75,8 @@ export const ANY_ARTIFACT = z.object({
   artifact: z.union([ARTIFACT_SCHEMA.pytorch, ARTIFACT_SCHEMA.journey]),
 });
 export const INSIDE_ARTIFACT = z.object({ artifact: Architecture });
+/** Motion's ops would push either shared format over the grammar limit: it gets its own. */
+export const MOTION_ARTIFACT = z.object({ artifact: MotionArtifact });
 
 export function paperPrefix(pages: string[], graph: Architecture): Anthropic.Beta.BetaTextBlockParam[] {
   return [
@@ -78,15 +85,40 @@ export function paperPrefix(pages: string[], graph: Architecture): Anthropic.Bet
   ];
 }
 
-export function learnRequest(kind: LearnKind, pages: string[], graph: Architecture) {
+export function learnRequest(kind: TaskKind, pages: string[], graph: Architecture) {
   return tutorRequest(pages, graph, `${LEARN_TASK[kind]}\n\nWrite it as the "${kind}" shape of artifact.`, ANY_ARTIFACT);
+}
+
+/** What each block does to the walkthrough's input, as a chain of ops the browser animates. */
+export function motionTask(journey: JourneyArtifact): string {
+  return `Animate what each block does to the walkthrough's toy input (given in <journey>), so a reader watches the block do its job: a kernel sliding over an image, attention scoring words against each other and mixing them, and so on.
+- steps: one entry per step of <journey>, with the same block_id, in the same order.
+- ops: 1–3 operations, played in order, that show what the paper's block computes; each op's output is the next op's input. Examples: feed-forward = linear → activation (relu) → linear; add & norm = residual_add → normalization (layer); multi-head attention = split_heads → attention → concat; a VGG conv layer = convolution → activation (relu).
+- The browser recomputes every number, so give only small inputs, never results: input (the data entering the first op, ≤ 8×8, a small slice of that step's input in <journey>, with tokens naming its rows the same way), weights and extra as each op's field description says. Keep numbers small and readable (one decimal). Every matrix at most 8×8 (attention's extra: K rows then V rows, up to 8 each). Make shapes line up: linear weights are in × out, attention Q, K and V rows share a width.
+- size, stride, count: as the op needs (a VGG conv3-64: size 3, stride 1, count 64); otherwise 1.
+- caption: one short sentence on what this op does here, in the paper's terms.
+- Use "custom" only when no op fits. Then write svg: an animated SVG, viewBox "0 0 360 220", SMIL animation only (animate, animateTransform, animateMotion, set), no script, no external references or images, under 30 KB. Colours: ink ${INK}, paper ${SHEET}, highlighter ${HIGHLIGHTER} for what's active, vermilion ${VERMILION} for results. Plain text labels.
+- Otherwise svg is "".
+
+<journey>
+${JSON.stringify(journey)}
+</journey>`;
+}
+
+export function motionRequest(pages: string[], graph: Architecture, journey: JourneyArtifact) {
+  return tutorRequest(pages, graph, motionTask(journey), MOTION_ARTIFACT);
 }
 
 export function insideRequest(block: Block, pages: string[], graph: Architecture) {
   return tutorRequest(pages, graph, insideTask(block), INSIDE_ARTIFACT);
 }
 
-function tutorRequest(pages: string[], graph: Architecture, task: string, format: typeof ANY_ARTIFACT | typeof INSIDE_ARTIFACT) {
+function tutorRequest(
+  pages: string[],
+  graph: Architecture,
+  task: string,
+  format: typeof ANY_ARTIFACT | typeof INSIDE_ARTIFACT | typeof MOTION_ARTIFACT,
+) {
   return {
     model: MODEL,
     max_tokens: 32000,
@@ -149,9 +181,11 @@ function logUsage(what: string, usage: Anthropic.Beta.BetaUsage) {
 
 export async function generateArtifact(
   kind: LearnKind,
-  { pages, graph, apiKey }: { pages: string[]; graph: Architecture; apiKey?: string },
+  { pages, graph, apiKey, journey }: { pages: string[]; graph: Architecture; apiKey?: string; journey?: JourneyArtifact },
 ): Promise<AnyArtifact> {
-  const response = await client(apiKey).beta.messages.parse(learnRequest(kind, pages, graph));
+  if (kind === "motion" && !journey) throw new Error("Motion needs the walkthrough it animates.");
+  const request = kind === "motion" ? motionRequest(pages, graph, journey!) : learnRequest(kind, pages, graph);
+  const response = await client(apiKey).beta.messages.parse(request);
   logUsage(kind, response.usage);
   if (response.stop_reason === "refusal") {
     throw new Error(`Claude declined to write this (${response.stop_details?.category ?? "unspecified"}).`);

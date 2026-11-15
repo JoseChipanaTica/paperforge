@@ -60,6 +60,10 @@ describe("cleanMotion", () => {
     expect(only({ kind: "message_passing", extra: [] }).kind).toBe("custom");
   });
 
+  test("self-attention with queries in the input is computable", () => {
+    expect(only({ kind: "attention", input: [[1, 0], [0, 1]], weights: [], extra: [[1, 0], [0, 1], [1, 2], [3, 4]] }).kind).toBe("attention");
+  });
+
   test("custom svg is sanitized", () => {
     const o = only({ kind: "custom", svg: '<svg><script>alert(1)</script><rect width="1"/></svg>' });
     expect(o.svg).toBe('<svg><rect width="1"/></svg>');

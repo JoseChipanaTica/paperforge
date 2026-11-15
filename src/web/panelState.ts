@@ -4,6 +4,9 @@ import { LEARN_KINDS, type LearnKind } from "../shared/learn";
 
 export const TABS = ["overview", "paper", "journey", "pytorch"] as const;
 export type TabId = (typeof TABS)[number];
+/** Learning kinds with a tab of their own (motion lives inside the walkthrough). */
+export type TabKind = Extract<LearnKind, TabId>;
+export const isTabKind = (t: TabId): t is TabKind => t === "journey" || t === "pytorch";
 
 export type KindStatus = "idle" | "ready" | "generating" | "loaded" | "needs_key" | "error";
 

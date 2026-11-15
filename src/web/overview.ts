@@ -1,5 +1,6 @@
 import type { LocatedArchitecture, LocatedBlock } from "../shared/graph";
-import type { AskTurn, LearnKind } from "../shared/learn";
+import type { AskTurn } from "../shared/learn";
+import type { TabKind } from "./panelState";
 import { TYPE_COLOR } from "./blocks";
 import { LearnError } from "./learn";
 import { escapeHtml, renderTex } from "./scene";
@@ -8,7 +9,7 @@ import { shapeHtml } from "./trace";
 /** The Overview tab: the paper at a glance, or one block with its source sentence and Ask. */
 
 export interface OverviewDeps {
-  onStart(kind: LearnKind): void;
+  onStart(kind: TabKind): void;
   onShowInPaper(blockId: string): void;
   /** A dimension or hyperparameter was clicked: trace it through the model (again to stop). */
   onTrace(token: string): void;
@@ -17,7 +18,7 @@ export interface OverviewDeps {
   ask(blockId: string, question: string, history: AskTurn[], onDelta: (text: string) => void): Promise<void>;
 }
 
-const START: { kind: LearnKind; title: string; body: string }[] = [
+const START: { kind: TabKind; title: string; body: string }[] = [
   { kind: "journey", title: "Follow an input through it", body: "A real example, transformed block by block from input to output." },
   { kind: "pytorch", title: "Show me the PyTorch", body: "The architecture as code, with the paper's hyperparameters." },
 ];
@@ -49,7 +50,7 @@ export class Overview {
   ) {
     root.addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-start], [data-show-in-paper], [data-dim], [data-inside], [data-outside]");
-      if (el?.dataset.start) deps.onStart(el.dataset.start as LearnKind);
+      if (el?.dataset.start) deps.onStart(el.dataset.start as TabKind);
       if (el?.dataset.showInPaper) deps.onShowInPaper(el.dataset.showInPaper);
       if (el?.dataset.dim) deps.onTrace(el.dataset.dim);
       if (el?.dataset.inside) deps.onLookInside(el.dataset.inside);

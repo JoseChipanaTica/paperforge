@@ -46,7 +46,7 @@ export const Op = z.object({
     "≤ 8×8: the data entering the chain (rows = items). Only the first op of a step needs it; later ops receive the previous op's output. For convolution/pooling/patch_embedding/add_noise: an image patch grid. For embedding_lookup: one row of token ids",
   ),
   weights: Matrix.describe(
-    "≤ 8×8: the kernel (convolution, transposed_convolution), weight matrix in × out (linear, patch_embedding projection, recurrent), embedding table (embedding_lookup), Q rows (attention), router weights d × experts (moe_routing), gate weights (gate); otherwise []",
+    "≤ 8×8: the kernel (convolution, transposed_convolution), weight matrix in × out (linear, patch_embedding projection, recurrent), embedding table (embedding_lookup), Q rows (attention; empty means the queries are the input), router weights d × experts (moe_routing), gate weights (gate); otherwise []",
   ),
   extra: Matrix.describe(
     "The second operand: attention: K rows then V rows (same count each); linear: [[bias…]]; normalization: [[γ…],[β…]] or []; residual_add: the skip input; dropout: [[p]]; add_noise: [[ᾱ]] then noise rows; message_passing: the adjacency matrix; recurrent: [[h0…]]; otherwise []",
@@ -90,11 +90,12 @@ function cleanMatrix(m: number[][], maxRows: number = MOTION_LIMITS.side): numbe
 const empty = (m: number[][]) => m.length === 0 || m.every((r) => r.length === 0);
 
 /** Ops that read the chain's input (the first op of a step must bring its own). */
-const READS_INPUT = new Set<OpKind>(OP_KINDS.filter((k) => k !== "attention" && k !== "custom"));
+const READS_INPUT = new Set<OpKind>(OP_KINDS.filter((k) => k !== "custom"));
 
 /** True when an op can't be computed from what it carries. */
 function missing(o: Op, first: boolean): boolean {
-  if (first && READS_INPUT.has(o.kind) && empty(o.input)) return true;
+  // Attention can bring its queries as Q (weights) instead of an input.
+  if (first && READS_INPUT.has(o.kind) && empty(o.input) && !(o.kind === "attention" && !empty(o.weights))) return true;
   switch (o.kind) {
     case "convolution":
     case "transposed_convolution":
@@ -103,7 +104,7 @@ function missing(o: Op, first: boolean): boolean {
     case "patch_embedding":
       return empty(o.weights);
     case "attention":
-      return empty(o.weights) || o.extra.length < 2;
+      return o.extra.length < 2;
     case "message_passing":
       return empty(o.extra);
     default:

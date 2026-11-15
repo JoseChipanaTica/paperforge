@@ -67,6 +67,13 @@ describe("attention", () => {
     close([r.output[0]!], [[w[0]! * 1 + w[1]! * 3 + w[2]! * 5, w[0]! * 2 + w[1]! * 4 + w[2]! * 6]]);
   });
 
+  test("self-attention takes its queries from the input when no Q is given", () => {
+    const fromInput = computeOp(op({ kind: "attention", extra: [...K, ...V] }), Q);
+    const fromWeights = computeOp(op({ kind: "attention", weights: Q, extra: [...K, ...V] }), []);
+    expect(fromInput.ok).toBe(true);
+    expect(fromInput.output).toEqual(fromWeights.output);
+  });
+
   test("causal attention never looks ahead", () => {
     const r = computeOp(op({ kind: "attention", fn: "causal", weights: Q, extra: [...K, ...V] }), []);
     expect(r.stages.weights![0]!.slice(1)).toEqual([0, 0]);

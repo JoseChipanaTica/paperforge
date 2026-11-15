@@ -88,6 +88,17 @@ describe("artifact text", () => {
     expect(textMatches("journey", text, t)).toBe(false);
   });
 
+  test("motion: only captions change", () => {
+    const op = { kind: "linear" as const, caption: "Mix the words", tokens: ["cat"], input: [[1, 2]], weights: [[1], [1]], extra: [], fn: "", size: 1, stride: 1, count: 1, svg: "" };
+    const m = { steps: [{ block_id: "a", ops: [op, { ...op, caption: "Again" }] }] };
+    const text = pickText("motion", m);
+    expect(JSON.stringify(text)).not.toContain("weights");
+    const out = applyText("motion", m, fake(text));
+    expect(out.steps[0]!.ops.map((o) => o.caption)).toEqual(["ES Mix the words", "ES Again"]);
+    expect({ ...out.steps[0]!.ops[0]!, caption: "" }).toEqual({ ...op, caption: "" });
+    expect(textMatches("motion", text, { steps: [{ block_id: "a", captions: ["x"] }] } as never)).toBe(false);
+  });
+
   test("steps out of order don't match", async () => {
     const text = pickText("journey", await sample("journey")) as any;
     expect(textMatches("journey", text, { ...text, steps: [...text.steps].reverse() })).toBe(false);

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Architecture } from "./graph";
 import { LEARN_KINDS, type JourneyArtifact, type PytorchArtifact } from "./learn";
+import type { MotionArtifact } from "./motion";
 
 /**
  * Language and reading level: Claude writes everything in English for an engineer (what the
@@ -71,6 +72,8 @@ const JourneyText = z.object({
   output: MomentText,
   outro: z.string(),
 });
+// Motion: only each op's caption; every number and any custom SVG stay as they are.
+const MotionText = z.object({ steps: z.array(z.object({ block_id: z.string(), captions: z.array(z.string()) })) });
 const PytorchText = z.object({
   code: z.string().describe("The code with only comments and docstrings translated"),
   notes: z.array(z.string()),
@@ -80,11 +83,12 @@ export const TEXT_SCHEMA = {
   graph: GraphText,
   expansion: GraphText,
   journey: JourneyText,
+  motion: MotionText,
   pytorch: PytorchText,
 } as const;
 
 export type TranslatedText = z.infer<(typeof TEXT_SCHEMA)[TranslateKind]>;
-type Content = Architecture | PytorchArtifact | JourneyArtifact;
+type Content = Architecture | PytorchArtifact | JourneyArtifact | MotionArtifact;
 
 /** The prose of a graph or artifact: what is sent for translation and what the cache is keyed on. */
 export function pickText(kind: TranslateKind, content: Content): TranslatedText {
@@ -116,6 +120,10 @@ export function pickText(kind: TranslateKind, content: Content): TranslatedText 
         outro: a.outro,
       };
     }
+    case "motion": {
+      const a = content as MotionArtifact;
+      return { steps: a.steps.map((s) => ({ block_id: s.block_id, captions: s.ops.map((o) => o.caption) })) };
+    }
     case "pytorch": {
       const a = content as PytorchArtifact;
       return { code: a.code, notes: a.notes };
@@ -129,6 +137,11 @@ export function textMatches(kind: TranslateKind, original: TranslatedText, trans
   if (kind === "graph" || kind === "expansion") {
     const [o, t] = [original as z.infer<typeof GraphText>, translated as z.infer<typeof GraphText>];
     return ids(o.groups) === ids(t.groups) && ids(o.blocks) === ids(t.blocks);
+  }
+  if (kind === "motion") {
+    const [o, t] = [original as z.infer<typeof MotionText>, translated as z.infer<typeof MotionText>];
+    const counts = (m: z.infer<typeof MotionText>) => m.steps.map((s) => s.captions.length).join(",");
+    return ids(o.steps) === ids(t.steps) && counts(o) === counts(t);
   }
   if (kind === "pytorch") return (translated as z.infer<typeof PytorchText>).notes.length === (original as z.infer<typeof PytorchText>).notes.length;
   const [o, t] = [original as z.infer<typeof JourneyText>, translated as z.infer<typeof JourneyText>];
@@ -174,6 +187,14 @@ export function applyText<C extends Content>(kind: TranslateKind, content: C, te
         }),
         output: { label: t.output.label, views: captioned(a.output.views, t.output.captions) },
         outro: t.outro,
+      } as C;
+    }
+    case "motion": {
+      const a = content as MotionArtifact;
+      const t = text as z.infer<typeof MotionText>;
+      return {
+        ...a,
+        steps: a.steps.map((s, i) => ({ ...s, ops: s.ops.map((o, j) => ({ ...o, caption: t.steps[i]?.captions[j] ?? o.caption })) })),
       } as C;
     }
     case "pytorch": {

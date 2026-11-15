@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Architecture } from "./graph";
+import { MotionArtifact, cleanMotion } from "./motion";
 
 /**
  * Learning artifacts: what Claude writes to help someone understand a forged paper.
@@ -7,7 +8,7 @@ import type { Architecture } from "./graph";
  * Same rule as graph.ts: no constraints structured outputs can't express.
  */
 
-export const LEARN_KINDS = ["pytorch", "journey"] as const;
+export const LEARN_KINDS = ["pytorch", "journey", "motion"] as const;
 export const LearnKind = z.enum(LEARN_KINDS);
 export type LearnKind = z.infer<typeof LearnKind>;
 
@@ -130,14 +131,16 @@ export function cleanJourney(a: JourneyArtifact, graph: Architecture): JourneyAr
 export const ARTIFACT_SCHEMA = {
   pytorch: PytorchArtifact,
   journey: JourneyArtifact,
+  motion: MotionArtifact,
 } as const;
 
 export type Artifact<K extends LearnKind> = z.infer<(typeof ARTIFACT_SCHEMA)[K]>;
-export type AnyArtifact = PytorchArtifact | JourneyArtifact;
+export type AnyArtifact = PytorchArtifact | JourneyArtifact | MotionArtifact;
 
 /** Drop steps (or code mappings) that point at blocks the graph doesn't have; journeys are also clamped. */
 export function pruneArtifact(kind: LearnKind, artifact: AnyArtifact, graph: Architecture): AnyArtifact {
   if (kind === "journey") return cleanJourney(artifact as JourneyArtifact, graph);
+  if (kind === "motion") return cleanMotion(artifact as MotionArtifact, graph, null);
   const ids = new Set(graph.blocks.map((b) => b.id));
   const a = artifact as PytorchArtifact;
   return { ...a, block_map: a.block_map.filter((m) => ids.has(m.block_id)) };
@@ -145,10 +148,10 @@ export function pruneArtifact(kind: LearnKind, artifact: AnyArtifact, graph: Arc
 
 /** How many blocks an artifact still ties to the model. */
 export function artifactBlockCount(kind: LearnKind, artifact: AnyArtifact): number {
-  return kind === "pytorch" ? (artifact as PytorchArtifact).block_map.length : (artifact as JourneyArtifact).steps.length;
+  return kind === "pytorch" ? (artifact as PytorchArtifact).block_map.length : (artifact as JourneyArtifact | MotionArtifact).steps.length;
 }
 
-/** Enough left to show: code mapped to at least one block, or a journey of at least two steps. */
+/** Enough left to show: code mapped to a block, a journey of at least two steps, motion for one step. */
 export const isUsable = (kind: LearnKind, artifact: AnyArtifact) => artifactBlockCount(kind, artifact) >= (kind === "journey" ? 2 : 1);
 
 type LearnError = { type: "error"; message: string; code?: "needs_key" | "rate_limited" | "bad_input" };

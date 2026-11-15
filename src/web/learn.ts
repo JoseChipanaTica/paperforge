@@ -1,5 +1,5 @@
 import type { Architecture, LocatedArchitecture } from "../shared/graph";
-import type { AnyArtifact, AskEvent, AskTurn, InsideEvent, LearnEvent, LearnKind } from "../shared/learn";
+import type { AnyArtifact, AskEvent, AskTurn, InsideEvent, JourneyArtifact, LearnEvent, LearnKind } from "../shared/learn";
 import type { Lang, Level } from "../shared/translate";
 
 /** Browser side of the learning features: the /api/learn and /api/ask clients and the code panel. */
@@ -47,11 +47,12 @@ export async function requestArtifact(
   graph: LocatedArchitecture,
   key: string,
   onStatus: (message: string) => void,
+  journey?: JourneyArtifact, // motion animates this walkthrough (English)
 ): Promise<{ artifact: AnyArtifact; source: string; saved: boolean }> {
   const res = await fetch("/api/learn", {
     method: "POST",
     headers: headers(key),
-    body: JSON.stringify({ arxiv_id: id, kind, graph }),
+    body: JSON.stringify({ arxiv_id: id, kind, graph, ...(journey && { journey }) }),
   }).catch(() => null);
   if (!res?.body) throw new LearnError("Can't reach the Paperforge server.");
   for await (const e of lines<LearnEvent>(res)) {

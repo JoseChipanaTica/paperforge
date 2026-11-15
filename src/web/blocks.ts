@@ -3,11 +3,9 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import type { BlockType, LocatedBlock } from "../shared/graph";
 import type { PlacedBlock } from "./layout";
 
-/** Design tokens shared with styles/tokens.css. */
-export const INK = "#1e1d1a";
-export const HIGHLIGHTER = "#f6d77a";
-export const VERMILION = "#c2410c";
-export const SHEET = "#fffdf7";
+import { HIGHLIGHTER, INK, SHEET, VERMILION } from "../shared/palette";
+
+export { HIGHLIGHTER, INK, SHEET, VERMILION };
 
 /** The printed palette: one earthy ink per block type. */
 export const TYPE_COLOR: Record<BlockType, string> = {

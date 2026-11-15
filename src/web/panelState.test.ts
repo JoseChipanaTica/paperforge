@@ -6,7 +6,7 @@ const run = (...actions: PanelAction[]): PanelState => actions.reduce(panelReduc
 describe("panelReducer", () => {
   test("ready kinds get a dot; the rest stay idle", () => {
     const s = run({ type: "kinds", ready: ["pytorch"] });
-    expect(s.status).toEqual({ pytorch: "ready", journey: "idle" });
+    expect(s.status).toEqual({ pytorch: "ready", journey: "idle", motion: "idle" });
     expect(s.active).toBe("overview");
   });
 
@@ -38,7 +38,7 @@ describe("panelReducer", () => {
   test("a new paper resets every tab; Overview or Paper stay selected", () => {
     const busy = run({ type: "loaded", kind: "pytorch" }, { type: "generate", kind: "journey" }, { type: "select", tab: "journey" });
     const reset = panelReducer(busy, { type: "reset" });
-    expect(reset.status).toEqual({ pytorch: "idle", journey: "idle" });
+    expect(reset.status).toEqual({ pytorch: "idle", journey: "idle", motion: "idle" });
     expect(reset.active).toBe("overview");
     expect(panelReducer(run({ type: "select", tab: "paper" }), { type: "reset" }).active).toBe("paper");
   });

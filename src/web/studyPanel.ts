@@ -1,5 +1,4 @@
-import type { LearnKind } from "../shared/learn";
-import { TABS, initialPanel, panelReducer, type PanelAction, type PanelState, type TabId } from "./panelState";
+import { TABS, initialPanel, isTabKind, panelReducer, type PanelAction, type PanelState, type TabId } from "./panelState";
 
 /** The study panel: four ARIA tabs whose state lives in panelReducer. */
 
@@ -9,8 +8,6 @@ const LABEL: Record<TabId, string> = {
   journey: "Walkthrough",
   pytorch: "PyTorch",
 };
-
-const isKind = (t: TabId): t is LearnKind => t === "journey" || t === "pytorch";
 
 export class StudyPanel {
   state: PanelState = initialPanel();
@@ -74,7 +71,7 @@ export class StudyPanel {
   select(id: TabId) {
     const changed = id !== this.state.active;
     this.dispatch({ type: "select", tab: id });
-    if (changed || isKind(id)) this.onSelect(id);
+    if (changed || isTabKind(id)) this.onSelect(id);
   }
 
   dispatch(a: PanelAction) {
@@ -89,7 +86,7 @@ export class StudyPanel {
       tab.setAttribute("aria-selected", String(on));
       tab.tabIndex = on ? 0 : -1;
       this.panels.get(id)!.hidden = !on;
-      tab.dataset.status = isKind(id) ? this.state.status[id] : "";
+      tab.dataset.status = isTabKind(id) ? this.state.status[id] : "";
     }
   }
 }

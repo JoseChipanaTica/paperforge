@@ -113,7 +113,8 @@ function pooling(op: Op, x: M): Result {
 }
 
 function attention(op: Op, x: M): Result {
-  const q = op.weights;
+  // Self-attention: with no Q given, the queries are the vectors coming in.
+  const q = op.weights.length ? op.weights : x;
   const half = Math.floor(op.extra.length / 2);
   const k = op.extra.slice(0, half);
   const v = op.extra.slice(half, half * 2);

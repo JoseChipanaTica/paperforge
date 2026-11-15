@@ -12,7 +12,7 @@ const graph = Architecture.parse(await Bun.file(join(SAMPLES, "1706.03762.json")
 const journey = (await Bun.file(join(SAMPLES, "1706.03762.journey.json")).json()) as JourneyArtifact;
 const ID = "2401.00001"; // no committed sample for this id
 
-let calls: { kind: LearnKind; graph: Architecture; apiKey?: string }[];
+let calls: { kind: LearnKind; graph: Architecture; apiKey?: string; journey?: JourneyArtifact }[];
 let next: AnyArtifact;
 let samplesDir: string;
 
@@ -21,8 +21,8 @@ function deps(store: Store, extra: Partial<LearnDeps> = {}): Partial<LearnDeps> 
     store,
     samplesDir,
     loadPages: async () => ["page"],
-    generate: async (kind, { graph, apiKey }) => {
-      calls.push({ kind, graph, apiKey });
+    generate: async (kind, { graph, apiKey, journey }) => {
+      calls.push({ kind, graph, apiKey, journey });
       return next;
     },
     ask: async function* () {
@@ -264,5 +264,55 @@ describe("POST /api/inside", () => {
       expect(await inside({ arxiv_id: ID, block_id, graph }, d)).toMatchObject({ type: "error", code: "bad_input" });
     }
     expect(insideCalls).toEqual([]);
+  });
+});
+
+describe("POST /api/learn, motion", () => {
+  const ids = journey.steps.map((s) => s.block_id);
+  const linear = { kind: "linear", caption: "Mix", tokens: [], input: [[1, 2]], weights: [[1], [1]], extra: [], fn: "", size: 1, stride: 1, count: 1, svg: "" };
+  const motion = { steps: [{ block_id: ids[1]!, ops: [linear] }, { block_id: ids[2]!, ops: [linear] }] } as AnyArtifact;
+
+  test("motion without a journey is bad_input", async () => {
+    const e = await learn({ arxiv_id: ID, kind: "motion", graph }, deps(createStore("sqlite://:memory:")));
+    expect(e).toMatchObject({ type: "error", code: "bad_input", message: "Open the walkthrough first." });
+  });
+
+  test("an unpublished paper's motion is generated from the posted journey", async () => {
+    next = motion;
+    const e = await learn({ arxiv_id: ID, kind: "motion", graph, journey }, deps(createStore("sqlite://:memory:")));
+    expect(e).toMatchObject({ type: "learn", source: "claude", saved: false });
+    expect(calls[0]!.journey!.steps.length).toBe(journey.steps.length);
+  });
+
+  test("a published paper's motion follows its stored journey, not the posted one", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    await store.putArtifact(ID, "journey", journey);
+    next = motion;
+    const posted = { ...journey, intro: "Posted by a visitor." };
+    await learn({ arxiv_id: ID, kind: "motion", journey: posted }, deps(store));
+    expect(calls[0]!.journey!.intro).toBe(journey.intro);
+  });
+
+  test("a motion sample that doesn't fit the published journey isn't served", async () => {
+    const store = createStore("sqlite://:memory:");
+    const renamed = { ...graph, blocks: graph.blocks.map((b) => ({ ...b, id: `x_${b.id}` })), edges: [] };
+    await store.publishPaper(ID, renamed);
+    const theirs = { ...journey, steps: journey.steps.map((s) => ({ ...s, block_id: `x_${s.block_id}` })) };
+    await store.putArtifact(ID, "journey", theirs);
+    await Bun.write(join(samplesDir, `${ID}.motion.json`), JSON.stringify(motion));
+    next = { steps: [{ block_id: `x_${ids[1]}`, ops: [linear] }] } as AnyArtifact;
+    const e = await learn({ arxiv_id: ID, kind: "motion" }, deps(store));
+    expect(e).toMatchObject({ type: "learn", source: "claude" });
+  });
+
+  test("zero usable steps fails and isn't saved", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    await store.putArtifact(ID, "journey", journey);
+    next = { steps: [{ block_id: "nope", ops: [linear] }] } as AnyArtifact;
+    const e = await learn({ arxiv_id: ID, kind: "motion" }, deps(store));
+    expect(e).toMatchObject({ type: "error", message: "Couldn't animate this model." });
+    expect(await store.getArtifact(ID, "motion")).toBeNull();
   });
 });

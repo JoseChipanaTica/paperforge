@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Architecture } from "../shared/graph";
-import { askRequest, cleanInside, insideRequest, learnRequest } from "./tutor";
+import { askRequest, cleanInside, insideRequest, learnRequest, motionRequest } from "./tutor";
+import type { JourneyArtifact } from "../shared/learn";
 
 const graph = Architecture.parse(await Bun.file(join(import.meta.dir, "../../samples/1706.03762.json")).json());
 const pages = ["Page one text.", "Page two text."];
@@ -98,5 +99,20 @@ describe("cleanInside", () => {
     expect(clean.blocks[2]!.group).toBe("");
     expect(clean.groups.map((g) => g.id)).toEqual(["heads"]);
     expect(clean.edges).toHaveLength(1);
+  });
+});
+
+describe("motionRequest", () => {
+  test("shares the system prompt and paper prefix, with its own format and the journey after the breakpoint", async () => {
+    const journey = (await Bun.file(join(import.meta.dir, "../../samples/1706.03762.journey.json")).json()) as JourneyArtifact;
+    const motion = motionRequest(pages, graph, journey);
+    const learn = learnRequest("journey", pages, graph);
+    expect(motion.system).toBe(learn.system);
+    expect(prefix(firstContent(motion))).toBe(prefix(firstContent(learn)));
+    expect(JSON.stringify(motion.output_config.format.schema)).not.toBe(JSON.stringify(learn.output_config.format.schema));
+    expect(motion.output_config.effort).toBe(learn.output_config.effort);
+    const task = (firstContent(motion) as { text: string }[])[2]!.text;
+    expect(task).toContain("<journey>");
+    for (const s of journey.steps) expect(task).toContain(s.block_id);
   });
 });

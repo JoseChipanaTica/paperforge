@@ -7,12 +7,14 @@ import {
   artifactBlockCount,
   isUsable,
   pruneArtifact,
+  JourneyArtifact,
   type AnyArtifact,
   type AskEvent,
   type AskTurn,
   type InsideEvent,
   type LearnEvent,
 } from "../shared/learn";
+import { cleanMotion, motionFits, type MotionArtifact } from "../shared/motion";
 import { DEFAULT_LEVEL, Lang, Level } from "../shared/translate";
 import { errorMessage } from "./api";
 import { parseArxivId } from "./arxiv";
@@ -97,17 +99,21 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
     const fail = (message: string, code?: "bad_input") => emit({ type: "error", message, ...(code && { code }) });
     const id = parseArxivId(String(body?.arxiv_id ?? ""));
     const kind = LearnKind.safeParse(body?.kind);
-    if (!id || !kind.success) return fail("Expected an arXiv id and a kind (pytorch or journey).", "bad_input");
+    if (!id || !kind.success) return fail("Expected an arXiv id and a kind (pytorch, journey or motion).", "bad_input");
     const k = kind.data;
 
     try {
       const published = await publishedGraph(d.store, id);
+      // Motion animates a walkthrough: the one everyone sees for this paper, else the visitor's own.
+      const journey = k === "motion" ? await journeyFor(d, id, published, body?.journey) : null;
+      if (k === "motion" && !journey) return fail("Open the walkthrough first.", "bad_input");
+      const fits = (a: AnyArtifact) => k !== "motion" || motionFits(a as MotionArtifact, journey!);
       if (published) {
         const saved = await d.store.getArtifact(id, k).catch(() => null);
-        if (saved) return emit({ type: "learn", kind: k, artifact: saved, source: "gallery", saved: true });
+        if (saved && fits(saved)) return emit({ type: "learn", kind: k, artifact: saved, source: "gallery", saved: true });
       }
       const sample = await readSample(d.samplesDir, id, k, published);
-      if (sample) return emit({ type: "learn", kind: k, artifact: sample, source: "sample", saved: false });
+      if (sample && fits(sample)) return emit({ type: "learn", kind: k, artifact: sample, source: "sample", saved: false });
 
       // A published paper always uses its stored graph; otherwise the visitor's own forge.
       const parsed = Architecture.safeParse(body?.graph);
@@ -116,10 +122,9 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
 
       emit({ type: "status", message: STATUS[k] });
       const pages = await d.loadPages(id);
-      const artifact = pruneArtifact(k, await d.generate(k, { pages, graph, apiKey }), graph);
-      if (!isUsable(k, artifact)) {
-        return fail(k === "journey" ? "Couldn't build the walkthrough. Try again." : "Claude couldn't map this to the model's blocks. Try again.");
-      }
+      const generated = await d.generate(k, { pages, graph, apiKey, ...(journey && { journey }) });
+      const artifact = k === "motion" ? cleanMotion(generated as MotionArtifact, graph, journey) : pruneArtifact(k, generated, graph);
+      if (!isUsable(k, artifact)) return fail(UNUSABLE[k]);
 
       if (!published) return emit({ type: "learn", kind: k, artifact, source: "claude", saved: false });
       try {
@@ -141,7 +146,26 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
 const STATUS: Record<LearnKind, string> = {
   pytorch: "Claude is writing the PyTorch code…",
   journey: "Claude is following an input through the model…",
+  motion: "Claude is animating each block…",
 };
+
+const UNUSABLE: Record<LearnKind, string> = {
+  pytorch: "Claude couldn't map this to the model's blocks. Try again.",
+  journey: "Couldn't build the walkthrough. Try again.",
+  motion: "Couldn't animate this model.",
+};
+
+/** The walkthrough motion follows: published (gallery), then the committed sample, then the one posted. */
+async function journeyFor(d: LearnDeps, id: string, published: Architecture | null, posted: unknown): Promise<JourneyArtifact | null> {
+  if (published) {
+    const saved = await d.store.getArtifact(id, "journey").catch(() => null);
+    if (saved) return saved as JourneyArtifact;
+  }
+  const sample = await readSample(d.samplesDir, id, "journey", published);
+  if (sample) return sample as JourneyArtifact;
+  const parsed = JourneyArtifact.safeParse(posted);
+  return parsed.success ? parsed.data : null;
+}
 
 function parseHistory(raw: unknown): AskTurn[] | null {
   if (raw === undefined) return [];
