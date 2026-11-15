@@ -8,8 +8,7 @@ Everyone has a paper they never fully understood. Paperforge turns the method se
 
 ![Paperforge building the Transformer from "Attention Is All You Need"](assets/demo.gif)
 
-> _GIF coming soon._ To see it now, run it locally (below) and open
-> http://localhost:3000/?paper=1706.03762
+To try it yourself, run it locally (below) and open http://localhost:3000/?paper=1706.03762.
 
 What happens in the clip:
 
