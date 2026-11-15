@@ -106,5 +106,24 @@ export type LocatedArchitecture = Omit<Architecture, "blocks"> & {
 export type ForgeEvent =
   | { type: "status"; stage: "fetch" | "read" | "extract" | "locate"; message: string }
   | { type: "paper"; arxiv_id: string; pages: string[] }
-  | { type: "graph"; graph: LocatedArchitecture; cached: boolean }
-  | { type: "error"; message: string };
+  | {
+      type: "graph";
+      graph: LocatedArchitecture;
+      source: GraphSource;
+      /** Present only for fresh Claude output: lets the user publish it to the gallery. */
+      save_token?: string;
+    }
+  | { type: "error"; message: string; code?: "needs_key" | "rate_limited" | "bad_input" };
+
+/** Where /api/forge got the architecture from. */
+export type GraphSource = "gallery" | "sample" | "cache" | "claude";
+
+/** A gallery card: paper metadata without the graph. */
+export interface PaperSummary {
+  arxiv_id: string;
+  paper_title: string;
+  model_name: string;
+  summary: string;
+  block_count: number;
+  created_at: string; // ISO-8601
+}

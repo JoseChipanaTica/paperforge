@@ -76,6 +76,6 @@ export async function forge(
   const { arch, cached } = await loadArchitecture(id, pages, refresh, emit);
   emit({ type: "status", stage: "locate", message: "Finding each block in the text" });
   const graph = locate(id, arch, pages);
-  emit({ type: "graph", graph, cached });
+  emit({ type: "graph", graph, source: cached ? "cache" : "claude" });
   return graph;
 }
