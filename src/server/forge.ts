@@ -39,6 +39,11 @@ async function loadPages(id: string, emit: (e: ForgeEvent) => void, cacheDir: st
   return pages;
 }
 
+/** The paper's text, one string per page (disk cache → arXiv). Also used by the tutor. */
+export function loadPaperPages(id: string, emit: (e: ForgeEvent) => void = () => {}): Promise<string[]> {
+  return loadPages(id, emit, CACHE);
+}
+
 type Extract = typeof extractArchitecture;
 
 async function loadArchitecture(

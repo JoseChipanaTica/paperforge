@@ -20,11 +20,17 @@ Extract the main model the paper proposes (the base configuration if there are s
 
 List blocks in assembly order: from the inputs to the outputs, following the data. When the model has parallel branches (encoder/decoder, two towers), finish one branch before the next.`;
 
-export async function extractArchitecture(pages: string[], opts: { apiKey?: string } = {}): Promise<Architecture> {
+/** The paper as Claude reads it, page by page. Shared with the tutor so prompts stay identical. */
+export function formatPaper(pages: string[]): string {
   const paper = pages.map((p, i) => `<page number="${i + 1}">\n${p}\n</page>`).join("\n");
   if (paper.length > MAX_CHARS) {
     throw new Error(`Paper is too long to read in one pass (${paper.length.toLocaleString()} chars).`);
   }
+  return paper;
+}
+
+export async function extractArchitecture(pages: string[], opts: { apiKey?: string } = {}): Promise<Architecture> {
+  const paper = formatPaper(pages);
 
   // Per-request client: on the hosted site each visitor brings their own key.
   const client = new Anthropic({ apiKey: opts.apiKey?.trim() || undefined });
