@@ -72,26 +72,26 @@ describe("artifacts", () => {
 
   test("put then get round-trips; first save wins", async () => {
     const store = memory();
-    const w = await load("walkthrough");
-    expect(await store.putArtifact("1706.03762", "walkthrough", w)).toBe("created");
-    expect(await store.getArtifact("1706.03762", "walkthrough")).toEqual(w);
-    expect(await store.putArtifact("1706.03762", "walkthrough", { ...w, intro: "Imposter" })).toBe("exists");
-    expect(await store.getArtifact("1706.03762", "walkthrough")).toEqual(w);
+    const w = await load("journey");
+    expect(await store.putArtifact("1706.03762", "journey", w)).toBe("created");
+    expect(await store.getArtifact("1706.03762", "journey")).toEqual(w);
+    expect(await store.putArtifact("1706.03762", "journey", { ...w, intro: "Imposter" })).toBe("exists");
+    expect(await store.getArtifact("1706.03762", "journey")).toEqual(w);
   });
 
   test("missing artifact is null", async () => {
-    expect(await memory().getArtifact("1706.03762", "example")).toBeNull();
+    expect(await memory().getArtifact("1706.03762", "journey")).toBeNull();
   });
 
   test("lists the kinds saved for a paper", async () => {
     const store = memory();
-    await store.putArtifact("1706.03762", "walkthrough", await load("walkthrough"));
+    await store.putArtifact("1706.03762", "journey", await load("journey"));
     await store.putArtifact("1706.03762", "pytorch", await load("pytorch"));
-    await store.putArtifact("1512.03385", "example", await load("example"));
-    expect((await store.listArtifactKinds("1706.03762")).sort()).toEqual(["pytorch", "walkthrough"]);
+    await store.putArtifact("1512.03385", "journey", await load("journey"));
+    expect((await store.listArtifactKinds("1706.03762")).sort()).toEqual(["journey", "pytorch"]);
   });
 
   test("rejects an artifact that doesn't match its kind's schema", async () => {
-    await expect(memory().putArtifact("x", "example", { nope: 1 } as never)).rejects.toThrow();
+    await expect(memory().putArtifact("x", "journey", { nope: 1 } as never)).rejects.toThrow();
   });
 });

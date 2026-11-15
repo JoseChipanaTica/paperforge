@@ -7,7 +7,7 @@ import type { Architecture } from "./graph";
  * Same rule as graph.ts: no constraints structured outputs can't express.
  */
 
-export const LEARN_KINDS = ["pytorch", "walkthrough", "example"] as const;
+export const LEARN_KINDS = ["pytorch", "journey"] as const;
 export const LearnKind = z.enum(LEARN_KINDS);
 export type LearnKind = z.infer<typeof LearnKind>;
 
@@ -29,41 +29,6 @@ export const PytorchArtifact = z.object({
   notes: z.array(z.string()).describe("Assumptions made where the paper is silent"),
 });
 export type PytorchArtifact = z.infer<typeof PytorchArtifact>;
-
-export const WalkthroughArtifact = z.object({
-  intro: z.string().describe("One or two sentences: what the tour will show"),
-  steps: z
-    .array(
-      z.object({
-        block_id: z.string().describe("id of a block in <graph>"),
-        title: z.string().describe("Short step title"),
-        narration: z.string().describe("2–3 sentences on what happens to the data in this block and why"),
-        shape_change: z.string().describe("Tensor shape in → out, e.g. '[B, n, 512] → [B, n, 512]'"),
-      }),
-    )
-    .describe("One step per block, in data-flow order"),
-  outro: z.string().describe("One or two sentences tying it together"),
-});
-export type WalkthroughArtifact = z.infer<typeof WalkthroughArtifact>;
-
-export const ExampleArtifact = z.object({
-  analogy: z.object({
-    title: z.string().describe("Short name for the everyday analogy"),
-    text: z.string().describe("The analogy in a short paragraph a non-expert understands"),
-  }),
-  toy_input: z.string().describe("A tiny concrete input, e.g. 'the cat sat'"),
-  steps: z
-    .array(
-      z.object({
-        block_id: z.string().describe("id of a block in <graph>"),
-        what_happens: z.string().describe("Plain-language sentence on what this block does to the toy input"),
-        toy_value: z.string().describe("What the toy input looks like after this block, concretely"),
-      }),
-    )
-    .describe("One step per block, in data-flow order"),
-  takeaway: z.string().describe("One sentence to remember"),
-});
-export type ExampleArtifact = z.infer<typeof ExampleArtifact>;
 
 export const VIEW_KINDS = ["tokens", "vectors", "heads", "matrix", "patches", "signal", "frames", "probs", "tensor"] as const;
 export const MODALITIES = ["text", "image", "audio", "video", "multimodal", "other"] as const;
@@ -162,30 +127,27 @@ export function cleanJourney(a: JourneyArtifact, graph: Architecture): JourneyAr
 
 export const ARTIFACT_SCHEMA = {
   pytorch: PytorchArtifact,
-  walkthrough: WalkthroughArtifact,
-  example: ExampleArtifact,
+  journey: JourneyArtifact,
 } as const;
 
 export type Artifact<K extends LearnKind> = z.infer<(typeof ARTIFACT_SCHEMA)[K]>;
-export type AnyArtifact = PytorchArtifact | WalkthroughArtifact | ExampleArtifact;
+export type AnyArtifact = PytorchArtifact | JourneyArtifact;
 
-/** Drop steps (or code mappings) that point at blocks the graph doesn't have. */
+/** Drop steps (or code mappings) that point at blocks the graph doesn't have; journeys are also clamped. */
 export function pruneArtifact(kind: LearnKind, artifact: AnyArtifact, graph: Architecture): AnyArtifact {
+  if (kind === "journey") return cleanJourney(artifact as JourneyArtifact, graph);
   const ids = new Set(graph.blocks.map((b) => b.id));
-  if (kind === "pytorch") {
-    const a = artifact as PytorchArtifact;
-    return { ...a, block_map: a.block_map.filter((m) => ids.has(m.block_id)) };
-  }
-  const a = artifact as WalkthroughArtifact | ExampleArtifact;
-  return { ...a, steps: a.steps.filter((s) => ids.has(s.block_id)) } as AnyArtifact;
+  const a = artifact as PytorchArtifact;
+  return { ...a, block_map: a.block_map.filter((m) => ids.has(m.block_id)) };
 }
 
-/** How many blocks an artifact still ties to the model (0 means it's unusable). */
+/** How many blocks an artifact still ties to the model. */
 export function artifactBlockCount(kind: LearnKind, artifact: AnyArtifact): number {
-  return kind === "pytorch"
-    ? (artifact as PytorchArtifact).block_map.length
-    : (artifact as WalkthroughArtifact | ExampleArtifact).steps.length;
+  return kind === "pytorch" ? (artifact as PytorchArtifact).block_map.length : (artifact as JourneyArtifact).steps.length;
 }
+
+/** Enough left to show: code mapped to at least one block, or a journey of at least two steps. */
+export const isUsable = (kind: LearnKind, artifact: AnyArtifact) => artifactBlockCount(kind, artifact) >= (kind === "journey" ? 2 : 1);
 
 type LearnError = { type: "error"; message: string; code?: "needs_key" | "rate_limited" | "bad_input" };
 

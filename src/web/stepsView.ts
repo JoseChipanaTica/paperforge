@@ -3,7 +3,7 @@ import { escapeHtml } from "./scene";
 import type { TourDriver, TourScript } from "./tour";
 
 /**
- * The walkthrough / example as a list in the study panel: intro, every step, outro, with the
+ * The walkthrough as a list in the study panel: intro, every step, outro, with the
  * current step marked and Back / Play / Next pinned at the bottom. The camera follows.
  */
 export function renderSteps(root: HTMLElement, script: TourScript, graph: LocatedArchitecture, driver: TourDriver, start = -1) {
@@ -13,7 +13,7 @@ export function renderSteps(root: HTMLElement, script: TourScript, graph: Locate
       <section class="step step-intro" data-index="-1">
         <h3>${escapeHtml(script.intro.title)}</h3>
         <p>${escapeHtml(script.intro.body).replace(/\n/g, "<br>")}</p>
-        ${script.intro.detail ? `<code>${escapeHtml(script.intro.detail)}</code>` : ""}
+        <code>${escapeHtml(script.intro.label)}</code>
       </section>
       <ol class="step-list">
         ${script.steps
@@ -25,8 +25,9 @@ export function renderSteps(root: HTMLElement, script: TourScript, graph: Locate
               <span class="step-title">${escapeHtml(s.title || label(s.block_id))}</span>
             </button>
             <div class="step-body">
+              <p><b>${escapeHtml(s.what)}</b></p>
               <p>${escapeHtml(s.body)}</p>
-              ${s.detail ? `<code>${escapeHtml(s.detail)}</code>` : ""}
+              ${s.shape ? `<code>${escapeHtml(s.shape)}</code>` : ""}
             </div>
           </li>`,
           )

@@ -35,14 +35,15 @@ export const LEARN_TASK: Record<LearnKind, string> = {
 - End with an if __name__ == "__main__": block that builds the model, runs one forward pass on random input and prints the output shape.
 - block_map: one entry for every block in <graph>, naming the class, function or variable in your code that implements it.
 - notes: every assumption you made where the paper is silent or ambiguous.`,
-  walkthrough: `Write a guided walkthrough of this architecture: one step per block in <graph>, in the order data flows through the model (finish one branch before the next).
-- narration: 2–3 sentences on what happens to the data in this block and why the paper does it this way.
-- shape_change: the tensor shape going in and out, e.g. "[B, n, 512] → [B, n, 512]".`,
-  example: `Explain this architecture to a non-expert with an everyday analogy and a tiny worked example.
-- analogy: one vivid everyday analogy for the whole model.
-- toy_input: a tiny concrete input of 3–5 tokens (or a tiny image, signal, etc. for non-text models).
-- steps: one per block in <graph>, in data-flow order; what_happens in one plain sentence, toy_value showing concretely what the toy input looks like after that block.
-- takeaway: one sentence to remember.`,
+  journey: `Follow one tiny, concrete input through this architecture, block by block, from the raw input to the final output, so a reader can watch the data change shape and meaning.
+- modality: what the model takes in.
+- Pick one small input that suits the paper's task and modality (3–5 tokens of text, a 4×4 image patch grid, a short audio clip, a few video frames; for multimodal, one of each), and follow that same input through every block.
+- analogy: one vivid everyday analogy for the whole model. intro: what the reader is about to watch.
+- input: the raw input in words (label) and as views. output: the final result in words and as views (usually "probs" for a prediction).
+- steps: one per block in <graph>, in the order data flows (finish one branch before the next). title; what_happens in one plain sentence; narration in 2–3 sentences on what happens to the data here and why the paper does it this way; shape_change as "[B, n, 512] → [B, n, 512]" consistent with the block's shapes; views showing the data after the block.
+- views: pick the kind that shows what this block does: "tokens" for discrete symbols, "vectors" for embeddings and hidden states, "heads" when a vector is split into h heads (split = h), "matrix" for attention weights or any item × item map, "patches" for images, "signal" for audio, "frames" for video, "probs" for output probabilities, "tensor" only when nothing else fits. Use two views in one step only when two streams coexist (e.g. encoder output beside decoder state, or text beside image).
+- Values are illustrative but consistent: an item keeps its row label from step to step, and each step's numbers plausibly follow from the previous step's. At most 12 rows and 12 columns per view and at most 8 numbers per vector row; dims gives the true tensor size (e.g. "[3, 512]"), so the view is a slice of it.
+- outro: one sentence to remember.`,
 };
 
 /** A block's inside view: its internal structure as a small graph of its own (same shape as the model). */
@@ -59,13 +60,16 @@ If the paper says nothing more about its inside, give the standard structure the
 }
 
 /**
- * One output format for every kind, inside views included. The format sits ahead of the whole
- * prompt in the cache, so a per-kind schema made every feature re-pay for the paper (measured:
+ * One output format for every learning kind, and one for inside views. The format sits ahead of the
+ * whole prompt in the cache, so a per-kind schema made every feature re-pay for the paper (measured:
  * cache read 0). The task text says which shape to write; the caller checks it against that schema.
+ * The journey and the block graph together compile to a grammar the API rejects as too large, so
+ * inside views (many per paper) share the cache with each other, and PyTorch with the journey.
  */
 export const ANY_ARTIFACT = z.object({
-  artifact: z.union([ARTIFACT_SCHEMA.pytorch, ARTIFACT_SCHEMA.walkthrough, ARTIFACT_SCHEMA.example, Architecture]),
+  artifact: z.union([ARTIFACT_SCHEMA.pytorch, ARTIFACT_SCHEMA.journey]),
 });
+export const INSIDE_ARTIFACT = z.object({ artifact: Architecture });
 
 export function paperPrefix(pages: string[], graph: Architecture): Anthropic.Beta.BetaTextBlockParam[] {
   return [
@@ -75,19 +79,19 @@ export function paperPrefix(pages: string[], graph: Architecture): Anthropic.Bet
 }
 
 export function learnRequest(kind: LearnKind, pages: string[], graph: Architecture) {
-  return tutorRequest(pages, graph, `${LEARN_TASK[kind]}\n\nWrite it as the "${kind}" shape of artifact.`);
+  return tutorRequest(pages, graph, `${LEARN_TASK[kind]}\n\nWrite it as the "${kind}" shape of artifact.`, ANY_ARTIFACT);
 }
 
 export function insideRequest(block: Block, pages: string[], graph: Architecture) {
-  return tutorRequest(pages, graph, `${insideTask(block)}\n\nWrite it as the block-graph shape of artifact.`);
+  return tutorRequest(pages, graph, insideTask(block), INSIDE_ARTIFACT);
 }
 
-function tutorRequest(pages: string[], graph: Architecture, task: string) {
+function tutorRequest(pages: string[], graph: Architecture, task: string, format: typeof ANY_ARTIFACT | typeof INSIDE_ARTIFACT) {
   return {
     model: MODEL,
     max_tokens: 32000,
     system: TUTOR_SYSTEM,
-    output_config: { effort: EFFORT, format: betaZodOutputFormat(ANY_ARTIFACT) },
+    output_config: { effort: EFFORT, format: betaZodOutputFormat(format as typeof ANY_ARTIFACT) },
     ...fallback(),
     messages: [
       {

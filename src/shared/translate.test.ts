@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Architecture } from "./graph";
-import { ARTIFACT_SCHEMA, LEARN_KINDS, type PytorchArtifact } from "./learn";
+import { ARTIFACT_SCHEMA, LEARN_KINDS, type JourneyArtifact, type PytorchArtifact } from "./learn";
 import { TEXT_SCHEMA, applyText, codeSkeleton, pickText, textMatches, type TranslatedText } from "./translate";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
@@ -64,9 +64,33 @@ describe("artifact text", () => {
     });
   }
 
+  test("journey: only prose is sent, and the data never changes", async () => {
+    const a = (await sample("journey")) as JourneyArtifact;
+    const text = pickText("journey", a);
+    const sent = JSON.stringify(text);
+    for (const field of ['"values"', '"rows"', '"cols"', '"dims"', '"split"', '"shape_change"', '"modality"']) expect(sent).not.toContain(field);
+    const out = applyText("journey", a, fake(text));
+    const data = (j: JourneyArtifact) =>
+      [j.input, ...j.steps, j.output].map((m) => [
+        "shape_change" in m ? m.shape_change : "",
+        m.views.map(({ kind, rows, cols, values, dims, split }) => ({ kind, rows, cols, values, dims, split })),
+      ]);
+    expect(data(out)).toEqual(data(a));
+    expect(out.modality).toBe(a.modality);
+    expect(out.steps[0]!.views[0]!.caption).toBe(`ES ${a.steps[0]!.views[0]!.caption}`);
+    expect(out.input.label).toBe(`ES ${a.input.label}`);
+  });
+
+  test("journey: a different number of captions doesn't match", async () => {
+    const text = pickText("journey", await sample("journey")) as any;
+    const t = fake(text);
+    t.steps[0].captions = [...t.steps[0].captions, "extra"];
+    expect(textMatches("journey", text, t)).toBe(false);
+  });
+
   test("steps out of order don't match", async () => {
-    const text = pickText("walkthrough", await sample("walkthrough")) as any;
-    expect(textMatches("walkthrough", text, { ...text, steps: [...text.steps].reverse() })).toBe(false);
+    const text = pickText("journey", await sample("journey")) as any;
+    expect(textMatches("journey", text, { ...text, steps: [...text.steps].reverse() })).toBe(false);
   });
 });
 

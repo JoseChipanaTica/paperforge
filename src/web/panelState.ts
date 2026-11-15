@@ -2,7 +2,7 @@ import { LEARN_KINDS, type LearnKind } from "../shared/learn";
 
 /** The study panel's state, kept pure so tab behaviour is testable without a DOM. */
 
-export const TABS = ["overview", "paper", "walkthrough", "example", "pytorch"] as const;
+export const TABS = ["overview", "paper", "journey", "pytorch"] as const;
 export type TabId = (typeof TABS)[number];
 
 export type KindStatus = "idle" | "ready" | "generating" | "loaded" | "needs_key" | "error";

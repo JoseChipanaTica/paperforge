@@ -11,8 +11,9 @@ const prefix = (content: unknown) => JSON.stringify((content as unknown[]).slice
 const firstContent = (req: { messages: { content: unknown }[] }) => req.messages[0]!.content;
 
 describe("cached paper prefix", () => {
-  // Inside views share the cache with the learning features.
-  const reqs = [...(["pytorch", "walkthrough", "example"] as const).map((k) => learnRequest(k, pages, graph)), insideRequest(block, pages, graph)];
+  const learn = (["pytorch", "journey"] as const).map((k) => learnRequest(k, pages, graph));
+  const inside = insideRequest(block, pages, graph);
+  const reqs = [...learn, inside];
   const ask = askRequest({ pages, graph, block, question: "Why divide by sqrt(d_k)?", history: [] });
 
   test("is byte-identical for every learning kind", () => {
@@ -20,9 +21,13 @@ describe("cached paper prefix", () => {
     for (const r of reqs) expect(prefix(firstContent(r))).toBe(first);
   });
 
-  test("sends the same output format for every kind (a format change invalidates the cache)", () => {
-    const formats = reqs.map((r) => JSON.stringify(r.output_config.format.schema));
+  test("learning kinds share one output format (a format change invalidates the cache)", () => {
+    const formats = learn.map((r) => JSON.stringify(r.output_config.format.schema));
     expect(new Set(formats).size).toBe(1);
+  });
+
+  test("inside views have their own format: the journey and the block graph don't fit one grammar", () => {
+    expect(JSON.stringify(inside.output_config.format.schema)).not.toBe(JSON.stringify(learn[0]!.output_config.format.schema));
   });
 
   test("ends in a cache breakpoint on the graph block", () => {

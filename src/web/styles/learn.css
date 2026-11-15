@@ -1,5 +1,5 @@
-/* Walkthrough / Example: a step list with the camera following. */
-.tabpanel-walkthrough, .tabpanel-example { padding: 0; display: flex; flex-direction: column; }
+/* Walkthrough (the journey): a step list with the camera and the specimen following. */
+.tabpanel-journey { padding: 0; display: flex; flex-direction: column; }
 .steps { flex: 1; overflow: auto; padding: var(--s5) var(--s5) var(--s4); }
 
 .step-intro h3 { font-size: var(--t-lg); }

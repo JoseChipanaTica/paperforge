@@ -1,30 +1,26 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import type { ExampleArtifact, WalkthroughArtifact } from "../shared/learn";
+import type { JourneyArtifact } from "../shared/learn";
 import type { ForgeScene } from "./scene";
 import { TourDriver, tourSteps } from "./tour";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
-const walkthrough = (await Bun.file(join(SAMPLES, "1706.03762.walkthrough.json")).json()) as WalkthroughArtifact;
-const example = (await Bun.file(join(SAMPLES, "1706.03762.example.json")).json()) as ExampleArtifact;
+const journey = (await Bun.file(join(SAMPLES, "1706.03762.journey.json")).json()) as JourneyArtifact;
 
 describe("tourSteps", () => {
-  test("walkthrough: one step per block, narration as body, shape change as detail", () => {
-    const t = tourSteps("walkthrough", walkthrough);
-    expect(t.steps).toHaveLength(18);
-    expect(t.steps[0]!.body).toBe(walkthrough.steps[0]!.narration);
-    expect(t.steps[0]!.detail).toBe(walkthrough.steps[0]!.shape_change);
-    expect(t.steps[0]!.title).toBe(walkthrough.steps[0]!.title);
-    expect(t.outro).toBe(walkthrough.outro);
-  });
-
-  test("example: analogy first, toy values as detail, takeaway last", () => {
-    const t = tourSteps("example", example);
-    expect(t.intro.title).toBe(example.analogy.title);
-    expect(t.intro.body).toBe(example.analogy.text);
-    expect(t.steps[3]!.detail).toBe(example.steps[3]!.toy_value);
-    expect(t.steps[3]!.title).toBe(""); // the tour shows the block's label instead
-    expect(t.outro).toBe(example.takeaway);
+  test("journey: analogy, input and output frame the steps", () => {
+    const t = tourSteps(journey);
+    expect(t.analogy).toEqual(journey.analogy);
+    expect(t.intro.body).toBe(journey.intro);
+    expect(t.intro.label).toBe(journey.input.label);
+    expect(t.intro.views).toEqual(journey.input.views);
+    expect(t.steps.map((s) => s.block_id)).toEqual(journey.steps.map((s) => s.block_id));
+    expect(t.steps[0]!.what).toBe(journey.steps[0]!.what_happens);
+    expect(t.steps[0]!.body).toBe(journey.steps[0]!.narration);
+    expect(t.steps[0]!.shape).toBe(journey.steps[0]!.shape_change);
+    expect(t.steps[0]!.views).toEqual(journey.steps[0]!.views);
+    expect(t.output).toEqual(journey.output);
+    expect(t.outro).toBe(journey.outro);
   });
 });
 
@@ -33,7 +29,7 @@ describe("TourDriver", () => {
 
   test("Next and Back still work after Esc stopped the tour", () => {
     const driver = new TourDriver(fakeScene);
-    const script = tourSteps("walkthrough", walkthrough);
+    const script = tourSteps(journey);
     driver.goTo(script, 3);
     driver.stop();
     driver.next();

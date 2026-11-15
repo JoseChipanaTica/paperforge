@@ -22,11 +22,17 @@ describe("Transformer sample artifacts", () => {
   }
 });
 
+test("the journey sample is already clean and follows text", async () => {
+  const j = ARTIFACT_SCHEMA.journey.parse(await sample("journey"));
+  expect(cleanJourney(j, graph)).toEqual(j);
+  expect(j.modality).toBe("text");
+});
+
 describe("pruneArtifact", () => {
-  test("drops walkthrough steps for blocks that aren't in the graph", async () => {
-    const w = await sample("walkthrough");
-    const bogus = { block_id: "nope", title: "Nope", narration: "n", shape_change: "-" };
-    const pruned = pruneArtifact("walkthrough", { ...w, steps: [...w.steps, bogus] }, graph) as typeof w;
+  test("drops journey steps for blocks that aren't in the graph", async () => {
+    const w = await sample("journey");
+    const bogus = { block_id: "nope", title: "Nope", what_happens: "w", narration: "n", shape_change: "-", views: [] };
+    const pruned = pruneArtifact("journey", { ...w, steps: [...w.steps, bogus] }, graph) as typeof w;
     expect(pruned.steps.length).toBe(w.steps.length);
   });
 

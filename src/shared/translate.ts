@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Architecture } from "./graph";
-import { LEARN_KINDS, type ExampleArtifact, type PytorchArtifact, type WalkthroughArtifact } from "./learn";
+import { LEARN_KINDS, type JourneyArtifact, type PytorchArtifact } from "./learn";
 
 /**
  * Language and reading level: Claude writes everything in English for an engineer (what the
@@ -59,16 +59,17 @@ const GraphText = z.object({
   groups: z.array(z.object({ id: z.string(), label: z.string() })),
   blocks: z.array(z.object({ id: z.string(), label: z.string(), description: z.string() })),
 });
-const WalkthroughText = z.object({
-  intro: z.string(),
-  steps: z.array(z.object({ block_id: z.string(), title: z.string(), narration: z.string() })),
-  outro: z.string(),
-});
-const ExampleText = z.object({
+// A journey's data (rows, values, dims, shape changes) stays as is: only the words around it change.
+const MomentText = z.object({ label: z.string(), captions: z.array(z.string()) });
+const JourneyText = z.object({
   analogy: z.object({ title: z.string(), text: z.string() }),
-  toy_input: z.string(),
-  steps: z.array(z.object({ block_id: z.string(), what_happens: z.string(), toy_value: z.string() })),
-  takeaway: z.string(),
+  intro: z.string(),
+  input: MomentText,
+  steps: z.array(
+    z.object({ block_id: z.string(), title: z.string(), what_happens: z.string(), narration: z.string(), captions: z.array(z.string()) }),
+  ),
+  output: MomentText,
+  outro: z.string(),
 });
 const PytorchText = z.object({
   code: z.string().describe("The code with only comments and docstrings translated"),
@@ -78,13 +79,12 @@ const PytorchText = z.object({
 export const TEXT_SCHEMA = {
   graph: GraphText,
   expansion: GraphText,
-  walkthrough: WalkthroughText,
-  example: ExampleText,
+  journey: JourneyText,
   pytorch: PytorchText,
 } as const;
 
 export type TranslatedText = z.infer<(typeof TEXT_SCHEMA)[TranslateKind]>;
-type Content = Architecture | PytorchArtifact | WalkthroughArtifact | ExampleArtifact;
+type Content = Architecture | PytorchArtifact | JourneyArtifact;
 
 /** The prose of a graph or artifact: what is sent for translation and what the cache is keyed on. */
 export function pickText(kind: TranslateKind, content: Content): TranslatedText {
@@ -98,17 +98,22 @@ export function pickText(kind: TranslateKind, content: Content): TranslatedText 
         blocks: g.blocks.map(({ id, label, description }) => ({ id, label, description })),
       };
     }
-    case "walkthrough": {
-      const a = content as WalkthroughArtifact;
-      return { intro: a.intro, steps: a.steps.map(({ block_id, title, narration }) => ({ block_id, title, narration })), outro: a.outro };
-    }
-    case "example": {
-      const a = content as ExampleArtifact;
+    case "journey": {
+      const a = content as JourneyArtifact;
+      const moment = (m: JourneyArtifact["input"]) => ({ label: m.label, captions: m.views.map((v) => v.caption) });
       return {
         analogy: a.analogy,
-        toy_input: a.toy_input,
-        steps: a.steps.map(({ block_id, what_happens, toy_value }) => ({ block_id, what_happens, toy_value })),
-        takeaway: a.takeaway,
+        intro: a.intro,
+        input: moment(a.input),
+        steps: a.steps.map((s) => ({
+          block_id: s.block_id,
+          title: s.title,
+          what_happens: s.what_happens,
+          narration: s.narration,
+          captions: s.views.map((v) => v.caption),
+        })),
+        output: moment(a.output),
+        outro: a.outro,
       };
     }
     case "pytorch": {
@@ -126,8 +131,10 @@ export function textMatches(kind: TranslateKind, original: TranslatedText, trans
     return ids(o.groups) === ids(t.groups) && ids(o.blocks) === ids(t.blocks);
   }
   if (kind === "pytorch") return (translated as z.infer<typeof PytorchText>).notes.length === (original as z.infer<typeof PytorchText>).notes.length;
-  const [o, t] = [original as { steps: { block_id: string }[] }, translated as { steps: { block_id: string }[] }];
-  return ids(o.steps) === ids(t.steps);
+  const [o, t] = [original as z.infer<typeof JourneyText>, translated as z.infer<typeof JourneyText>];
+  const counts = (j: z.infer<typeof JourneyText>) =>
+    [j.input, ...j.steps, j.output].map((m) => m.captions.length).join(",");
+  return ids(o.steps) === ids(t.steps) && counts(o) === counts(t);
 }
 
 /** The content with its prose replaced by a translation (from pickText of the same content). */
@@ -149,29 +156,24 @@ export function applyText<C extends Content>(kind: TranslateKind, content: C, te
         }),
       } as C;
     }
-    case "walkthrough": {
-      const a = content as WalkthroughArtifact;
-      const t = text as z.infer<typeof WalkthroughText>;
-      return {
-        ...a,
-        intro: t.intro,
-        steps: a.steps.map((s, i) => ({ ...s, title: t.steps[i]?.title ?? s.title, narration: t.steps[i]?.narration ?? s.narration })),
-        outro: t.outro,
-      } as C;
-    }
-    case "example": {
-      const a = content as ExampleArtifact;
-      const t = text as z.infer<typeof ExampleText>;
+    case "journey": {
+      const a = content as JourneyArtifact;
+      const t = text as z.infer<typeof JourneyText>;
+      const captioned = (views: JourneyArtifact["input"]["views"], captions: string[] | undefined) =>
+        views.map((v, i) => ({ ...v, caption: captions?.[i] ?? v.caption }));
       return {
         ...a,
         analogy: t.analogy,
-        toy_input: t.toy_input,
-        steps: a.steps.map((s, i) => ({
-          ...s,
-          what_happens: t.steps[i]?.what_happens ?? s.what_happens,
-          toy_value: t.steps[i]?.toy_value ?? s.toy_value,
-        })),
-        takeaway: t.takeaway,
+        intro: t.intro,
+        input: { label: t.input.label, views: captioned(a.input.views, t.input.captions) },
+        steps: a.steps.map((s, i) => {
+          const ts = t.steps[i];
+          return ts
+            ? { ...s, title: ts.title, what_happens: ts.what_happens, narration: ts.narration, views: captioned(s.views, ts.captions) }
+            : s;
+        }),
+        output: { label: t.output.label, views: captioned(a.output.views, t.output.captions) },
+        outro: t.outro,
       } as C;
     }
     case "pytorch": {

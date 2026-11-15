@@ -1,0 +1,1001 @@
+{
+  "modality": "text",
+  "analogy": {
+    "title": "A translation committee around one table",
+    "text": "Imagine translating a sentence with a committee. First, everyone on the reading side gets a card for one word and a seat number, so order isn't lost. Then, all at once, every member looks around the table and asks: who here matters for understanding my word? Six rounds of this give a shared understanding of the source sentence. The writing side then builds the translation one word at a time. Each writer may only look at the words already written, and can glance across the table at the readers' notes. After each glance, the writers vote on the single most likely next word. No one has to pass notes down a line, which is why it is fast."
+  },
+  "intro": "We follow the English phrase “the cat sat” through the base Transformer (N=6, d_model=512, h=8) as it becomes the German “die Katze saß”. The encoder reads all three words in parallel. The decoder, fed the shifted target “<s> die Katze”, predicts the next word at every position.",
+  "input": {
+    "label": "Source sentence “the cat sat” (3 BPE tokens) plus the shifted target “<s> die Katze”",
+    "views": [
+      {
+        "kind": "tokens",
+        "caption": "source tokens x_1..x_3",
+        "rows": [
+          "the",
+          "cat",
+          "sat"
+        ],
+        "cols": [],
+        "values": [
+          [
+            412,
+            3051,
+            2874
+          ]
+        ],
+        "dims": "[1, 3]",
+        "split": 1
+      },
+      {
+        "kind": "tokens",
+        "caption": "target shifted right y_0..y_2",
+        "rows": [
+          "<s>",
+          "die",
+          "Katze"
+        ],
+        "cols": [],
+        "values": [
+          [
+            1,
+            389,
+            14520
+          ]
+        ],
+        "dims": "[1, 3]",
+        "split": 1
+      }
+    ]
+  },
+  "steps": [
+    {
+      "block_id": "inputs",
+      "title": "Source token ids",
+      "what_happens": "The English sentence enters as three integer ids from the shared ~37000-token BPE vocabulary.",
+      "narration": "The paper encodes WMT14 EN-DE with byte-pair encoding, using one vocabulary shared by source and target. At this point the words are just indices with no meaning or order attached. The ids shown are illustrative.",
+      "shape_change": "[B, n] → [B, n] (B=1, n=3)",
+      "views": [
+        {
+          "kind": "tokens",
+          "caption": "(x_1, x_2, x_3)",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              412,
+              3051,
+              2874
+            ]
+          ],
+          "dims": "[1, 3]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "input_embedding",
+      "title": "Look up word vectors",
+      "what_happens": "Each id selects a learned 512-dimensional row of the embedding matrix, which is then multiplied by √d_model ≈ 22.6.",
+      "narration": "Learned embeddings turn symbols into vectors that the network can compare. This matrix is shared with the output embedding and with the pre-softmax linear layer. The √d_model scaling keeps the embeddings on a similar scale to the positional signal added next. Only the first 8 of the 512 numbers are shown.",
+      "shape_change": "[1, 3] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "E[x]·√d_model (first 8 dims)",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.3,
+              -0.5,
+              0.8,
+              0.1,
+              -0.2,
+              0.6,
+              -0.7,
+              0.4
+            ],
+            [
+              -0.6,
+              0.9,
+              0.2,
+              -0.4,
+              0.7,
+              -0.1,
+              0.5,
+              -0.3
+            ],
+            [
+              0.5,
+              0.2,
+              -0.6,
+              0.8,
+              -0.3,
+              -0.5,
+              0.1,
+              0.7
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "encoder_positional",
+      "title": "Stamp in word order",
+      "what_happens": "A fixed sine/cosine pattern that is unique to each position is added to each word vector.",
+      "narration": "Attention by itself ignores word order, so the paper adds PE(pos,2i)=sin(pos/10000^{2i/d_model}) and PE(pos,2i+1)=cos(...). For position 0 the pattern is [0,1,0,1,…]. Positions 1 and 2 shift the phase, so “cat” and “sat” become distinguishable by position. The paper chose sinusoids because PE_{pos+k} is a linear function of PE_pos, and they may extrapolate to longer sequences. Dropout of 0.1 is applied to this sum.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "embedding + positional encoding",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.3,
+              0.5,
+              0.8,
+              1.1,
+              -0.2,
+              1.6,
+              -0.7,
+              1.4
+            ],
+            [
+              0.24,
+              1.44,
+              1.02,
+              0.17,
+              1.5,
+              0.5,
+              1.28,
+              0.32
+            ],
+            [
+              1.41,
+              -0.22,
+              0.34,
+              0.45,
+              0.66,
+              -0.79,
+              1.07,
+              0.47
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "encoder_self_attention",
+      "title": "Every word looks at every word",
+      "what_happens": "Each word is projected into 8 heads of 64-dimensional queries, keys and values, and takes a softmax(QKᵀ/√64)-weighted mix of all words' values.",
+      "narration": "All three positions are processed at once, which is the source of the Transformer's parallelism and its O(1) path length. Below is one head's attention map: “sat” attends mostly to “cat”, which is its subject. Scaling by √d_k keeps the softmax out of regions with tiny gradients. The 8 head outputs (8×64) are concatenated and mixed by W^O back to 512 dimensions.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "matrix",
+          "caption": "attention weights, head 1 of 8 (rows = queries)",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "values": [
+            [
+              0.6,
+              0.3,
+              0.1
+            ],
+            [
+              0.2,
+              0.5,
+              0.3
+            ],
+            [
+              0.1,
+              0.6,
+              0.3
+            ]
+          ],
+          "dims": "[1, 8, 3, 3]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "encoder_add_norm_1",
+      "title": "Add back and normalise",
+      "what_happens": "The attention output, after dropout, is added to the sub-layer's input, and LayerNorm rescales each vector.",
+      "narration": "The residual connection LayerNorm(x + Sublayer(x)) lets the original word-plus-position information pass through unchanged while attention adds context. Layer normalisation keeps every vector at zero mean and unit variance, which stabilises the 6-layer stack.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "LayerNorm(x + MultiHead(x))",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              -0.4,
+              0.1,
+              0.5,
+              0.9,
+              -1.3,
+              1.5,
+              -1.9,
+              0.6
+            ],
+            [
+              -1.2,
+              1.1,
+              0.3,
+              -1,
+              1.4,
+              -0.5,
+              0.8,
+              -0.9
+            ],
+            [
+              1.6,
+              -1.1,
+              -0.3,
+              0,
+              0.4,
+              -1.7,
+              1,
+              0.1
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "encoder_ffn",
+      "title": "Think about each word alone",
+      "what_happens": "Each position passes on its own through 512 → 2048 (ReLU) → 512.",
+      "narration": "Attention moved information between words. The feed-forward network, max(0, xW_1+b_1)W_2+b_2, then transforms each word separately with the same weights at every position. The paper notes this is equivalent to two convolutions with kernel size 1. The values shown are the update the FFN proposes.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512] (via [1, 3, 2048])",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "FFN(x) output (first 8 dims)",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.2,
+              -0.3,
+              0.1,
+              0.4,
+              -0.2,
+              0.3,
+              -0.5,
+              0.1
+            ],
+            [
+              -0.1,
+              0.5,
+              0.2,
+              -0.3,
+              0.4,
+              0,
+              0.3,
+              -0.2
+            ],
+            [
+              0.4,
+              -0.2,
+              -0.1,
+              0.3,
+              0.1,
+              -0.4,
+              0.2,
+              0.3
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "encoder_add_norm_2",
+      "title": "Encoder memory z",
+      "what_happens": "A residual add and LayerNorm finish the layer; after all 6 layers the result is the encoder memory z.",
+      "narration": "This layer of attention, Add & Norm, FFN, Add & Norm is repeated N=6 times, and each layer has its own weights. The final vectors z = (z_1, z_2, z_3) are context-aware representations of “the”, “cat” and “sat”. They become the keys and values for every decoder layer.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "encoder output z after 6 layers",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              -0.1,
+              -0.2,
+              0.5,
+              1.1,
+              -1.3,
+              1.5,
+              -1.9,
+              0.5
+            ],
+            [
+              -1.3,
+              1.5,
+              0.4,
+              -1.2,
+              1.6,
+              -0.5,
+              1,
+              -1
+            ],
+            [
+              1.8,
+              -1.2,
+              -0.4,
+              0.3,
+              0.5,
+              -1.9,
+              1.1,
+              0.4
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "outputs",
+      "title": "Target, shifted right",
+      "what_happens": "The German target enters offset by one position, starting with a start token: “<s> die Katze”.",
+      "narration": "Position i must predict target word i+1 using only earlier words. Shifting the input right by one, combined with the causal mask applied later, makes this so. During training all positions are predicted in parallel. At inference the decoder runs auto-regressively, with beam size 4.",
+      "shape_change": "[B, m] → [B, m] (m=3)",
+      "views": [
+        {
+          "kind": "tokens",
+          "caption": "(y_0, y_1, y_2)",
+          "rows": [
+            "<s>",
+            "die",
+            "Katze"
+          ],
+          "cols": [],
+          "values": [
+            [
+              1,
+              389,
+              14520
+            ]
+          ],
+          "dims": "[1, 3]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "output_embedding",
+      "title": "Embed target words",
+      "what_happens": "The same shared embedding matrix, scaled by √d_model, turns each target id into a 512-dimensional vector.",
+      "narration": "Because source and target share a BPE vocabulary, the paper ties this matrix to the input embedding and to the final linear layer, saving parameters. Only the first 8 dimensions are shown.",
+      "shape_change": "[1, 3] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "E[y]·√d_model (first 8 dims)",
+          "rows": [
+            "<s>",
+            "die",
+            "Katze"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.1,
+              0.4,
+              -0.3,
+              0.2,
+              0.5,
+              -0.6,
+              0.2,
+              -0.1
+            ],
+            [
+              0.4,
+              -0.4,
+              0.7,
+              0.2,
+              -0.3,
+              0.5,
+              -0.6,
+              0.3
+            ],
+            [
+              -0.5,
+              0.8,
+              0.3,
+              -0.5,
+              0.6,
+              -0.2,
+              0.6,
+              -0.2
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "decoder_positional",
+      "title": "Stamp in target order",
+      "what_happens": "The same sinusoidal position codes for positions 0, 1 and 2 are added to the target vectors.",
+      "narration": "The decoder has no recurrence either, so it needs the same position signal as the encoder. The values for positions 0–2 are identical to those added on the encoder side. Dropout of 0.1 is applied to the sum.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "target embedding + PE",
+          "rows": [
+            "<s>",
+            "die",
+            "Katze"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.1,
+              1.4,
+              -0.3,
+              1.2,
+              0.5,
+              0.4,
+              0.2,
+              0.9
+            ],
+            [
+              1.24,
+              0.14,
+              1.52,
+              0.77,
+              0.5,
+              1.1,
+              0.18,
+              0.92
+            ],
+            [
+              0.41,
+              0.38,
+              1.24,
+              -0.15,
+              1.56,
+              -0.49,
+              1.57,
+              -0.43
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "decoder_masked_attention",
+      "title": "Look back, never ahead",
+      "what_happens": "Self-attention over the target, with future positions set to −∞ before the softmax so they receive zero weight.",
+      "narration": "This preserves the auto-regressive property: “die” may see “<s>” and itself, but not “Katze”. The upper triangle of the weight matrix is therefore exactly zero. Otherwise this is the same 8-head scaled dot-product attention used in the encoder.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "matrix",
+          "caption": "masked attention weights, head 1 of 8",
+          "rows": [
+            "<s>",
+            "die",
+            "Katze"
+          ],
+          "cols": [
+            "<s>",
+            "die",
+            "Katze"
+          ],
+          "values": [
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0.4,
+              0.6,
+              0
+            ],
+            [
+              0.2,
+              0.3,
+              0.5
+            ]
+          ],
+          "dims": "[1, 8, 3, 3]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "decoder_add_norm_1",
+      "title": "Add back and normalise",
+      "what_happens": "The masked-attention output is added to the target vectors and layer-normalised.",
+      "narration": "This is the same LayerNorm(x + Sublayer(x)) pattern as in the encoder, with dropout 0.1 on the sub-layer output. Each target position now carries a summary of the translation written so far.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "decoder state after masked self-attention",
+          "rows": [
+            "<s>",
+            "die",
+            "Katze"
+          ],
+          "cols": [],
+          "values": [
+            [
+              -0.9,
+              1.3,
+              -1.4,
+              1.1,
+              -0.2,
+              -0.4,
+              -0.6,
+              1
+            ],
+            [
+              0.9,
+              -1.3,
+              1.4,
+              -0.1,
+              -0.5,
+              0.6,
+              -1.2,
+              0.2
+            ],
+            [
+              -0.6,
+              -0.4,
+              0.8,
+              -1.2,
+              1.3,
+              -1.4,
+              1.5,
+              -0.1
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "decoder_cross_attention",
+      "title": "Consult the source sentence",
+      "what_happens": "Queries come from the decoder state, and keys and values come from the encoder memory z, so each target position reads the English words it needs.",
+      "narration": "This is the encoder-decoder attention that replaces the alignment model of RNN seq2seq systems. In this illustrative head, the position that must emit “die” looks at “the”. The position that must emit “Katze” looks at “cat”, and the one that must emit “saß” looks at “sat”. There is no mask here, because the whole source is known.",
+      "shape_change": "[1, 3, 512] + [1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "matrix",
+          "caption": "cross-attention weights, head 1 (target queries × source keys)",
+          "rows": [
+            "<s>",
+            "die",
+            "Katze"
+          ],
+          "cols": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "values": [
+            [
+              0.7,
+              0.2,
+              0.1
+            ],
+            [
+              0.15,
+              0.75,
+              0.1
+            ],
+            [
+              0.1,
+              0.2,
+              0.7
+            ]
+          ],
+          "dims": "[1, 8, 3, 3]",
+          "split": 1
+        },
+        {
+          "kind": "vectors",
+          "caption": "encoder memory z (keys/values)",
+          "rows": [
+            "the",
+            "cat",
+            "sat"
+          ],
+          "cols": [],
+          "values": [
+            [
+              -0.1,
+              -0.2,
+              0.5,
+              1.1,
+              -1.3,
+              1.5,
+              -1.9,
+              0.5
+            ],
+            [
+              -1.3,
+              1.5,
+              0.4,
+              -1.2,
+              1.6,
+              -0.5,
+              1,
+              -1
+            ],
+            [
+              1.8,
+              -1.2,
+              -0.4,
+              0.3,
+              0.5,
+              -1.9,
+              1.1,
+              0.4
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "decoder_add_norm_2",
+      "title": "Merge source info",
+      "what_happens": "Dropout is applied to the cross-attention output, which is then added to the decoder state and layer-normalised.",
+      "narration": "The residual add mixes what was retrieved from the source into each target position's running state. Each row now reflects both the German written so far and the relevant English word.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "decoder state after cross-attention",
+          "rows": [
+            "<s>",
+            "die",
+            "Katze"
+          ],
+          "cols": [],
+          "values": [
+            [
+              -0.6,
+              0.8,
+              -0.6,
+              1.4,
+              -1,
+              0.6,
+              -1.4,
+              0.8
+            ],
+            [
+              -0.3,
+              0.2,
+              0.9,
+              -0.6,
+              0.8,
+              -0.3,
+              0.3,
+              -1
+            ],
+            [
+              0.6,
+              -0.9,
+              0.2,
+              -0.4,
+              0.9,
+              -1.7,
+              1.4,
+              -0.1
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "decoder_ffn",
+      "title": "Per-position refinement",
+      "what_happens": "Each position again passes through 512 → 2048 (ReLU) → 512, using this layer's own weights.",
+      "narration": "This is the same position-wise network shape as in the encoder, but with separate parameters. It turns the combined target-plus-source context into features useful for choosing the next word.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512] (via [1, 3, 2048])",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "FFN(x) output (first 8 dims)",
+          "rows": [
+            "<s>",
+            "die",
+            "Katze"
+          ],
+          "cols": [],
+          "values": [
+            [
+              0.2,
+              -0.2,
+              0.3,
+              0.1,
+              -0.2,
+              0.2,
+              -0.2,
+              -0.2
+            ],
+            [
+              -0.3,
+              0.7,
+              -0.5,
+              -0.2,
+              0.3,
+              0.1,
+              0.3,
+              -0.4
+            ],
+            [
+              0.4,
+              -0.1,
+              -0.3,
+              0.6,
+              -0.5,
+              0.1,
+              -0.2,
+              0.4
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "decoder_add_norm_3",
+      "title": "Final decoder state",
+      "what_happens": "A residual add and LayerNorm close the layer; after 6 decoder layers this is the final hidden state.",
+      "narration": "Every sub-layer outputs d_model = 512, so the residual sums line up. The whole decoder layer is repeated N=6 times, and every layer attends to the same encoder memory z.",
+      "shape_change": "[1, 3, 512] → [1, 3, 512]",
+      "views": [
+        {
+          "kind": "vectors",
+          "caption": "decoder output after 6 layers",
+          "rows": [
+            "<s>",
+            "die",
+            "Katze"
+          ],
+          "cols": [],
+          "values": [
+            [
+              -0.4,
+              0.6,
+              -0.3,
+              1.5,
+              -1.2,
+              0.8,
+              -1.6,
+              0.6
+            ],
+            [
+              -0.6,
+              0.9,
+              0.4,
+              -0.8,
+              1.1,
+              -0.2,
+              0.6,
+              -1.4
+            ],
+            [
+              1,
+              -1,
+              -0.1,
+              0.2,
+              0.4,
+              -1.6,
+              1.2,
+              0.3
+            ]
+          ],
+          "dims": "[1, 3, 512]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "final_linear",
+      "title": "Score every vocabulary word",
+      "what_happens": "Each 512-dimensional state is multiplied by the transposed shared embedding matrix, giving one score per vocabulary token.",
+      "narration": "Reusing the embedding weights means a high score signals that the state resembles that word's embedding. The view shows 6 of the ~37000 vocabulary columns.",
+      "shape_change": "[1, 3, 512] → [1, 3, 37000]",
+      "views": [
+        {
+          "kind": "matrix",
+          "caption": "logits for 6 of 37000 tokens",
+          "rows": [
+            "<s>",
+            "die",
+            "Katze"
+          ],
+          "cols": [
+            "die",
+            "Katze",
+            "saß",
+            "der",
+            "Hund",
+            "<eos>"
+          ],
+          "values": [
+            [
+              8.1,
+              2,
+              1.1,
+              5.3,
+              0.4,
+              -1
+            ],
+            [
+              1.5,
+              7.9,
+              2.2,
+              0.8,
+              4.1,
+              -0.5
+            ],
+            [
+              0.9,
+              1.8,
+              8.4,
+              0.3,
+              0.6,
+              2.5
+            ]
+          ],
+          "dims": "[1, 3, 37000]",
+          "split": 1
+        }
+      ]
+    },
+    {
+      "block_id": "softmax",
+      "title": "Next-word probabilities",
+      "what_happens": "Softmax turns each row of scores into a probability distribution over the vocabulary.",
+      "narration": "Each position predicts the next target word: “die” after “<s>”, “Katze” after “die”, and “saß” after “Katze”. During training these are compared against the true next words using label smoothing ε_ls = 0.1. The paper reports this hurts perplexity but improves BLEU.",
+      "shape_change": "[1, 3, 37000] → [1, 3, 37000]",
+      "views": [
+        {
+          "kind": "matrix",
+          "caption": "next-token probabilities (6 of 37000 shown)",
+          "rows": [
+            "<s>",
+            "die",
+            "Katze"
+          ],
+          "cols": [
+            "die",
+            "Katze",
+            "saß",
+            "der",
+            "Hund",
+            "<eos>"
+          ],
+          "values": [
+            [
+              0.94,
+              0,
+              0,
+              0.06,
+              0,
+              0
+            ],
+            [
+              0,
+              0.97,
+              0,
+              0,
+              0.02,
+              0
+            ],
+            [
+              0,
+              0,
+              0.99,
+              0,
+              0,
+              0
+            ]
+          ],
+          "dims": "[1, 3, 37000]",
+          "split": 1
+        }
+      ]
+    }
+  ],
+  "output": {
+    "label": "Predicted next tokens “die Katze saß”; the last position chooses “saß” with probability 0.99",
+    "views": [
+      {
+        "kind": "probs",
+        "caption": "distribution at the last position (after “Katze”)",
+        "rows": [
+          "die",
+          "Katze",
+          "saß",
+          "der",
+          "Hund",
+          "<eos>"
+        ],
+        "cols": [],
+        "values": [
+          [
+            0,
+            0,
+            0.99,
+            0,
+            0,
+            0
+          ]
+        ],
+        "dims": "[1, 3, 37000]",
+        "split": 1
+      }
+    ]
+  },
+  "outro": "Every word is handled in parallel through attention alone — self-attention to understand, masked attention to write, cross-attention to translate."
+}

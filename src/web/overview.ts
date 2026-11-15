@@ -18,8 +18,7 @@ export interface OverviewDeps {
 }
 
 const START: { kind: LearnKind; title: string; body: string }[] = [
-  { kind: "walkthrough", title: "Walk me through it", body: "A guided tour, block by block, in the order data flows." },
-  { kind: "example", title: "Easy example", body: "An everyday analogy, then a tiny input followed through the model." },
+  { kind: "journey", title: "Follow an input through it", body: "A real example, transformed block by block from input to output." },
   { kind: "pytorch", title: "Show me the PyTorch", body: "The architecture as code, with the paper's hyperparameters." },
 ];
 

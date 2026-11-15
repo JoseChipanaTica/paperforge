@@ -31,14 +31,14 @@ describe("InFlight", () => {
     const f = new InFlight<string>();
     let calls = 0;
     const work = () => new Promise<string>((r) => setTimeout(() => r(`done ${++calls}`), 5));
-    const [a, b] = await Promise.all([f.run("walkthrough", work), f.run("walkthrough", work)]);
+    const [a, b] = await Promise.all([f.run("journey", work), f.run("journey", work)]);
     expect(calls).toBe(1);
     expect(a.value).toBe(b.value);
   });
 
   test("only the most recent request is current; busy until all finish", async () => {
     const f = new InFlight<string>();
-    const slow = f.run("walkthrough", () => new Promise((r) => setTimeout(() => r("w"), 20)));
+    const slow = f.run("journey", () => new Promise((r) => setTimeout(() => r("w"), 20)));
     const fast = f.run("pytorch", () => new Promise((r) => setTimeout(() => r("p"), 5)));
     expect((await fast).current).toBe(true);
     expect(f.busy).toBe(true);

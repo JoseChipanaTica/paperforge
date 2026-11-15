@@ -5,6 +5,7 @@ import {
   LEARN_KINDS,
   LearnKind,
   artifactBlockCount,
+  isUsable,
   pruneArtifact,
   type AnyArtifact,
   type AskEvent,
@@ -96,7 +97,7 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
     const fail = (message: string, code?: "bad_input") => emit({ type: "error", message, ...(code && { code }) });
     const id = parseArxivId(String(body?.arxiv_id ?? ""));
     const kind = LearnKind.safeParse(body?.kind);
-    if (!id || !kind.success) return fail("Expected an arXiv id and a kind (pytorch, walkthrough or example).", "bad_input");
+    if (!id || !kind.success) return fail("Expected an arXiv id and a kind (pytorch or journey).", "bad_input");
     const k = kind.data;
 
     try {
@@ -116,7 +117,9 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
       emit({ type: "status", message: STATUS[k] });
       const pages = await d.loadPages(id);
       const artifact = pruneArtifact(k, await d.generate(k, { pages, graph, apiKey }), graph);
-      if (artifactBlockCount(k, artifact) === 0) return fail("Claude couldn't map this to the model's blocks. Try again.");
+      if (!isUsable(k, artifact)) {
+        return fail(k === "journey" ? "Couldn't build the walkthrough. Try again." : "Claude couldn't map this to the model's blocks. Try again.");
+      }
 
       if (!published) return emit({ type: "learn", kind: k, artifact, source: "claude", saved: false });
       try {
@@ -137,8 +140,7 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
 
 const STATUS: Record<LearnKind, string> = {
   pytorch: "Claude is writing the PyTorch code…",
-  walkthrough: "Claude is preparing the walkthrough…",
-  example: "Claude is working out an easy example…",
+  journey: "Claude is following an input through the model…",
 };
 
 function parseHistory(raw: unknown): AskTurn[] | null {

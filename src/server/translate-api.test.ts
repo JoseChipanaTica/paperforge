@@ -10,7 +10,7 @@ import { hashText, translateHandler, type TranslateDeps } from "./translate-api"
 const SAMPLES = join(import.meta.dir, "../../samples");
 const SAMPLE_ID = "1706.03762";
 const graph = Architecture.parse(await Bun.file(join(SAMPLES, "1706.03762.json")).json());
-const walkthrough = await Bun.file(join(SAMPLES, "1706.03762.walkthrough.json")).json();
+const journey = await Bun.file(join(SAMPLES, "1706.03762.journey.json")).json();
 
 let calls: { kind: TranslateKind; lang: Lang; level: Level; apiKey?: string }[];
 let store: Store;
@@ -75,9 +75,9 @@ describe("POST /api/translate", () => {
   test("a published artifact's translation goes to the gallery", async () => {
     const id = "2401.00001";
     await store.publishPaper(id, graph);
-    await store.putArtifact(id, "walkthrough", walkthrough);
-    await translate({ arxiv_id: id, kind: "walkthrough", lang: "ja", content: walkthrough });
-    expect(await store.getTranslation(hashText("walkthrough", pickText("walkthrough", walkthrough)), "ja", "engineer", "walkthrough")).not.toBeNull();
+    await store.putArtifact(id, "journey", journey);
+    await translate({ arxiv_id: id, kind: "journey", lang: "ja", content: journey });
+    expect(await store.getTranslation(hashText("journey", pickText("journey", journey)), "ja", "engineer", "journey")).not.toBeNull();
   });
 
   test("text that isn't published or a sample stays out of the gallery", async () => {

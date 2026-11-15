@@ -1,6 +1,6 @@
 import "katex/dist/katex.min.css";
 import type { ForgeEvent, LocatedArchitecture } from "../shared/graph";
-import type { AnyArtifact, ExampleArtifact, LearnKind, PytorchArtifact, WalkthroughArtifact } from "../shared/learn";
+import type { AnyArtifact, JourneyArtifact, LearnKind, PytorchArtifact } from "../shared/learn";
 import { locateQuote } from "../shared/locate";
 import { isOriginal, type TranslateKind } from "../shared/translate";
 import { Run } from "./anim";
@@ -281,13 +281,13 @@ scene.onClick = (id) => {
   pinned = id;
   inspect(id);
   if (!id) return;
-  const touring = (panel.state.active === "walkthrough" || panel.state.active === "example") && tourKind === panel.state.active;
+  const touring = panel.state.active === "journey" && tourKind === "journey";
   if (sheet.active && !touring) panel.select("overview"); // phones: a tapped block opens Overview
   sheet.reveal();
   const active = panel.state.active;
   if (active === "pytorch") revealSymbol(panel.tab("pytorch"), id);
   else if (active === "paper") void openPaper(id);
-  else if ((active === "walkthrough" || active === "example") && tourKind === active && driver.script) {
+  else if (active === "journey" && tourKind === active && driver.script) {
     // Clicking a block during a tour jumps to its step.
     const step = driver.script.steps.findIndex((s) => s.block_id === id);
     if (step >= 0) driver.goTo(driver.script, step);
@@ -344,18 +344,18 @@ async function publish() {
   }
 }
 
-// ---------- learning: PyTorch, walkthrough, easy example, ask ----------
+// ---------- learning: PyTorch, walkthrough (the journey), ask ----------
 
 // Artifacts opened for this paper, so revisiting a tab never pays for a second generation.
 const artifacts = new Map<LearnKind, AnyArtifact>();
-const isKind = (t: TabId): t is LearnKind => t === "walkthrough" || t === "example" || t === "pytorch";
-type TourKind = "walkthrough" | "example";
+const isKind = (t: TabId): t is LearnKind => t === "journey" || t === "pytorch";
+type TourKind = "journey";
 // Where each tour was left, so switching tabs mid-tour picks up at the same step.
 const tourAt: Partial<Record<TourKind, number>> = {};
 let tourKind: TourKind | null = null;
 const progress: Partial<Record<LearnKind, string>> = {};
 
-const NAMES: Record<LearnKind, string> = { walkthrough: "walkthrough", example: "easy example", pytorch: "PyTorch code" };
+const NAMES: Record<LearnKind, string> = { journey: "walkthrough", pytorch: "PyTorch code" };
 
 let openTab: TabId | null = null;
 panel.onSelect = (tab) => {
@@ -409,7 +409,7 @@ function renderState(kind: LearnKind) {
   } else {
     root.innerHTML = `
       <div class="learn-state">
-        <h3>${kind === "pytorch" ? "PyTorch code for this model" : kind === "walkthrough" ? "A guided walkthrough" : "An easy example"}</h3>
+        <h3>${kind === "pytorch" ? "PyTorch code for this model" : "An example, followed through the model"}</h3>
         <p>Claude writes this from the paper, usually in under a minute, using your API key.</p>
         <button type="button" class="btn btn-primary" data-generate>Write the ${NAMES[kind]}</button>
       </div>`;
@@ -425,12 +425,11 @@ function resetLearn() {
   driver.forget();
   tourKind = null;
   openTab = null;
-  for (const k of ["walkthrough", "example", "pytorch"] as const) {
+  for (const k of ["journey", "pytorch"] as const) {
     panel.tab(k).replaceChildren();
     delete progress[k];
   }
-  delete tourAt.walkthrough;
-  delete tourAt.example;
+  delete tourAt.journey;
   artifacts.clear();
   translations.clear();
   insides.clear();
@@ -491,8 +490,7 @@ async function showArtifact(kind: LearnKind, english: AnyArtifact, g: LocatedArc
     });
     return;
   }
-  const script =
-    kind === "walkthrough" ? tourSteps(kind, artifact as WalkthroughArtifact) : tourSteps(kind, artifact as ExampleArtifact);
+  const script = tourSteps(artifact as JourneyArtifact);
   // A language or level change mid-tour keeps the visitor on the same step.
   const at = driver.active && tourKind === kind ? driver.index : (tourAt[kind] ?? -1);
   tourKind = kind;
@@ -711,7 +709,7 @@ window.addEventListener("keydown", (e) => {
     else sheet.snapTo("tabs");
   }
   // Arrow keys step through a tour, unless they're moving between tabs.
-  const inTour = driver.active && (panel.state.active === "walkthrough" || panel.state.active === "example");
+  const inTour = driver.active && panel.state.active === "journey";
   if (inTour && !(e.target as HTMLElement).closest?.('[role="tablist"]')) {
     if (e.key === "ArrowRight") driver.next();
     if (e.key === "ArrowLeft") driver.back();

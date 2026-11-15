@@ -1,17 +1,16 @@
 import type { LearnKind } from "../shared/learn";
 import { TABS, initialPanel, panelReducer, type PanelAction, type PanelState, type TabId } from "./panelState";
 
-/** The study panel: five ARIA tabs whose state lives in panelReducer. */
+/** The study panel: four ARIA tabs whose state lives in panelReducer. */
 
 const LABEL: Record<TabId, string> = {
   overview: "Overview",
   paper: "Paper",
-  walkthrough: "Walkthrough",
-  example: "Example",
+  journey: "Walkthrough",
   pytorch: "PyTorch",
 };
 
-const isKind = (t: TabId): t is LearnKind => t === "walkthrough" || t === "example" || t === "pytorch";
+const isKind = (t: TabId): t is LearnKind => t === "journey" || t === "pytorch";
 
 export class StudyPanel {
   state: PanelState = initialPanel();

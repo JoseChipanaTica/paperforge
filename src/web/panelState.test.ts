@@ -6,39 +6,39 @@ const run = (...actions: PanelAction[]): PanelState => actions.reduce(panelReduc
 describe("panelReducer", () => {
   test("ready kinds get a dot; the rest stay idle", () => {
     const s = run({ type: "kinds", ready: ["pytorch"] });
-    expect(s.status).toEqual({ pytorch: "ready", walkthrough: "idle", example: "idle" });
+    expect(s.status).toEqual({ pytorch: "ready", journey: "idle" });
     expect(s.active).toBe("overview");
   });
 
   test("a generating tab keeps its status across refreshes and tab switches", () => {
     const s = run(
-      { type: "generate", kind: "walkthrough" },
+      { type: "generate", kind: "journey" },
       { type: "kinds", ready: [] },
       { type: "select", tab: "pytorch" },
     );
-    expect(s.status.walkthrough).toBe("generating");
+    expect(s.status.journey).toBe("generating");
     expect(s.active).toBe("pytorch");
   });
 
   test("kinds never downgrades a loaded tab", () => {
-    expect(run({ type: "loaded", kind: "example" }, { type: "kinds", ready: [] }).status.example).toBe("loaded");
+    expect(run({ type: "loaded", kind: "journey" }, { type: "kinds", ready: [] }).status.journey).toBe("loaded");
   });
 
   test("failures become needs_key or error; retrying clears the error", () => {
     const s = run(
-      { type: "failed", kind: "walkthrough", message: "x", needsKey: true },
-      { type: "failed", kind: "example", message: "boom", needsKey: false },
+      { type: "failed", kind: "journey", message: "x", needsKey: true },
+      { type: "failed", kind: "pytorch", message: "boom", needsKey: false },
     );
-    expect(s.status.walkthrough).toBe("needs_key");
-    expect(s.status.example).toBe("error");
-    expect(s.error.example).toBe("boom");
-    expect(panelReducer(s, { type: "generate", kind: "example" }).error.example).toBeUndefined();
+    expect(s.status.journey).toBe("needs_key");
+    expect(s.status.pytorch).toBe("error");
+    expect(s.error.pytorch).toBe("boom");
+    expect(panelReducer(s, { type: "generate", kind: "pytorch" }).error.pytorch).toBeUndefined();
   });
 
   test("a new paper resets every tab; Overview or Paper stay selected", () => {
-    const busy = run({ type: "loaded", kind: "pytorch" }, { type: "generate", kind: "example" }, { type: "select", tab: "walkthrough" });
+    const busy = run({ type: "loaded", kind: "pytorch" }, { type: "generate", kind: "journey" }, { type: "select", tab: "journey" });
     const reset = panelReducer(busy, { type: "reset" });
-    expect(reset.status).toEqual({ pytorch: "idle", walkthrough: "idle", example: "idle" });
+    expect(reset.status).toEqual({ pytorch: "idle", journey: "idle" });
     expect(reset.active).toBe("overview");
     expect(panelReducer(run({ type: "select", tab: "paper" }), { type: "reset" }).active).toBe("paper");
   });

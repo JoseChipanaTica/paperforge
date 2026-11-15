@@ -1,38 +1,40 @@
-import type { ExampleArtifact, WalkthroughArtifact } from "../shared/learn";
+import type { JourneyArtifact, View } from "../shared/learn";
 import { Run } from "./anim";
 import type { ForgeScene } from "./scene";
 
-/** The guided tour shared by the walkthrough and the easy example: one caption per block. */
+/** The guided tour: one step per block, following one input from the raw data to the output. */
 
 export interface TourStep {
   block_id: string;
   title: string; // empty → the block's label
-  body: string;
-  detail: string;
+  what: string; // one plain sentence
+  body: string; // the narration
+  shape: string; // "[B, 3, 512] → [B, 3, 512]"
+  views: View[]; // the data after this block
 }
 
 export interface TourScript {
-  intro: { title: string; body: string; detail: string };
+  analogy: { title: string; text: string };
+  intro: { title: string; body: string; label: string; views: View[] };
   steps: TourStep[];
+  output: { label: string; views: View[] };
   outro: string;
 }
 
-export function tourSteps(kind: "walkthrough", artifact: WalkthroughArtifact): TourScript;
-export function tourSteps(kind: "example", artifact: ExampleArtifact): TourScript;
-export function tourSteps(kind: "walkthrough" | "example", artifact: WalkthroughArtifact | ExampleArtifact): TourScript {
-  if (kind === "walkthrough") {
-    const a = artifact as WalkthroughArtifact;
-    return {
-      intro: { title: "Walkthrough", body: a.intro, detail: "" },
-      steps: a.steps.map((s) => ({ block_id: s.block_id, title: s.title, body: s.narration, detail: s.shape_change })),
-      outro: a.outro,
-    };
-  }
-  const a = artifact as ExampleArtifact;
+export function tourSteps(a: JourneyArtifact): TourScript {
   return {
-    intro: { title: a.analogy.title, body: a.analogy.text, detail: `Toy input: “${a.toy_input}”` },
-    steps: a.steps.map((s) => ({ block_id: s.block_id, title: "", body: s.what_happens, detail: s.toy_value })),
-    outro: a.takeaway,
+    analogy: a.analogy,
+    intro: { title: "Walkthrough", body: a.intro, label: a.input.label, views: a.input.views },
+    steps: a.steps.map((s) => ({
+      block_id: s.block_id,
+      title: s.title,
+      what: s.what_happens,
+      body: s.narration,
+      shape: s.shape_change,
+      views: s.views,
+    })),
+    output: a.output,
+    outro: a.outro,
   };
 }
 
