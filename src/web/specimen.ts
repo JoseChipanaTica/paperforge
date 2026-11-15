@@ -47,6 +47,12 @@ export function arcBetween(a: THREE.Vector3, b: THREE.Vector3): THREE.QuadraticB
   return new THREE.QuadraticBezierCurve3(a.clone(), c, b.clone());
 }
 
+/** Two moments show the same data when everything but their captions matches (a new language, say). */
+export const sameData = (a: View[], b: View[]) => {
+  const data = (vs: View[]) => JSON.stringify(vs.map(({ caption: _, ...rest }) => rest));
+  return data(a) === data(b);
+};
+
 function shadeColor(cell: Cell, split: number): THREE.Color {
   const s = Math.max(0, Math.min(1, cell.shade));
   const c = s < 0.5 ? PALE.clone().lerp(HL, s * 2) : HL.clone().lerp(VM, (s - 0.5) * 2);
@@ -73,6 +79,9 @@ interface Built {
   cells: Cell[];
   width: number;
   scale: number;
+  at: string;
+  views: View[];
+  captions: HTMLElement[]; // one per view, in order
 }
 
 export class Specimen {
@@ -107,6 +116,12 @@ export class Specimen {
     const anchor = this.scene.blockAnchor(at);
     if (!anchor || !views.length) return this.hide();
     const old = this.current;
+    if (old && old.at === at && sameData(old.views, views)) {
+      // Same data at the same block (a language or level change): only the words change.
+      views.forEach((v, i) => old.captions[i] && (old.captions[i]!.textContent = v.caption));
+      old.views = views;
+      return;
+    }
     const before = new Map(old?.cells.map((c) => [c.key, c] as const));
 
     if (old && from && from !== at) {
@@ -126,7 +141,7 @@ export class Specimen {
     await run.wait(Math.max(0, CAMERA_MS - (performance.now() - started)));
     if (token !== this.token) return;
 
-    const built = this.build(views);
+    const built = this.build(views, at);
     this.current = built;
     this.place(built, at, anchor, this.scene.blockSize(at));
     this.face(built.group);
@@ -195,7 +210,7 @@ export class Specimen {
     if (this.current === b) this.current = null;
   }
 
-  private build(views: View[]): Built {
+  private build(views: View[], at: string): Built {
     const laid = layoutViews(views);
     const group = new THREE.Group();
     const cells = laid.flatMap((l) => l.cells);
@@ -204,14 +219,14 @@ export class Specimen {
     cells.forEach((c, i) => mesh.setColorAt(i, shadeColor(c, splits[i]!)));
     mesh.userData.cells = cells;
     group.add(mesh);
-    for (const [i, l] of laid.entries()) this.decorate(group, l, views[i]!);
+    const captions = laid.map((l, i) => this.decorate(group, l, views[i]!));
     const minX = Math.min(...laid.map((l) => (l.cells[0] ? Math.min(...l.cells.map((c) => c.x - c.w / 2)) : 0)));
     const maxX = Math.max(...laid.map((l) => (l.cells[0] ? Math.max(...l.cells.map((c) => c.x + c.w / 2)) : 0)));
-    return { group, mesh, cells, width: maxX - minX + 2 * CARD_PAD, scale: SCALE };
+    return { group, mesh, cells, width: maxX - minX + 2 * CARD_PAD, scale: SCALE, at, views, captions };
   }
 
   /** The printed card behind a view, its row labels, caption and "…512" cap. */
-  private decorate(group: THREE.Group, l: Laid, v: View) {
+  private decorate(group: THREE.Group, l: Laid, v: View): HTMLElement {
     const xs = l.cells.map((c) => c.x);
     const cx = (Math.min(...l.cells.map((c) => c.x - c.w / 2)) + Math.max(...l.cells.map((c) => c.x + c.w / 2))) / 2;
     const w = l.width + 2 * CARD_PAD;
@@ -241,7 +256,9 @@ export class Specimen {
       const top = Math.max(...l.cells.map((c) => c.y));
       group.add(label(l.more, "more", new THREE.Vector3(right + 0.06, top, 0), [0, 0.5]));
     }
-    if (l.caption) group.add(label(l.caption, "caption", new THREE.Vector3(cx, -h / 2 - 0.06, 0), [0.5, 0]));
+    const caption = label(l.caption, "caption", new THREE.Vector3(cx, -h / 2 - 0.06, 0), [0.5, 0]);
+    group.add(caption);
+    return caption.element as HTMLElement;
   }
 
   /** Turn to the camera around the vertical axis only, like a card standing on the table. */

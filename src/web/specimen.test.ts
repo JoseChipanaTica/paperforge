@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { arcBetween, specimenOffset } from "./specimen";
+import type { View } from "../shared/learn";
+import { arcBetween, sameData, specimenOffset } from "./specimen";
 
 describe("specimenOffset", () => {
   const block = new THREE.Vector3(0, 0, 0);
@@ -35,5 +36,15 @@ describe("arcBetween", () => {
     expect(curve.getPoint(0).distanceTo(a)).toBeLessThan(1e-9);
     expect(curve.getPoint(1).distanceTo(b)).toBeLessThan(1e-9);
     expect(curve.getPoint(0.5).y).toBeGreaterThan(Math.max(a.y, b.y));
+  });
+});
+
+describe("sameData", () => {
+  const v = (caption: string, values = [[1, 2]]): View => ({ kind: "vectors", caption, rows: ["cat"], cols: [], values, dims: "[1, 512]", split: 1 });
+
+  test("a translated caption is the same data; different numbers are not", () => {
+    expect(sameData([v("attention")], [v("atención")])).toBe(true);
+    expect(sameData([v("a")], [v("a", [[1, 3]])])).toBe(false);
+    expect(sameData([v("a")], [v("a"), v("b")])).toBe(false);
   });
 });
