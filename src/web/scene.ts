@@ -5,11 +5,10 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import type { Edge, LocatedArchitecture, LocatedBlock } from "../shared/graph";
 import type { Run } from "./anim";
-import { buildBlock, buildGroupFrame, type BlockObject } from "./blocks";
+import { INK, VERMILION, buildBlock, buildGroupFrame, type BlockObject } from "./blocks";
 import { layoutGraph, type Layout, type PlacedBlock, type PlacedGroup } from "./layout";
 
 export interface SceneBlock {
@@ -37,7 +36,8 @@ interface Pulse {
 }
 
 const QUIET_TYPES = new Set(["add_norm", "layer_norm", "normalization", "residual_add", "dropout", "activation"]);
-const EDGE_COLOR = { data: "#dfe7ff", residual: "#ffd166", cross: "#ff8f5a" } as const;
+// Printed wires: ink for the data path, ochre for skips, vermilion between branches.
+const EDGE_COLOR = { data: INK, residual: "#e0b04c", cross: VERMILION } as const;
 const PULSE_STEP = 0.55; // seconds per rank
 const PULSE_PAUSE = 1.6;
 
@@ -91,29 +91,28 @@ export class ForgeScene {
   onClick: (id: string | null) => void = () => {};
 
   constructor(private container: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", preserveDrawingBuffer: true });
+    // Transparent canvas: the CSS paper shows through.
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance", preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.92;
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
+    this.renderer.toneMappingExposure = 1;
     container.appendChild(this.renderer.domElement);
 
     this.labels = new CSS2DRenderer();
     this.labels.domElement.className = "label-layer";
     container.appendChild(this.labels.domElement);
 
-    this.scene.background = new THREE.Color("#07090e");
-    this.scene.fog = new THREE.Fog("#07090e", 40, 110);
+    this.scene.background = null;
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.55;
+    this.scene.environmentIntensity = 0.35;
 
-    this.scene.add(new THREE.HemisphereLight("#cfd8ff", "#1a1420", 0.9));
-    const key = new THREE.DirectionalLight("#ffffff", 1.6);
+    // Soft studio light on paper: warm fill from above, one key light, no coloured rim.
+    this.scene.add(new THREE.HemisphereLight("#fffaf0", "#d9d0bd", 1.3));
+    const key = new THREE.DirectionalLight("#ffffff", 1.5);
     key.position.set(8, 14, 12);
     this.scene.add(key);
-    const rim = new THREE.DirectionalLight("#7aa2ff", 1.2);
-    rim.position.set(-10, 6, -12);
-    this.scene.add(rim);
 
     this.scene.add(this.model, this.edgeGroup, this.pulseGroup);
 
@@ -124,7 +123,6 @@ export class ForgeScene {
 
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.32, 0.45, 0.86));
     this.composer.addPass(new OutputPass());
 
     const el = this.labels.domElement;
@@ -393,7 +391,7 @@ export class ForgeScene {
       const mat = new THREE.MeshBasicMaterial({
         color: EDGE_COLOR[edge.kind],
         transparent: true,
-        opacity: edge.kind === "data" ? 0.45 : 0.6,
+        opacity: edge.kind === "data" ? 0.8 : 0.9,
         depthWrite: false,
       });
       const mesh = new THREE.Mesh(geo, mat);
@@ -421,11 +419,12 @@ export class ForgeScene {
     for (const e of this.edges) {
       const fromRank = this.blocks.get(e.edge.from)!.placed.rank;
       maxRank = Math.max(maxRank, fromRank);
-      const color = new THREE.Color(EDGE_COLOR[e.edge.kind]).multiplyScalar(3);
+      const color = new THREE.Color(VERMILION);
       const dots = [0, 1, 2].map((i) => {
         const dot = new THREE.Mesh(
-          new THREE.SphereGeometry(i === 0 ? 0.15 : 0.1 - i * 0.02, 16, 12),
-          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 - i * 0.3, toneMapped: false }),
+          new THREE.SphereGeometry(i === 0 ? 0.16 : 0.24 + i * 0.06, 16, 12),
+          // A solid vermilion dot with two soft rings around it.
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: i === 0 ? 1 : 0.18 / i, depthWrite: false, toneMapped: false }),
         );
         dot.visible = false;
         this.pulseGroup.add(dot);
@@ -462,7 +461,7 @@ export class ForgeScene {
       for (const p of this.pulses) {
         const t = (this.pulseClock - p.start) / PULSE_STEP;
         p.dots.forEach((dot, i) => {
-          const ti = t - i * 0.07;
+          const ti = t; // dot and rings travel together
           dot.visible = ti > 0 && ti < 1;
           if (dot.visible) p.edge.curve.getPointAt(Math.min(1, ti), dot.position);
         });
@@ -488,8 +487,10 @@ export class ForgeScene {
     for (const sb of this.blocks.values()) {
       sb.glow = Math.max(0, sb.glow - dt * 1.6);
       const lit = sb.block.id === this.hovered || sb.block.id === this.highlighted;
-      const base = lit ? 0.45 : 0.05;
-      for (const m of sb.obj.materials) m.emissiveIntensity = base + sb.glow * 1.4;
+      // Highlighter halo instead of glow: on while hovered/highlighted, flashes fade out.
+      const halo = Math.min(1, Math.max(lit ? 0.85 : 0, sb.glow));
+      sb.obj.haloMaterial.opacity = halo * 0.9;
+      sb.obj.halo.visible = halo > 0.01;
       (sb.label.element as HTMLElement).style.opacity = String(this.labelAlpha * (sb.obj.root.visible ? 1 : 0));
       sb.label.element.classList.toggle("hot", lit);
     }

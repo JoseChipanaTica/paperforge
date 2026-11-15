@@ -3,45 +3,101 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import type { BlockType, LocatedBlock } from "../shared/graph";
 import type { PlacedBlock } from "./layout";
 
+/** Design tokens shared with styles/tokens.css. */
+export const INK = "#1e1d1a";
+export const HIGHLIGHTER = "#f6d77a";
+export const VERMILION = "#c2410c";
+
+/** The printed palette: one earthy ink per block type. */
 export const TYPE_COLOR: Record<BlockType, string> = {
-  input: "#9fb0c8",
-  output: "#9fb0c8",
-  embedding: "#ffb36b",
-  positional_encoding: "#c59bff",
-  multi_head_attention: "#ff6f8e",
-  attention: "#ff6f8e",
-  cross_attention: "#ff8f5a",
-  feed_forward: "#4cc9f0",
-  add_norm: "#ffd166",
-  layer_norm: "#ffd166",
-  normalization: "#ffd166",
-  residual_add: "#ffd166",
-  linear: "#7bd88f",
-  activation: "#7bd88f",
-  softmax: "#4fe3c1",
-  convolution: "#4cc9f0",
-  pooling: "#7aa2f7",
-  recurrent: "#bb9af7",
-  dropout: "#8c96a8",
-  concat: "#9fb0c8",
-  other: "#a8b3c7",
+  input: "#cfc5b0",
+  output: "#cfc5b0",
+  embedding: "#e8dcc4",
+  positional_encoding: "#7c8f6a",
+  multi_head_attention: "#c2410c",
+  attention: "#c2410c",
+  cross_attention: "#d9733b",
+  feed_forward: "#1e3a5f",
+  add_norm: "#e0b04c",
+  layer_norm: "#e0b04c",
+  normalization: "#e0b04c",
+  residual_add: "#9c8f78",
+  linear: "#4b5d73",
+  activation: "#a3533c",
+  softmax: "#b8860b",
+  convolution: "#2f6f6a",
+  pooling: "#8a6f4e",
+  recurrent: "#6d4c6f",
+  dropout: "#b9ae98",
+  concat: "#9c8f78",
+  other: "#8f8a80",
 };
 
 export interface BlockObject {
   root: THREE.Group;
   materials: THREE.MeshStandardMaterial[];
   color: THREE.Color;
+  /** Ink shells just behind each mesh: the printed outline. */
+  outline: THREE.Group;
+  /** A flat ink copy offset down-right: the hard print shadow. */
+  shadow: THREE.Group;
+  /** Highlighter-yellow shells, faded in on hover / highlight. */
+  halo: THREE.Group;
+  haloMaterial: THREE.MeshBasicMaterial;
 }
 
+// Matte paint: no glow, no shine. Tone mapping off so the printed colours stay true.
 function material(color: THREE.Color, opts: Partial<THREE.MeshStandardMaterialParameters> = {}) {
-  return new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.38,
-    metalness: 0.15,
-    emissive: color,
-    emissiveIntensity: 0.05,
-    ...opts,
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0, ...opts });
+}
+
+const inkMaterial = new THREE.MeshBasicMaterial({ color: INK, side: THREE.BackSide });
+const shadowMaterial = new THREE.MeshBasicMaterial({ color: INK });
+const SHADOW_OFFSET = new THREE.Vector3(0.09, -0.09, -0.09);
+const OUTLINE_PAD = 0.035; // world units: an even ink line on every piece, thin or wide
+const HALO_PAD = 0.16;
+
+/** Per-axis scale that grows a geometry by a fixed padding on every side. */
+function padScale(geometry: THREE.BufferGeometry, pad: number): THREE.Vector3 {
+  geometry.computeBoundingBox();
+  const size = geometry.boundingBox!.getSize(new THREE.Vector3());
+  return new THREE.Vector3(
+    (size.x + 2 * pad) / Math.max(size.x, 1e-3),
+    (size.y + 2 * pad) / Math.max(size.y, 1e-3),
+    (size.z + 2 * pad) / Math.max(size.z, 1e-3),
+  );
+}
+const noRaycast = () => {};
+
+/** Wrap every mesh of a block in an ink outline, an offset ink shadow and a hidden halo. */
+function printDecorations(root: THREE.Group) {
+  const outline = new THREE.Group();
+  const shadow = new THREE.Group();
+  const halo = new THREE.Group();
+  const haloMaterial = new THREE.MeshBasicMaterial({
+    color: HIGHLIGHTER,
+    side: THREE.BackSide,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
   });
+  for (const child of [...root.children] as THREE.Mesh[]) {
+    const shell = (mat: THREE.Material, pad: number, offset?: THREE.Vector3) => {
+      const m = new THREE.Mesh(child.geometry, mat);
+      m.position.copy(child.position);
+      if (offset) m.position.add(offset);
+      m.rotation.copy(child.rotation);
+      m.scale.copy(child.scale).multiply(padScale(child.geometry, pad));
+      m.raycast = noRaycast;
+      return m;
+    };
+    outline.add(shell(inkMaterial, OUTLINE_PAD));
+    shadow.add(shell(shadowMaterial, 0, SHADOW_OFFSET));
+    halo.add(shell(haloMaterial, HALO_PAD));
+  }
+  halo.visible = false;
+  root.add(shadow, outline, halo);
+  return { outline, shadow, halo, haloMaterial };
 }
 
 const box = (w: number, h: number, d: number, r = 0.08) =>
@@ -97,7 +153,7 @@ export function buildBlock(block: LocatedBlock, placed: PlacedBlock): BlockObjec
           const t = i / 63;
           return new THREE.Vector3(-w / 2 + t * w, Math.sin(t * Math.PI * 4 + phase) * h * 0.32 + h * 0.08, z);
         });
-        add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 96, 0.045, 8), material(color, { emissiveIntensity: 0.6 }));
+        add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 96, 0.045, 8), main);
       }
       break;
     }
@@ -138,7 +194,7 @@ export function buildBlock(block: LocatedBlock, placed: PlacedBlock): BlockObjec
       add(box(w, h * 0.25, d, 0.05), main, 0, -h / 2 + h * 0.125, 0);
       const bars = [0.15, 0.3, 0.95, 0.4, 0.2, 0.1, 0.55, 0.12];
       const bw = w / bars.length;
-      bars.forEach((v, i) => add(box(bw * 0.6, h * 0.7 * v, d * 0.5, 0.03), material(color, { emissiveIntensity: 0.35 }), -w / 2 + bw / 2 + i * bw, -h / 4 + (h * 0.7 * v) / 2, 0));
+      bars.forEach((v, i) => add(box(bw * 0.6, h * 0.7 * v, d * 0.5, 0.03), main, -w / 2 + bw / 2 + i * bw, -h / 4 + (h * 0.7 * v) / 2, 0));
       break;
     }
     case "convolution": {
@@ -158,7 +214,7 @@ export function buildBlock(block: LocatedBlock, placed: PlacedBlock): BlockObjec
     default:
       add(box(w, h, d), main);
   }
-  return { root, materials, color };
+  return { root, materials, color, ...printDecorations(root) };
 }
 
 /** Translucent frame around a repeated group, with ghost copies stacked behind it (×N). */
@@ -166,16 +222,16 @@ export function buildGroupFrame(w: number, h: number, d: number, repeat: number)
   const g = new THREE.Group();
   const shell = new THREE.Mesh(
     box(w, h, d, 0.25),
-    new THREE.MeshStandardMaterial({ color: "#b8c4dd", transparent: true, opacity: 0.05, depthWrite: false, roughness: 0.2 }),
+    new THREE.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.025, depthWrite: false }),
   );
   g.add(shell);
-  const edgesMat = new THREE.LineBasicMaterial({ color: "#c9d4ee", transparent: true, opacity: 0.35 });
+  const edgesMat = new THREE.LineBasicMaterial({ color: INK, transparent: true, opacity: 0.45 });
   g.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d)), edgesMat));
   const ghosts = Math.min(repeat - 1, 3);
   for (let i = 1; i <= ghosts; i++) {
     const ghost = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d)),
-      new THREE.LineBasicMaterial({ color: "#c9d4ee", transparent: true, opacity: 0.16 * (1 - i / (ghosts + 1)) }),
+      new THREE.LineBasicMaterial({ color: INK, transparent: true, opacity: 0.22 * (1 - i / (ghosts + 1)) }),
     );
     ghost.position.set(i * 0.12, i * 0.12, -i * 0.5);
     ghost.userData.ghost = i;
