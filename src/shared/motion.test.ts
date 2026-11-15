@@ -66,7 +66,7 @@ describe("cleanMotion", () => {
 
   test("custom svg is sanitized", () => {
     const o = only({ kind: "custom", svg: '<svg><script>alert(1)</script><rect width="1"/></svg>' });
-    expect(o.svg).toBe('<svg><rect width="1"/></svg>');
+    expect(o.svg).toBe('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1"/></svg>');
   });
 
   test("works without a journey (graph order only)", () => {

@@ -148,8 +148,10 @@ export class StepFigure {
   private custom(op: Op): boolean {
     if (op.kind !== "custom") return false;
     const clean = sanitizeSvg(op.svg);
-    const parsed = clean ? new DOMParser().parseFromString(clean, "image/svg+xml").documentElement : null;
-    if (!parsed || parsed.nodeName !== "svg") return false; // framesFor draws the captioned placeholder
+    const doc = clean ? new DOMParser().parseFromString(clean, "image/svg+xml") : null;
+    const parsed = doc?.documentElement;
+    // A parse error still yields a root <svg> holding a <parsererror>: never show that box.
+    if (!parsed || parsed.nodeName !== "svg" || doc!.getElementsByTagName("parsererror").length) return false; // framesFor draws the placeholder
     const node = document.importNode(parsed, true) as unknown as SVGSVGElement;
     node.setAttribute("viewBox", node.getAttribute("viewBox") ?? `0 0 ${W} ${H}`);
     node.setAttribute("role", "img");

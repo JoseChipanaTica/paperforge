@@ -10,7 +10,7 @@ describe("sanitizeSvg", () => {
         '<rect x="1" y="2" width="3" height="4" fill="#fff"><animate attributeName="x" from="0" to="10" dur="1s" repeatCount="indefinite"/></rect><text x="5" y="9">a &lt; b</text>',
       ),
     );
-    expect(out).toContain('<svg viewBox="0 0 360 220">');
+    expect(out).toContain('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 220">');
     expect(out).toContain('<rect x="1" y="2" width="3" height="4" fill="#fff">');
     expect(out).toContain('<animate attributeName="x" from="0" to="10" dur="1s" repeatCount="indefinite"/>');
     expect(out).toContain("a &lt; b</text>");
@@ -33,10 +33,10 @@ describe("sanitizeSvg", () => {
   });
 
   test("keeps internal references only", () => {
-    expect(sanitizeSvg(wrap('<animate href="#a"/>'))).toContain('href="#a"');
+    expect(sanitizeSvg(wrap('<animate attributeName="x" href="#a"/>'))).toContain('href="#a"');
     expect(sanitizeSvg(wrap('<linearGradient href="#g" id="h"/>'))).toContain('href="#g"');
-    expect(sanitizeSvg(wrap('<animate href="https://x"/>'))).not.toContain("https");
-    expect(sanitizeSvg(wrap('<animate xlink:href="data:text/html,x"/>'))).not.toContain("data:");
+    expect(sanitizeSvg(wrap('<animate attributeName="x" href="https://x"/>'))).not.toContain("https");
+    expect(sanitizeSvg(wrap('<animate attributeName="x" xlink:href="data:text/html,x"/>'))).not.toContain("data:");
   });
 
   test("strips url() and expression() except internal url(#id)", () => {
@@ -73,6 +73,50 @@ describe("sanitizeSvg", () => {
 
   test("drops comments, CDATA, doctype and processing instructions", () => {
     const out = sanitizeSvg(`<?xml version="1.0"?><!DOCTYPE svg><svg><!-- note --><![CDATA[<script>x</script>]]><rect/></svg>`);
-    expect(out).toBe("<svg><rect/></svg>");
+    expect(out).toBe('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
+  });
+});
+
+describe("sanitizeSvg against the review's attacks", () => {
+  test("drops style entirely (image-set beacons, page overlays)", () => {
+    const out = sanitizeSvg(`<svg style="background-image:image-set('https://evil/x' 1x)"><rect style="position:fixed;inset:0"/></svg>`);
+    expect(out).not.toContain("style");
+    expect(out).not.toContain("evil");
+  });
+
+  test("CSS escapes can't smuggle url() through presentation attributes or SMIL", () => {
+    const out = sanitizeSvg(wrap('<rect fill="u\\72 l(https://evil/x)"/><set attributeName="fill" to="u\\72 l(https://evil/x)"/>'));
+    expect(out).not.toContain("evil");
+    expect(out).not.toContain("\\");
+  });
+
+  test("functions other than url(#id) and transforms are refused", () => {
+    expect(sanitizeSvg(wrap('<rect fill="image(https://evil/x)"/>'))).not.toContain("evil");
+    expect(sanitizeSvg(wrap('<g transform="translate(10, 20) rotate(45)"/>'))).toContain('transform="translate(10, 20) rotate(45)"');
+    expect(sanitizeSvg(wrap('<g transform="translate(10) evil(1)"/>'))).not.toContain("transform");
+  });
+
+  test("SMIL can't animate href, style or ids", () => {
+    for (const name of ["href", "xlink:href", "style", "id"]) {
+      const out = sanitizeSvg(wrap(`<linearGradient id="g"><set attributeName="${name}" to="https://evil/a.svg#g"/></linearGradient>`));
+      expect(out).not.toContain("evil");
+      expect(out).not.toContain(`attributeName="${name}"`);
+    }
+  });
+
+  test("the root always gets the SVG namespace, whatever the input says", () => {
+    expect(sanitizeSvg("<svg><rect/></svg>")).toBe('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
+    expect(sanitizeSvg('<svg xmlns="http://evil"><rect/></svg>')).toBe('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
+  });
+
+  test("duplicate attributes (href and xlink:href) keep the first, so the output stays valid XML", () => {
+    const out = sanitizeSvg(wrap('<animate attributeName="x" href="#a" xlink:href="#b"/>'));
+    expect(out.match(/href=/g)?.length).toBe(1);
+  });
+
+  test("control characters and out-of-range entities are dropped, never thrown", () => {
+    expect(() => sanitizeSvg(wrap("<text>a&#99999999;b&#0;c</text>"))).not.toThrow();
+    const out = sanitizeSvg(wrap("<text>a&#99999999;b&#0;c\u0001d</text>"));
+    expect(out).toContain(">abcd</text>");
   });
 });
