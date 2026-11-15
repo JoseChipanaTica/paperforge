@@ -93,9 +93,10 @@ const finite = (n: number) => (Number.isFinite(n) ? n : 0);
 
 /** A view a renderer can always draw: clamped, rectangular where it must be, or a plain tensor. */
 export function cleanView(v: View): View {
-  const rows = v.rows.slice(0, MAX_SIDE);
+  // Patches label every cell, and a frame row is a whole flattened grid: both hold up to 12 × 12.
+  const rows = v.rows.slice(0, v.kind === "patches" ? MAX_SIDE * MAX_SIDE : MAX_SIDE);
   const cols = v.cols.slice(0, MAX_SIDE);
-  const width = v.kind === "vectors" || v.kind === "heads" ? MAX_VECTOR : MAX_SIDE;
+  const width = v.kind === "vectors" || v.kind === "heads" ? MAX_VECTOR : v.kind === "frames" ? MAX_SIDE * MAX_SIDE : MAX_SIDE;
   let values = v.values.slice(0, MAX_SIDE).map((r) => r.slice(0, width).map(finite));
   if (v.kind === "matrix") {
     // A heatmap is rectangular: pad short rows to the widest (or to the column labels).
@@ -105,7 +106,8 @@ export function cleanView(v: View): View {
   const split = Math.max(1, Math.min(16, Math.round(finite(v.split)) || 1));
   const drawable =
     v.kind === "tensor" ||
-    (["tokens", "vectors", "heads", "patches", "probs"].includes(v.kind) && rows.length > 0) ||
+    (["tokens", "vectors", "heads", "probs"].includes(v.kind) && rows.length > 0) ||
+    (v.kind === "patches" && (rows.length > 0 || values.some((r) => r.length > 0))) ||
     (["matrix", "frames"].includes(v.kind) && values.some((r) => r.length > 0)) ||
     (v.kind === "signal" && values.some((r) => r.length > 0));
   if (!drawable) return { kind: "tensor", caption: v.caption, rows: [], cols: [], values: [], dims: v.dims, split: 1 };

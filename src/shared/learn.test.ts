@@ -98,6 +98,17 @@ describe("cleanJourney", () => {
     }
   });
 
+  test("an unlabelled image grid still draws, and a 4×4 frame keeps all 16 cells", () => {
+    const grid = Array.from({ length: 4 }, () => [0.1, 0.5, 0.9, 0.3]);
+    const p = only(view({ kind: "patches", rows: [], values: grid, dims: "[3, 224, 224]" }));
+    expect(p.kind).toBe("patches");
+    expect(p.values).toEqual(grid);
+    const labels = Array.from({ length: 16 }, (_, i) => `c${i}`);
+    expect(only(view({ kind: "patches", rows: labels, values: grid })).rows).toEqual(labels);
+    const f = only(view({ kind: "frames", rows: ["f1", "f2"], values: [Array(16).fill(0.5), Array(16).fill(0.2)] }));
+    expect(f.values.map((r) => r.length)).toEqual([16, 16]);
+  });
+
   test("keeps at most two views per step, input and output too", () => {
     const three = [view({}), view({}), view({})];
     const j = cleanJourney(journey([step(a, three)], { input: { label: "i", views: three }, output: { label: "o", views: three } }), graph);
