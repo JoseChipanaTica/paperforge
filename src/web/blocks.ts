@@ -46,7 +46,7 @@ export interface BlockObject {
   haloMaterial: THREE.MeshBasicMaterial;
 }
 
-// Matte paint: no glow, no shine. Tone mapping off so the printed colours stay true.
+// Matte paint: no glow, no shine. (The renderer's NeutralToneMapping keeps hues close to the palette.)
 function material(color: THREE.Color, opts: Partial<THREE.MeshStandardMaterialParameters> = {}) {
   return new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0, ...opts });
 }

@@ -134,6 +134,7 @@ async function forgePaper(input: string, refresh = false) {
   rawGraph = saveToken = shareUrl = null;
   syncPublish();
   graph = null; // results for the previous paper must not land on this one
+  controls.hidden = true; // Replay / Publish would act on the previous paper until this one loads
   resetLearn();
 
   const key = storedKey();
@@ -252,7 +253,7 @@ scene.onClick = (id) => {
   const active = panel.state.active;
   if (active === "pytorch") revealSymbol(panel.tab("pytorch"), id);
   else if (active === "paper") void openPaper(id);
-  else if ((active === "walkthrough" || active === "example") && driver.script) {
+  else if ((active === "walkthrough" || active === "example") && tourKind === active && driver.script) {
     // Clicking a block during a tour jumps to its step.
     const step = driver.script.steps.findIndex((s) => s.block_id === id);
     if (step >= 0) driver.goTo(driver.script, step);
@@ -495,7 +496,9 @@ window.addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
   if (e.key === " " && document.body.classList.contains("assembling")) run.skip();
   if (e.key === "Escape") {
-    if (driver.active) driver.stop();
+    // Esc ends the tour you can see; otherwise it collapses the phone sheet.
+    const tourShowing = driver.active && tourKind === panel.state.active;
+    if (tourShowing) driver.stop();
     else sheet.snapTo("tabs");
   }
   // Arrow keys step through a tour, unless they're moving between tabs.

@@ -12,6 +12,7 @@ const TABS_H = 64;
 export class Sheet {
   readonly media = matchMedia("(max-width: 899px)");
   private height = TABS_H;
+  private snap: SheetSnap | null = "tabs"; // the named position, so a rotation can re-snap to it
 
   constructor(
     private panel: HTMLElement,
@@ -29,6 +30,7 @@ export class Sheet {
       handle.setPointerCapture(e.pointerId);
       startY = lastY = e.clientY;
       startH = this.height;
+      this.snap = null; // between snaps while dragging
       lastT = e.timeStamp;
       velocity = 0;
       moved = false;
@@ -47,8 +49,10 @@ export class Sheet {
       if (!handle.hasPointerCapture(e.pointerId)) return;
       handle.releasePointerCapture(e.pointerId);
       panel.classList.remove("dragging");
-      if (moved) this.set(snapSheet(this.height, velocity, this.snaps()));
-      else this.snapTo(this.open ? "tabs" : "half");
+      if (moved) {
+        const px = snapSheet(this.height, velocity, this.snaps());
+        this.snapTo((["tabs", "half", "full"] as const)[this.snaps().indexOf(px)] ?? "half");
+      } else this.snapTo(this.open ? "tabs" : "half");
     };
     handle.addEventListener("pointerup", end);
     handle.addEventListener("pointercancel", end);
@@ -58,7 +62,7 @@ export class Sheet {
     });
 
     this.media.addEventListener("change", () => this.apply());
-    addEventListener("resize", () => this.active && this.set(Math.min(this.height, this.snaps()[2]!)));
+    addEventListener("resize", () => this.active && this.snap && this.snapTo(this.snap));
     this.apply();
   }
 
@@ -73,6 +77,7 @@ export class Sheet {
   snapTo(which: SheetSnap) {
     if (!this.active) return;
     const [tabs, half, full] = this.snaps();
+    this.snap = which;
     this.set(which === "tabs" ? tabs! : which === "half" ? half! : full!);
   }
 
@@ -91,10 +96,19 @@ export class Sheet {
     this.panel.style.setProperty("--sheet-h", `${px}px`);
     this.handle.setAttribute("aria-expanded", String(this.open));
     this.handle.setAttribute("aria-label", this.open ? "Collapse the study panel" : "Expand the study panel");
+    // Collapsed, the content is off screen: keep keyboard focus and Tab out of it.
+    const body = this.panel.querySelector<HTMLElement>(".tabpanels");
+    if (!body) return;
+    const hide = this.active && !this.open;
+    if (hide && body.contains(document.activeElement)) {
+      this.panel.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
+    }
+    body.inert = hide;
   }
 
   private apply() {
     this.panel.classList.toggle("sheet", this.active);
+    this.snap = "tabs";
     this.set(TABS_H);
   }
 }

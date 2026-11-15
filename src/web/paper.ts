@@ -65,7 +65,7 @@ export class PaperView {
     for (const m of this.marks.get(page) ?? []) {
       if (m.start < cursor) continue;
       html += escapeHtml(text.slice(cursor, m.start));
-      html += `<mark data-ids="${m.ids.join(" ")}">${escapeHtml(text.slice(m.start, m.end))}</mark>`;
+      html += `<mark data-ids="${escapeHtml(m.ids.join(" "))}">${escapeHtml(text.slice(m.start, m.end))}</mark>`;
       cursor = m.end;
     }
     html += escapeHtml(text.slice(cursor));

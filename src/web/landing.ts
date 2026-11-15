@@ -35,12 +35,12 @@ export function initLanding(root: HTMLElement, deps: LandingDeps) {
   root.querySelectorAll<HTMLButtonElement>("[data-paper]").forEach((b) =>
     b.addEventListener("click", () => deps.onForge(b.dataset.paper!)),
   );
-  void loadGallery(root.querySelector("#gallery")!, deps.onForge);
-
   return {
     /** Put the live model in the hero. */
     preview() {
       home ??= deps.stage.parentElement;
+      // Only the landing shows the gallery; direct ?paper= links skip the request.
+      void loadGallery(root.querySelector("#gallery")!, deps.onForge);
       deps.scene.reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
       heroStage.append(deps.stage);
       deps.scene.showAssembled(PREVIEW, 1.15);
