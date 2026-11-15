@@ -1,0 +1,487 @@
+import katex from "katex";
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
+import type { Edge, LocatedArchitecture, LocatedBlock } from "../shared/graph";
+import { buildBlock, buildGroupFrame, type BlockObject } from "./blocks";
+import { layoutGraph, type Layout, type PlacedBlock, type PlacedGroup } from "./layout";
+
+export interface SceneBlock {
+  block: LocatedBlock;
+  placed: PlacedBlock;
+  obj: BlockObject;
+  label: CSS2DObject;
+  assembled: THREE.Vector3;
+  exploded: THREE.Vector3;
+  /** 0 = at rest, decays from 1 after a flash */
+  glow: number;
+  index: number;
+}
+
+interface SceneEdge {
+  edge: Edge;
+  mesh: THREE.Mesh;
+  curve: THREE.Curve<THREE.Vector3>;
+}
+
+interface Pulse {
+  edge: SceneEdge;
+  start: number; // seconds into the pulse cycle
+  dots: THREE.Mesh[];
+}
+
+const QUIET_TYPES = new Set(["add_norm", "layer_norm", "normalization", "residual_add", "dropout", "activation"]);
+const EDGE_COLOR = { data: "#dfe7ff", residual: "#ffd166", cross: "#ff8f5a" } as const;
+const PULSE_STEP = 0.55; // seconds per rank
+const PULSE_PAUSE = 1.6;
+
+export function renderTex(tex: string, display = false): string {
+  try {
+    return katex.renderToString(tex, { throwOnError: false, displayMode: display, output: "html" });
+  } catch {
+    return `<code>${tex.replace(/</g, "&lt;")}</code>`;
+  }
+}
+
+export class ForgeScene {
+  readonly renderer: THREE.WebGLRenderer;
+  readonly camera = new THREE.PerspectiveCamera(32, 1, 0.1, 400);
+  readonly scene = new THREE.Scene();
+  readonly controls: OrbitControls;
+  private labels: CSS2DRenderer;
+  private composer: EffectComposer;
+  private model = new THREE.Group();
+  private edgeGroup = new THREE.Group();
+  private pulseGroup = new THREE.Group();
+  private groupFrames: { placed: PlacedGroup; frame: THREE.Group; label: CSS2DObject }[] = [];
+  private raycaster = new THREE.Raycaster();
+  private pointer = new THREE.Vector2(9, 9);
+  private clock = new THREE.Clock();
+
+  blocks = new Map<string, SceneBlock>();
+  edges: SceneEdge[] = [];
+  layout: Layout | null = null;
+  graph: LocatedArchitecture | null = null;
+
+  explode = 0;
+  edgeProgress = 0;
+  groupAlpha = 0;
+  labelAlpha = 0;
+  pulsing = false;
+  private pulseClock = 0;
+  private pulses: Pulse[] = [];
+  private pulseCycle = 1;
+
+  /** Horizontal shift of the model on screen, as a fraction of the canvas width. */
+  viewShift = 0;
+  /** Camera sways gently until the user grabs the controls. */
+  sway = true;
+  private swayTime = 0;
+  fitDistance = 30;
+  private hovered: string | null = null;
+  onHover: (id: string | null) => void = () => {};
+  onClick: (id: string | null) => void = () => {};
+
+  constructor(private container: HTMLElement) {
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", preserveDrawingBuffer: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.92;
+    container.appendChild(this.renderer.domElement);
+
+    this.labels = new CSS2DRenderer();
+    this.labels.domElement.className = "label-layer";
+    container.appendChild(this.labels.domElement);
+
+    this.scene.background = new THREE.Color("#07090e");
+    this.scene.fog = new THREE.Fog("#07090e", 40, 110);
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.55;
+
+    this.scene.add(new THREE.HemisphereLight("#cfd8ff", "#1a1420", 0.9));
+    const key = new THREE.DirectionalLight("#ffffff", 1.6);
+    key.position.set(8, 14, 12);
+    this.scene.add(key);
+    const rim = new THREE.DirectionalLight("#7aa2ff", 1.2);
+    rim.position.set(-10, 6, -12);
+    this.scene.add(rim);
+
+    this.scene.add(this.model, this.edgeGroup, this.pulseGroup);
+
+    this.controls = new OrbitControls(this.camera, this.labels.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.addEventListener("start", () => (this.sway = false));
+
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.32, 0.45, 0.86));
+    this.composer.addPass(new OutputPass());
+
+    const el = this.labels.domElement;
+    el.addEventListener("pointermove", (e) => {
+      const r = el.getBoundingClientRect();
+      this.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    });
+    el.addEventListener("pointerleave", () => this.pointer.set(9, 9));
+    let down = { x: 0, y: 0 };
+    el.addEventListener("pointerdown", (e) => (down = { x: e.clientX, y: e.clientY }));
+    el.addEventListener("click", (e) => {
+      if (Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) this.onClick(this.hovered);
+    });
+
+    new ResizeObserver(() => this.resize()).observe(container);
+    this.resize();
+    this.renderer.setAnimationLoop(() => this.tick());
+  }
+
+  private resize() {
+    const { clientWidth: w, clientHeight: h } = this.container;
+    if (!w || !h) return;
+    this.renderer.setSize(w, h);
+    this.composer.setSize(w, h);
+    this.labels.setSize(w, h);
+    this.camera.aspect = w / h;
+    this.applyViewShift();
+    this.frame(false);
+  }
+
+  private applyViewShift() {
+    const { clientWidth: w, clientHeight: h } = this.container;
+    if (this.viewShift) this.camera.setViewOffset(w, h, -this.viewShift * w, 0, w, h);
+    else this.camera.clearViewOffset();
+    this.camera.updateProjectionMatrix();
+  }
+
+  setViewShift(v: number) {
+    this.viewShift = v;
+    this.applyViewShift();
+  }
+
+  clear() {
+    this.model.clear();
+    this.edgeGroup.clear();
+    this.pulseGroup.clear();
+    for (const sb of this.blocks.values()) sb.label.element.remove();
+    for (const g of this.groupFrames) g.label.element.remove();
+    this.blocks.clear();
+    this.edges = [];
+    this.pulses = [];
+    this.groupFrames = [];
+    this.graph = null;
+    this.layout = null;
+  }
+
+  load(graph: LocatedArchitecture) {
+    this.clear();
+    this.graph = graph;
+    const layout = (this.layout = layoutGraph(graph));
+    const midX = (layout.bounds.minX + layout.bounds.maxX) / 2;
+
+    graph.blocks.forEach((block, index) => {
+      const placed = layout.blocks.get(block.id)!;
+      const obj = buildBlock(block, placed);
+      obj.root.visible = false;
+      this.model.add(obj.root);
+
+      const assembled = new THREE.Vector3(placed.x, placed.y, 0);
+      // Exploded view: pull rows apart, push alternate blocks forward/back, fan columns out.
+      const exploded = new THREE.Vector3(
+        midX + (placed.x - midX) * 1.45,
+        placed.y * 1.6,
+        (index % 2 === 0 ? 1 : -1) * 1.1 + (placed.column % 2 ? -0.6 : 0.6),
+      );
+
+      const leftSide = layout.columns > 1 && placed.x < midX;
+      const div = document.createElement("div");
+      div.className = `block-label ${leftSide ? "left" : "right"}`;
+      // Norm/residual blocks repeat one equation many times; keep their labels to one line.
+      const showEq = block.equation && !QUIET_TYPES.has(block.type);
+      div.innerHTML = `
+        <div class="bl-title"><span class="dot" style="background:${obj.color.getStyle()}"></span>${escapeHtml(block.label)}<span class="bl-shape">${escapeHtml(block.output_shape)}</span></div>
+        ${showEq ? `<div class="bl-eq">${renderTex(block.equation)}</div>` : ""}`;
+      div.style.opacity = "0";
+      const label = new CSS2DObject(div);
+      label.center.set(leftSide ? 1 : 0, 0.5);
+      label.position.set((leftSide ? -1 : 1) * (placed.w / 2 + 0.35), 0, 0);
+      obj.root.add(label);
+
+      this.blocks.set(block.id, { block, placed, obj, label, assembled, exploded, glow: 0, index });
+    });
+
+    for (const g of layout.groups) {
+      const frame = buildGroupFrame(g.w, g.h, g.d, g.repeat);
+      frame.position.set(g.x, g.y, 0);
+      frame.visible = false;
+      this.model.add(frame);
+      const div = document.createElement("div");
+      div.className = "group-label";
+      div.innerHTML = `<span>${escapeHtml(g.label)}</span>${g.repeat > 1 ? `<b>×${g.repeat}</b>` : ""}`;
+      // Left column: sit on the frame's top edge. Otherwise: tuck into the top-left
+      // corner, away from the block labels on the right.
+      const leftCol = layout.columns > 1 && g.x < midX;
+      const label = new CSS2DObject(div);
+      label.center.set(leftCol ? 0 : 1, 1);
+      label.position.set(leftCol ? -g.w / 2 : -(g.w / 2 + 0.15), g.h / 2 + (leftCol ? 0.1 : 0), 0);
+      frame.add(label);
+      div.style.opacity = "0";
+      this.groupFrames.push({ placed: g, frame, label });
+    }
+
+    this.buildEdges();
+    this.buildPulses();
+    this.sway = true;
+    this.frame(true);
+  }
+
+  /** Camera distance that fits the model, assembled (0) or exploded (1). */
+  distanceFor(explode: number): number {
+    if (!this.layout) return 30;
+    const b = this.layout.bounds;
+    const w = (b.maxX - b.minX) * (1 + 0.45 * explode) + 11; // room for side labels
+    const h = (b.maxY - b.minY) * (1.3 + 0.6 * explode) + 4; // and for the top bar
+    const vFov = THREE.MathUtils.degToRad(this.camera.fov);
+    return Math.max(h / 2 / Math.tan(vFov / 2), w / 2 / (Math.tan(vFov / 2) * this.camera.aspect));
+  }
+
+  /** Point the camera at the model so it fills the view. */
+  frame(reset: boolean) {
+    if (!this.layout) {
+      if (reset) {
+        this.camera.position.set(0, 0, 30);
+        this.controls.target.set(0, 0, 0);
+      }
+      return;
+    }
+    const b = this.layout.bounds;
+    this.fitDistance = this.distanceFor(this.explode);
+    if (reset) {
+      const dist = this.fitDistance;
+      this.controls.target.set(0, (b.minY + b.maxY) / 2, 0);
+      this.camera.position.set(dist * 0.28, this.controls.target.y + dist * 0.12, dist * 0.95);
+    }
+    this.controls.maxDistance = this.fitDistance * 3;
+    this.controls.minDistance = this.fitDistance * 0.15;
+  }
+
+  // ---------- blocks ----------
+
+  showBlock(id: string, visible = true) {
+    const sb = this.blocks.get(id);
+    if (sb) sb.obj.root.visible = visible;
+  }
+
+  /** World point on the camera ray through a screen pixel, at a fraction of the view distance. */
+  screenToWorld(clientX: number, clientY: number, depth = 0.55): THREE.Vector3 {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const dist = this.camera.position.distanceTo(this.controls.target) * depth;
+    return this.raycaster.ray.at(dist, new THREE.Vector3());
+  }
+
+  restPosition(sb: SceneBlock, explode = this.explode): THREE.Vector3 {
+    return sb.assembled.clone().lerp(sb.exploded, explode);
+  }
+
+  setExplode(e: number) {
+    this.explode = e;
+    for (const sb of this.blocks.values()) {
+      if (!sb.obj.root.userData.flying) sb.obj.root.position.copy(this.restPosition(sb));
+    }
+    this.buildEdges();
+    this.buildPulses();
+  }
+
+  flash(id: string, amount = 1) {
+    const sb = this.blocks.get(id);
+    if (sb) sb.glow = Math.max(sb.glow, amount);
+  }
+
+  // ---------- edges and pulses ----------
+
+  private anchor(sb: SceneBlock, where: "top" | "bottom" | "left" | "right"): THREE.Vector3 {
+    const p = sb.obj.root.userData.flying ? this.restPosition(sb) : sb.obj.root.position.clone();
+    const { w, h } = sb.placed;
+    if (where === "top") p.y += h / 2;
+    if (where === "bottom") p.y -= h / 2;
+    if (where === "left") p.x -= w / 2;
+    if (where === "right") p.x += w / 2;
+    return p;
+  }
+
+  private curveFor(e: Edge): THREE.Curve<THREE.Vector3> | null {
+    const a = this.blocks.get(e.from);
+    const b = this.blocks.get(e.to);
+    if (!a || !b) return null;
+    const midX = this.layout ? (this.layout.bounds.minX + this.layout.bounds.maxX) / 2 : 0;
+    if (e.kind === "residual") {
+      // Arc around the blocks on the side facing away from the labels.
+      const side = this.layout && this.layout.columns > 1 && a.placed.x < midX ? 1 : -1;
+      const p0 = this.anchor(a, "top").add(new THREE.Vector3(side * (a.placed.w / 2 - 0.25), 0, 0));
+      const p3 = this.anchor(b, side > 0 ? "right" : "left");
+      const out = Math.max(a.placed.w, b.placed.w) / 2 + 0.55;
+      const sx = (side > 0 ? Math.max : Math.min)(p0.x, p3.x) + side * (out - a.placed.w / 2 + 0.25);
+      return new THREE.CubicBezierCurve3(p0, new THREE.Vector3(sx, p0.y + 0.35, p0.z), new THREE.Vector3(sx + side * 0.1, p3.y, p3.z), p3);
+    }
+    if (e.kind === "cross") {
+      const p0 = this.anchor(a, "top");
+      const side = Math.sign(b.assembled.x - a.assembled.x) || 1;
+      const p3 = this.anchor(b, side > 0 ? "left" : "right");
+      return new THREE.CubicBezierCurve3(
+        p0,
+        new THREE.Vector3(p0.x, p0.y + 1.6, p0.z),
+        new THREE.Vector3(p3.x - side * 1.6, p3.y, p3.z),
+        p3,
+      );
+    }
+    const p0 = this.anchor(a, "top");
+    const p3 = this.anchor(b, "bottom");
+    const dy = Math.max(0.3, (p3.y - p0.y) * 0.5);
+    return new THREE.CubicBezierCurve3(p0, new THREE.Vector3(p0.x, p0.y + dy, p0.z), new THREE.Vector3(p3.x, p3.y - dy, p3.z), p3);
+  }
+
+  private buildEdges() {
+    disposeChildren(this.edgeGroup);
+    this.edges = [];
+    if (!this.graph) return;
+    for (const edge of this.graph.edges) {
+      const curve = this.curveFor(edge);
+      if (!curve) continue;
+      const geo = new THREE.TubeGeometry(curve, 48, edge.kind === "data" ? 0.035 : 0.028, 6);
+      const mat = new THREE.MeshBasicMaterial({
+        color: EDGE_COLOR[edge.kind],
+        transparent: true,
+        opacity: edge.kind === "data" ? 0.45 : 0.6,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      this.edgeGroup.add(mesh);
+      this.edges.push({ edge, mesh, curve });
+    }
+    this.setEdgeProgress(this.edgeProgress);
+  }
+
+  setEdgeProgress(t: number) {
+    this.edgeProgress = t;
+    for (const e of this.edges) {
+      const count = e.mesh.geometry.index?.count ?? 0;
+      // Draw-on: tube indices run along the path.
+      e.mesh.geometry.setDrawRange(0, Math.floor((count * t) / 6) * 6);
+      e.mesh.visible = t > 0;
+    }
+  }
+
+  private buildPulses() {
+    disposeChildren(this.pulseGroup);
+    this.pulses = [];
+    if (!this.layout) return;
+    let maxRank = 0;
+    for (const e of this.edges) {
+      const fromRank = this.blocks.get(e.edge.from)!.placed.rank;
+      maxRank = Math.max(maxRank, fromRank);
+      const color = new THREE.Color(EDGE_COLOR[e.edge.kind]).multiplyScalar(3);
+      const dots = [0, 1, 2].map((i) => {
+        const dot = new THREE.Mesh(
+          new THREE.SphereGeometry(i === 0 ? 0.15 : 0.1 - i * 0.02, 16, 12),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 - i * 0.3, toneMapped: false }),
+        );
+        dot.visible = false;
+        this.pulseGroup.add(dot);
+        return dot;
+      });
+      // Cross edges fire once the encoder is done, so the pulse visibly hands over.
+      this.pulses.push({ edge: e, start: fromRank * PULSE_STEP, dots });
+    }
+    this.pulseCycle = (maxRank + 2) * PULSE_STEP + PULSE_PAUSE;
+  }
+
+  startPulse() {
+    this.pulsing = true;
+    this.pulseClock = 0;
+  }
+
+  // ---------- frame loop ----------
+
+  private tick() {
+    const dt = Math.min(this.clock.getDelta(), 0.05);
+
+    if (this.sway && this.layout) {
+      this.swayTime += dt;
+      const target = this.controls.target;
+      const az = Math.sin(this.swayTime * 0.18) * 0.32 + 0.28;
+      const r = this.fitDistance;
+      this.camera.position.lerp(new THREE.Vector3(target.x + Math.sin(az) * r, target.y + r * 0.12, target.z + Math.cos(az) * r), 0.02);
+    }
+    this.controls.update();
+
+    // Pulses
+    if (this.pulsing) {
+      this.pulseClock = (this.pulseClock + dt) % this.pulseCycle;
+      for (const p of this.pulses) {
+        const t = (this.pulseClock - p.start) / PULSE_STEP;
+        p.dots.forEach((dot, i) => {
+          const ti = t - i * 0.07;
+          dot.visible = ti > 0 && ti < 1;
+          if (dot.visible) p.edge.curve.getPointAt(Math.min(1, ti), dot.position);
+        });
+        if (t >= 1 && t - dt / PULSE_STEP < 1) this.flash(p.edge.edge.to, 0.8);
+        if (t > 0 && t - dt / PULSE_STEP <= 0) this.flash(p.edge.edge.from, 0.5);
+      }
+    } else {
+      for (const p of this.pulses) for (const d of p.dots) d.visible = false;
+    }
+
+    // Hover + glow
+    let hit: string | null = null;
+    if (this.blocks.size && Math.abs(this.pointer.x) <= 1) {
+      this.raycaster.setFromCamera(this.pointer, this.camera);
+      const hits = this.raycaster.intersectObjects(this.model.children, true);
+      hit = (hits.find((h) => h.object.userData.blockId && h.object.visible)?.object.userData.blockId as string) ?? null;
+    }
+    if (hit !== this.hovered) {
+      this.hovered = hit;
+      this.labels.domElement.style.cursor = hit ? "pointer" : "";
+      this.onHover(hit);
+    }
+    for (const sb of this.blocks.values()) {
+      sb.glow = Math.max(0, sb.glow - dt * 1.6);
+      const base = sb.block.id === this.hovered ? 0.45 : 0.05;
+      for (const m of sb.obj.materials) m.emissiveIntensity = base + sb.glow * 1.4;
+      (sb.label.element as HTMLElement).style.opacity = String(this.labelAlpha * (sb.obj.root.visible ? 1 : 0));
+      sb.label.element.classList.toggle("hot", sb.block.id === this.hovered);
+    }
+    for (const g of this.groupFrames) {
+      const a = this.groupAlpha * (1 - this.explode);
+      g.frame.visible = a > 0.01;
+      g.frame.traverse((o) => {
+        const mat = (o as THREE.Mesh).material as THREE.Material & { userData: { base?: number } };
+        if (!mat || !("opacity" in mat)) return;
+        mat.userData.base ??= mat.opacity;
+        mat.opacity = mat.userData.base * a;
+      });
+      (g.label.element as HTMLElement).style.opacity = String(a);
+    }
+
+    this.composer.render();
+    this.labels.render(this.scene, this.camera);
+  }
+}
+
+function disposeChildren(group: THREE.Group) {
+  for (const child of group.children as THREE.Mesh[]) {
+    child.geometry?.dispose();
+    (child.material as THREE.Material | undefined)?.dispose();
+  }
+  group.clear();
+}
+
+export function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}

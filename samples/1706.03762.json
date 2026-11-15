@@ -1,0 +1,431 @@
+{
+  "paper_title": "Attention Is All You Need",
+  "model_name": "Transformer",
+  "summary": "A translation model built only from attention: every word looks at every other word at once, instead of reading the sentence one word at a time.",
+  "hyperparameters": [
+    {
+      "name": "N",
+      "value": "6"
+    },
+    {
+      "name": "d_model",
+      "value": "512"
+    },
+    {
+      "name": "d_ff",
+      "value": "2048"
+    },
+    {
+      "name": "h",
+      "value": "8"
+    },
+    {
+      "name": "d_k = d_v",
+      "value": "64"
+    },
+    {
+      "name": "P_drop",
+      "value": "0.1"
+    }
+  ],
+  "groups": [
+    {
+      "id": "encoder",
+      "label": "Encoder layer",
+      "repeat": 6
+    },
+    {
+      "id": "decoder",
+      "label": "Decoder layer",
+      "repeat": 6
+    }
+  ],
+  "blocks": [
+    {
+      "id": "inputs",
+      "label": "Inputs",
+      "type": "input",
+      "group": "",
+      "equation": "(x_1, \\ldots, x_n)",
+      "input_shape": "[B, n]",
+      "output_shape": "[B, n]",
+      "hyperparameters": [],
+      "description": "The source sentence as a sequence of token ids.",
+      "source_quote": "Here, the encoder maps an input sequence of symbol representations (x 1 , ..., x n ) to a sequence of continuous representations z = ( z 1 , ..., z n ) ."
+    },
+    {
+      "id": "input_embedding",
+      "label": "Input Embedding",
+      "type": "embedding",
+      "group": "",
+      "equation": "E[x] \\cdot \\sqrt{d_{model}}",
+      "input_shape": "[B, n]",
+      "output_shape": "[B, n, 512]",
+      "hyperparameters": [
+        {
+          "name": "d_model",
+          "value": "512"
+        }
+      ],
+      "description": "Looks up a learned 512-dimensional vector for every input token.",
+      "source_quote": "Similarly to other sequence transduction models, we use learned embeddings to convert the input tokens and output tokens to vectors of dimension d model ."
+    },
+    {
+      "id": "encoder_positional",
+      "label": "Positional Encoding",
+      "type": "positional_encoding",
+      "group": "",
+      "equation": "PE_{(pos,2i)} = \\sin(pos / 10000^{2i/d_{model}})",
+      "input_shape": "[B, n, 512]",
+      "output_shape": "[B, n, 512]",
+      "hyperparameters": [],
+      "description": "Adds sine and cosine waves so the model knows the order of the words.",
+      "source_quote": "To this end, we add \"positional encodings\" to the input embeddings at the bottoms of the encoder and decoder stacks."
+    },
+    {
+      "id": "encoder_self_attention",
+      "label": "Multi-Head Attention",
+      "type": "multi_head_attention",
+      "group": "encoder",
+      "equation": "\\mathrm{MultiHead}(Q,K,V) = \\mathrm{Concat}(\\mathrm{head}_1, \\ldots, \\mathrm{head}_h)W^O",
+      "input_shape": "[B, n, 512]",
+      "output_shape": "[B, n, 512]",
+      "hyperparameters": [
+        {
+          "name": "h",
+          "value": "8"
+        },
+        {
+          "name": "d_k = d_v",
+          "value": "64"
+        }
+      ],
+      "description": "Every word attends to every other word in the input, through 8 heads in parallel.",
+      "source_quote": "The first is a multi-head self-attention mechanism, and the second is a simple, position-wise fully connected feed-forward network."
+    },
+    {
+      "id": "encoder_add_norm_1",
+      "label": "Add & Norm",
+      "type": "add_norm",
+      "group": "encoder",
+      "equation": "\\mathrm{LayerNorm}(x + \\mathrm{Sublayer}(x))",
+      "input_shape": "[B, n, 512]",
+      "output_shape": "[B, n, 512]",
+      "hyperparameters": [],
+      "description": "Adds the sub-layer's input back to its output, then normalizes.",
+      "source_quote": "We employ a residual connection [11] around each of the two sub-layers, followed by layer normalization [1]."
+    },
+    {
+      "id": "encoder_ffn",
+      "label": "Feed Forward",
+      "type": "feed_forward",
+      "group": "encoder",
+      "equation": "\\mathrm{FFN}(x) = \\max(0, xW_1 + b_1)W_2 + b_2",
+      "input_shape": "[B, n, 512]",
+      "output_shape": "[B, n, 512]",
+      "hyperparameters": [
+        {
+          "name": "d_ff",
+          "value": "2048"
+        }
+      ],
+      "description": "A small two-layer network applied to each position on its own: 512 → 2048 → 512.",
+      "source_quote": "This consists of two linear transformations with a ReLU activation in between."
+    },
+    {
+      "id": "encoder_add_norm_2",
+      "label": "Add & Norm",
+      "type": "add_norm",
+      "group": "encoder",
+      "equation": "\\mathrm{LayerNorm}(x + \\mathrm{FFN}(x))",
+      "input_shape": "[B, n, 512]",
+      "output_shape": "[B, n, 512]",
+      "hyperparameters": [],
+      "description": "Residual connection and layer normalization around the feed-forward network.",
+      "source_quote": "That is, the output of each sub-layer is LayerNorm( x + Sublayer( x )) , where Sublayer( x ) is the function implemented by the sub-layer itself."
+    },
+    {
+      "id": "outputs",
+      "label": "Outputs (shifted right)",
+      "type": "input",
+      "group": "",
+      "equation": "(y_1, \\ldots, y_{m-1})",
+      "input_shape": "[B, m]",
+      "output_shape": "[B, m]",
+      "hyperparameters": [],
+      "description": "The translation so far, shifted one position so the model predicts the next word.",
+      "source_quote": "This masking, combined with fact that the output embeddings are offset by one position, ensures that the predictions for position i can depend only on the known outputs at positions less than i ."
+    },
+    {
+      "id": "output_embedding",
+      "label": "Output Embedding",
+      "type": "embedding",
+      "group": "",
+      "equation": "E[y] \\cdot \\sqrt{d_{model}}",
+      "input_shape": "[B, m]",
+      "output_shape": "[B, m, 512]",
+      "hyperparameters": [
+        {
+          "name": "d_model",
+          "value": "512"
+        }
+      ],
+      "description": "Same embedding table as the input side, shared with the final linear layer.",
+      "source_quote": "In our model, we share the same weight matrix between the two embedding layers and the pre-softmax linear transformation, similar to [30]."
+    },
+    {
+      "id": "decoder_positional",
+      "label": "Positional Encoding",
+      "type": "positional_encoding",
+      "group": "",
+      "equation": "PE_{(pos,2i+1)} = \\cos(pos / 10000^{2i/d_{model}})",
+      "input_shape": "[B, m, 512]",
+      "output_shape": "[B, m, 512]",
+      "hyperparameters": [],
+      "description": "The same sinusoidal position signal, added on the decoder side.",
+      "source_quote": "The positional encodings have the same dimension d model as the embeddings, so that the two can be summed."
+    },
+    {
+      "id": "decoder_masked_attention",
+      "label": "Masked Multi-Head Attention",
+      "type": "multi_head_attention",
+      "group": "decoder",
+      "equation": "\\mathrm{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}} + M\\right)V",
+      "input_shape": "[B, m, 512]",
+      "output_shape": "[B, m, 512]",
+      "hyperparameters": [
+        {
+          "name": "h",
+          "value": "8"
+        },
+        {
+          "name": "d_k = d_v",
+          "value": "64"
+        }
+      ],
+      "description": "Self-attention over the translation so far, masked so a word can't peek at future words.",
+      "source_quote": "We also modify the self-attention sub-layer in the decoder stack to prevent positions from attending to subsequent positions."
+    },
+    {
+      "id": "decoder_add_norm_1",
+      "label": "Add & Norm",
+      "type": "add_norm",
+      "group": "decoder",
+      "equation": "\\mathrm{LayerNorm}(x + \\mathrm{Sublayer}(x))",
+      "input_shape": "[B, m, 512]",
+      "output_shape": "[B, m, 512]",
+      "hyperparameters": [],
+      "description": "Residual connection and layer normalization.",
+      "source_quote": "Similar to the encoder, we employ residual connections around each of the sub-layers, followed by layer normalization."
+    },
+    {
+      "id": "decoder_cross_attention",
+      "label": "Encoder-Decoder Attention",
+      "type": "cross_attention",
+      "group": "decoder",
+      "equation": "\\mathrm{Attention}(Q,K,V) = \\mathrm{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V",
+      "input_shape": "[B, m, 512] + [B, n, 512]",
+      "output_shape": "[B, m, 512]",
+      "hyperparameters": [
+        {
+          "name": "h",
+          "value": "8"
+        }
+      ],
+      "description": "Each output word looks back at the whole encoded input sentence.",
+      "source_quote": "In \"encoder-decoder attention\" layers, the queries come from the previous decoder layer, and the memory keys and values come from the output of the encoder."
+    },
+    {
+      "id": "decoder_add_norm_2",
+      "label": "Add & Norm",
+      "type": "add_norm",
+      "group": "decoder",
+      "equation": "\\mathrm{LayerNorm}(x + \\mathrm{Sublayer}(x))",
+      "input_shape": "[B, m, 512]",
+      "output_shape": "[B, m, 512]",
+      "hyperparameters": [
+        {
+          "name": "P_drop",
+          "value": "0.1"
+        }
+      ],
+      "description": "Dropout on the cross-attention output, then the residual add and layer normalization.",
+      "source_quote": "We apply dropout [33] to the output of each sub-layer, before it is added to the sub-layer input and normalized."
+    },
+    {
+      "id": "decoder_ffn",
+      "label": "Feed Forward",
+      "type": "feed_forward",
+      "group": "decoder",
+      "equation": "\\mathrm{FFN}(x) = \\max(0, xW_1 + b_1)W_2 + b_2",
+      "input_shape": "[B, m, 512]",
+      "output_shape": "[B, m, 512]",
+      "hyperparameters": [
+        {
+          "name": "d_ff",
+          "value": "2048"
+        }
+      ],
+      "description": "The same position-wise two-layer network, with its own weights.",
+      "source_quote": "In addition to attention sub-layers, each of the layers in our encoder and decoder contains a fully connected feed-forward network, which is applied to each position separately and identically."
+    },
+    {
+      "id": "decoder_add_norm_3",
+      "label": "Add & Norm",
+      "type": "add_norm",
+      "group": "decoder",
+      "equation": "\\mathrm{LayerNorm}(x + \\mathrm{FFN}(x))",
+      "input_shape": "[B, m, 512]",
+      "output_shape": "[B, m, 512]",
+      "hyperparameters": [
+        {
+          "name": "d_model",
+          "value": "512"
+        }
+      ],
+      "description": "Residual connection and layer normalization; every sub-layer outputs d_model = 512.",
+      "source_quote": "To facilitate these residual connections, all sub-layers in the model, as well as the embedding layers, produce outputs of dimension d model = 512 ."
+    },
+    {
+      "id": "final_linear",
+      "label": "Linear",
+      "type": "linear",
+      "group": "",
+      "equation": "h W_E^{\\top}",
+      "input_shape": "[B, m, 512]",
+      "output_shape": "[B, m, V]",
+      "hyperparameters": [
+        {
+          "name": "V",
+          "value": "37000"
+        }
+      ],
+      "description": "Projects each position back onto the vocabulary, reusing the embedding weights.",
+      "source_quote": "We also use the usual learned linear transformation and softmax function to convert the decoder output to predicted next-token probabilities."
+    },
+    {
+      "id": "softmax",
+      "label": "Softmax",
+      "type": "softmax",
+      "group": "",
+      "equation": "p_i = \\frac{e^{z_i}}{\\sum_j e^{z_j}}",
+      "input_shape": "[B, m, V]",
+      "output_shape": "[B, m, V]",
+      "hyperparameters": [],
+      "description": "Turns scores into next-word probabilities.",
+      "source_quote": "We also use the usual learned linear transformation and softmax function to convert the decoder output to predicted next-token probabilities."
+    }
+  ],
+  "edges": [
+    {
+      "from": "inputs",
+      "to": "input_embedding",
+      "kind": "data"
+    },
+    {
+      "from": "input_embedding",
+      "to": "encoder_positional",
+      "kind": "data"
+    },
+    {
+      "from": "encoder_positional",
+      "to": "encoder_self_attention",
+      "kind": "data"
+    },
+    {
+      "from": "encoder_self_attention",
+      "to": "encoder_add_norm_1",
+      "kind": "data"
+    },
+    {
+      "from": "encoder_positional",
+      "to": "encoder_add_norm_1",
+      "kind": "residual"
+    },
+    {
+      "from": "encoder_add_norm_1",
+      "to": "encoder_ffn",
+      "kind": "data"
+    },
+    {
+      "from": "encoder_ffn",
+      "to": "encoder_add_norm_2",
+      "kind": "data"
+    },
+    {
+      "from": "encoder_add_norm_1",
+      "to": "encoder_add_norm_2",
+      "kind": "residual"
+    },
+    {
+      "from": "outputs",
+      "to": "output_embedding",
+      "kind": "data"
+    },
+    {
+      "from": "output_embedding",
+      "to": "decoder_positional",
+      "kind": "data"
+    },
+    {
+      "from": "decoder_positional",
+      "to": "decoder_masked_attention",
+      "kind": "data"
+    },
+    {
+      "from": "decoder_masked_attention",
+      "to": "decoder_add_norm_1",
+      "kind": "data"
+    },
+    {
+      "from": "decoder_positional",
+      "to": "decoder_add_norm_1",
+      "kind": "residual"
+    },
+    {
+      "from": "decoder_add_norm_1",
+      "to": "decoder_cross_attention",
+      "kind": "data"
+    },
+    {
+      "from": "encoder_add_norm_2",
+      "to": "decoder_cross_attention",
+      "kind": "cross"
+    },
+    {
+      "from": "decoder_cross_attention",
+      "to": "decoder_add_norm_2",
+      "kind": "data"
+    },
+    {
+      "from": "decoder_add_norm_1",
+      "to": "decoder_add_norm_2",
+      "kind": "residual"
+    },
+    {
+      "from": "decoder_add_norm_2",
+      "to": "decoder_ffn",
+      "kind": "data"
+    },
+    {
+      "from": "decoder_ffn",
+      "to": "decoder_add_norm_3",
+      "kind": "data"
+    },
+    {
+      "from": "decoder_add_norm_2",
+      "to": "decoder_add_norm_3",
+      "kind": "residual"
+    },
+    {
+      "from": "decoder_add_norm_3",
+      "to": "final_linear",
+      "kind": "data"
+    },
+    {
+      "from": "final_linear",
+      "to": "softmax",
+      "kind": "data"
+    }
+  ]
+}

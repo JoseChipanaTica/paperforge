@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Paperforge</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='6' y='4' width='20' height='6' rx='2' fill='%23ff6f8e'/><rect x='6' y='13' width='20' height='6' rx='2' fill='%234cc9f0'/><rect x='6' y='22' width='20' height='6' rx='2' fill='%23ffd166'/></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="empty">
+    <div id="stage"></div>
+
+    <div class="hero">
+      <div>
+        <h2>Watch a paper build itself.</h2>
+        <p>Paste an arXiv link. Claude reads the method section, and the architecture assembles in 3D.</p>
+      </div>
+    </div>
+
+    <header class="topbar">
+      <div class="brand"><span class="logo"><i></i><i></i><i></i></span>Paperforge</div>
+      <form id="forge-form" class="forge-form" autocomplete="off">
+        <input id="url" type="text" spellcheck="false" placeholder="Paste an arXiv link — e.g. https://arxiv.org/abs/1706.03762" />
+        <button type="submit">Forge</button>
+      </form>
+      <div class="examples">
+        <span>Try</span>
+        <button data-paper="1706.03762">Attention Is All You Need</button>
+        <button data-paper="1512.03385">ResNet</button>
+        <button data-paper="2010.11929">ViT</button>
+      </div>
+    </header>
+
+    <section id="title" class="title-card" hidden>
+      <div class="tc-paper"></div>
+      <h1 class="tc-model"></h1>
+      <p class="tc-summary"></p>
+      <div class="tc-hparams"></div>
+    </section>
+
+    <div id="status" class="status" hidden><span class="spinner"></span><span class="status-text"></span></div>
+
+    <section id="paper" class="paper">
+      <div class="paper-stack"></div>
+      <div class="paper-sheet">
+        <div class="paper-head"><span class="paper-id"></span><span class="paper-page"></span></div>
+        <div class="paper-body"></div>
+        <div class="paper-scan"></div>
+        <button class="paper-close" title="Close">×</button>
+      </div>
+    </section>
+
+    <aside id="inspector" class="inspector" hidden></aside>
+
+    <nav id="controls" class="controls" hidden>
+      <button data-action="skip" class="skip">Skip ▸▸</button>
+      <button data-action="replay">↺ Replay</button>
+      <button data-action="explode">Explode</button>
+      <button data-action="labels" class="on">Labels</button>
+      <button data-action="pulse" class="on">Pulse</button>
+      <button data-action="paper">Paper</button>
+    </nav>
+
+    <div id="hint" class="hint">Hover any block to see the sentence it came from · drag to orbit · scroll to zoom</div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
