@@ -143,8 +143,14 @@ export function cleanMotion(m: MotionArtifact, graph: Architecture, journey: Jou
   return { steps };
 }
 
-/** True when every animated step is a step of this walkthrough (a sample made for another graph isn't). */
+/** The share of walkthrough steps motion must animate: one for the input alone isn't a walkthrough. */
+export const MIN_COVERAGE = 0.5;
+
+/**
+ * True when every animated step is a step of this walkthrough (a sample made for another graph
+ * isn't) and at least half the walkthrough is animated (VGG16 once got the input step only).
+ */
 export const motionFits = (m: MotionArtifact, journey: JourneyArtifact) => {
   const steps = new Set(journey.steps.map((s) => s.block_id));
-  return m.steps.length > 0 && m.steps.every((s) => steps.has(s.block_id));
+  return m.steps.length >= Math.ceil(journey.steps.length * MIN_COVERAGE) && m.steps.length > 0 && m.steps.every((s) => steps.has(s.block_id));
 };

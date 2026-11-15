@@ -79,6 +79,15 @@ describe("artifacts", () => {
     expect(await store.getArtifact("1706.03762", "journey")).toEqual(w);
   });
 
+  test("replace overwrites a saved artifact (only for one found unusable)", async () => {
+    const store = memory();
+    const w = await load("journey");
+    await store.putArtifact("1706.03762", "journey", w);
+    const other = { ...w, intro: "Better" };
+    expect(await store.putArtifact("1706.03762", "journey", other, { replace: true })).toBe("created");
+    expect(((await store.getArtifact("1706.03762", "journey")) as { intro: string }).intro).toBe("Better");
+  });
+
   test("missing artifact is null", async () => {
     expect(await memory().getArtifact("1706.03762", "journey")).toBeNull();
   });

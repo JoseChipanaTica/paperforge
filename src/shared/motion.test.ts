@@ -75,9 +75,16 @@ describe("cleanMotion", () => {
 });
 
 describe("motionFits", () => {
+  const all = () => motion(ids.map((block_id) => ({ block_id, ops: [op({})] })));
+
+  test("motion that animates only a corner of the walkthrough doesn't fit", () => {
+    expect(motionFits(motion([{ block_id: ids[0]!, ops: [op({})] }]), journey)).toBe(false); // VGG16: 1 of 18
+    expect(motionFits(motion(all().steps.slice(0, Math.ceil(ids.length / 2))), journey)).toBe(true);
+  });
+
   test("true for the journey's blocks, false for a block the journey doesn't visit", () => {
-    expect(motionFits(motion([{ block_id: ids[0]!, ops: [op({})] }]), journey)).toBe(true);
-    expect(motionFits(motion([{ block_id: "elsewhere", ops: [op({})] }]), journey)).toBe(false);
+    expect(motionFits(all(), journey)).toBe(true);
+    expect(motionFits(motion([...all().steps, { block_id: "elsewhere", ops: [op({})] }]), journey)).toBe(false);
   });
 });
 

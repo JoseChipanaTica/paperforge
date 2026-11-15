@@ -17,7 +17,8 @@ export interface Store {
   publishPaper(id: string, arch: Architecture): Promise<"created" | "exists">;
   /** Learning artifacts for published papers; first save wins, like papers. */
   getArtifact(id: string, kind: LearnKind): Promise<AnyArtifact | null>;
-  putArtifact(id: string, kind: LearnKind, artifact: AnyArtifact): Promise<"created" | "exists">;
+  /** `replace` overwrites: only for a saved artifact found unusable (it would otherwise stay forever). */
+  putArtifact(id: string, kind: LearnKind, artifact: AnyArtifact, opts?: { replace?: boolean }): Promise<"created" | "exists">;
   listArtifactKinds(id: string): Promise<LearnKind[]>;
   /** Translations of published (or sample) text, keyed by a hash of the English; first save wins. */
   getTranslation(hash: string, lang: Lang, level: Level, kind: TranslateKind): Promise<TranslatedText | null>;
@@ -131,13 +132,17 @@ export function createStore(url: string): Store {
       return row ? (ARTIFACT_SCHEMA[kind].parse(fromJson(row.content)) as AnyArtifact) : null;
     },
 
-    async putArtifact(id, kind, artifact) {
+    async putArtifact(id, kind, artifact, opts = {}) {
       const a = ARTIFACT_SCHEMA[kind].parse(artifact);
       await init();
-      const result = await db`
-        insert into artifacts (arxiv_id, kind, content, created_at)
-        values (${id}, ${kind}, ${toJson(a)}, ${new Date().toISOString()})
-        on conflict (arxiv_id, kind) do nothing`;
+      const [content, at] = [toJson(a), new Date().toISOString()];
+      const result = opts.replace
+        ? await db`
+            insert into artifacts (arxiv_id, kind, content, created_at) values (${id}, ${kind}, ${content}, ${at})
+            on conflict (arxiv_id, kind) do update set content = excluded.content, created_at = excluded.created_at`
+        : await db`
+            insert into artifacts (arxiv_id, kind, content, created_at) values (${id}, ${kind}, ${content}, ${at})
+            on conflict (arxiv_id, kind) do nothing`;
       return result.count > 0 ? "created" : "exists";
     },
 

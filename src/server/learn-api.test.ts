@@ -270,7 +270,7 @@ describe("POST /api/inside", () => {
 describe("POST /api/learn, motion", () => {
   const ids = journey.steps.map((s) => s.block_id);
   const linear = { kind: "linear", caption: "Mix", tokens: [], input: [[1, 2]], weights: [[1], [1]], extra: [], fn: "", size: 1, stride: 1, count: 1, svg: "" };
-  const motion = { steps: [{ block_id: ids[1]!, ops: [linear] }, { block_id: ids[2]!, ops: [linear] }] } as AnyArtifact;
+  const motion = { steps: ids.map((block_id) => ({ block_id, ops: [linear] })) } as AnyArtifact;
 
   test("motion without a journey is bad_input", async () => {
     const e = await learn({ arxiv_id: ID, kind: "motion", graph }, deps(createStore("sqlite://:memory:")));
@@ -310,9 +310,30 @@ describe("POST /api/learn, motion", () => {
     const theirs = { ...journey, steps: journey.steps.map((s) => ({ ...s, block_id: `x_${s.block_id}` })) };
     await store.putArtifact(ID, "journey", theirs);
     await Bun.write(join(samplesDir, `${ID}.motion.json`), JSON.stringify(motion));
-    next = { steps: [{ block_id: `x_${ids[1]}`, ops: [linear] }] } as AnyArtifact;
+    next = { steps: ids.map((id) => ({ block_id: `x_${id}`, ops: [linear] })) } as AnyArtifact;
     const e = await learn({ arxiv_id: ID, kind: "motion" }, deps(store));
     expect(e).toMatchObject({ type: "learn", source: "claude" });
+  });
+
+  test("motion covering too little of the walkthrough fails and isn't saved", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    await store.putArtifact(ID, "journey", journey);
+    next = { steps: [{ block_id: ids[0]!, ops: [linear] }] } as AnyArtifact;
+    const e = await learn({ arxiv_id: ID, kind: "motion" }, deps(store));
+    expect(e).toMatchObject({ type: "error", message: "Couldn't animate this model." });
+    expect(await store.getArtifact(ID, "motion")).toBeNull();
+  });
+
+  test("a stored motion that covers too little is regenerated and replaced (VGG16's 1-of-18)", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    await store.putArtifact(ID, "journey", journey);
+    await store.putArtifact(ID, "motion", { steps: [{ block_id: ids[0]!, ops: [linear] }] } as AnyArtifact);
+    next = motion;
+    const e = await learn({ arxiv_id: ID, kind: "motion" }, deps(store));
+    expect(e).toMatchObject({ type: "learn", source: "claude", saved: true });
+    expect(((await store.getArtifact(ID, "motion")) as { steps: unknown[] }).steps.length).toBe(ids.length);
   });
 
   test("zero usable steps fails and isn't saved", async () => {

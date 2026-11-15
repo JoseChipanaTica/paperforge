@@ -109,9 +109,12 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
       const journey = found?.journey ?? null;
       if (k === "motion" && !journey) return fail("Open the walkthrough first.", "bad_input");
       const fits = (a: AnyArtifact) => k !== "motion" || motionFits(a as MotionArtifact, journey!);
+      // A saved artifact that doesn't fit (e.g. motion for 1 of 18 steps) is replaced, not served forever.
+      let unusable = false;
       if (published) {
         const saved = await d.store.getArtifact(id, k).catch(() => null);
         if (saved && fits(saved)) return emit({ type: "learn", kind: k, artifact: saved, source: "gallery", saved: true });
+        unusable = saved !== null;
       }
       const sample = await readSample(d.samplesDir, id, k, published);
       if (sample && fits(sample)) return emit({ type: "learn", kind: k, artifact: sample, source: "sample", saved: false });
@@ -125,13 +128,13 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
       const pages = await d.loadPages(id);
       const generated = await d.generate(k, { pages, graph, apiKey, ...(journey && { journey }) });
       const artifact = k === "motion" ? cleanMotion(generated as MotionArtifact, graph, journey) : pruneArtifact(k, generated, graph);
-      if (!isUsable(k, artifact)) return fail(UNUSABLE[k]);
+      if (!isUsable(k, artifact) || !fits(artifact)) return fail(UNUSABLE[k]);
 
       // Only shared inputs make shared results: motion from a visitor's own walkthrough isn't saved.
       if (!published || found?.posted) return emit({ type: "learn", kind: k, artifact, source: "claude", saved: false });
       try {
         // First save wins: if another visitor's landed meanwhile, show everyone that one.
-        const result = await d.store.putArtifact(id, k, artifact);
+        const result = await d.store.putArtifact(id, k, artifact, { replace: unusable });
         const stored = result === "exists" ? await d.store.getArtifact(id, k) : artifact;
         emit({ type: "learn", kind: k, artifact: stored ?? artifact, source: "claude", saved: true });
       } catch (err) {
