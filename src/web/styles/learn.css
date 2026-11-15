@@ -47,3 +47,15 @@
 
 /* PyTorch: the code view renders straight into its tab. */
 .tabpanel-pytorch { display: flex; flex-direction: column; }
+
+/* The journey: the analogy up top, the input and output framing the steps, what the card shows. */
+.step-analogy { padding: var(--s3) var(--s4); margin-bottom: var(--s4); background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: var(--r-print); }
+.step-analogy h3 { font: 500 var(--t-base) var(--display); }
+.step-analogy p { font: var(--t-sm) / 1.6 var(--serif); color: var(--ink-soft); margin-top: var(--s1); }
+.step-moment { font: var(--t-sm) / 1.5 var(--mono); color: var(--ink); }
+.step-moment span { font: 500 var(--t-xs) var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--vermilion); margin-right: var(--s1); }
+.step-note { font: italic var(--t-xs) var(--serif); color: var(--ink-faint); }
+.step-what b { font-weight: 600; }
+.step-body p + p { margin-top: var(--s2); }
+.step-shape { font: var(--t-xs) var(--mono); color: var(--ink-soft); }
+.step-views { margin: var(--s2) 0 0; padding-left: 1.2em; font: italic var(--t-sm) / 1.5 var(--serif); color: var(--ink-soft); }

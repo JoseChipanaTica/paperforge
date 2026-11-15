@@ -1,19 +1,46 @@
 import type { LocatedArchitecture } from "../shared/graph";
 import { escapeHtml } from "./scene";
-import type { TourDriver, TourScript } from "./tour";
+import type { TourDriver, TourScript, TourStep } from "./tour";
+import { shapeHtml } from "./trace";
 
 /**
- * The walkthrough as a list in the study panel: intro, every step, outro, with the
- * current step marked and Back / Play / Next pinned at the bottom. The camera follows.
+ * The walkthrough as a list in the study panel: the analogy, the input, every step, the output,
+ * with the current step marked and Back / Play / Next pinned at the bottom. The camera and the
+ * specimen follow.
  */
-export function renderSteps(root: HTMLElement, script: TourScript, graph: LocatedArchitecture, driver: TourDriver, start = -1) {
+
+/** One step: what happens in a plain sentence, why, the shape change (traceable), what the specimen shows. */
+export function stepHtml(s: TourStep, traced: string | null): string {
+  return `
+    <p class="step-what"><b>${escapeHtml(s.what)}</b></p>
+    <p>${escapeHtml(s.body)}</p>
+    ${s.shape ? `<p class="step-shape">${shapeHtml(s.shape, traced)}</p>` : ""}
+    ${s.views.length ? `<ul class="step-views" aria-label="On the card">${s.views.map((v) => `<li>${escapeHtml(v.caption)}</li>`).join("")}</ul>` : ""}`;
+}
+
+export function renderSteps(
+  root: HTMLElement,
+  script: TourScript,
+  graph: LocatedArchitecture,
+  driver: TourDriver,
+  start = -1,
+  onTrace: (token: string) => void = () => {},
+  traced: string | null = null,
+) {
   const label = (blockId: string) => graph.blocks.find((b) => b.id === blockId)?.label ?? blockId;
+  const captions = (views: { caption: string }[]) =>
+    views.length ? `<ul class="step-views">${views.map((v) => `<li>${escapeHtml(v.caption)}</li>`).join("")}</ul>` : "";
   root.innerHTML = `
     <div class="steps">
+      <aside class="step-analogy">
+        <h3>${escapeHtml(script.analogy.title)}</h3>
+        <p>${escapeHtml(script.analogy.text)}</p>
+      </aside>
       <section class="step step-intro" data-index="-1">
-        <h3>${escapeHtml(script.intro.title)}</h3>
-        <p>${escapeHtml(script.intro.body).replace(/\n/g, "<br>")}</p>
-        <code>${escapeHtml(script.intro.label)}</code>
+        <p>${escapeHtml(script.intro.body)}</p>
+        <p class="step-moment"><span>Input</span> ${escapeHtml(script.intro.label)}</p>
+        ${captions(script.intro.views)}
+        <p class="step-note">Values are illustrative</p>
       </section>
       <ol class="step-list">
         ${script.steps
@@ -24,16 +51,14 @@ export function renderSteps(root: HTMLElement, script: TourScript, graph: Locate
               <span class="step-n">${i + 1}</span>
               <span class="step-title">${escapeHtml(s.title || label(s.block_id))}</span>
             </button>
-            <div class="step-body">
-              <p><b>${escapeHtml(s.what)}</b></p>
-              <p>${escapeHtml(s.body)}</p>
-              ${s.shape ? `<code>${escapeHtml(s.shape)}</code>` : ""}
-            </div>
+            <div class="step-body">${stepHtml(s, traced)}</div>
           </li>`,
           )
           .join("")}
       </ol>
       <section class="step step-outro" data-index="${script.steps.length}">
+        <p class="step-moment"><span>Output</span> ${escapeHtml(script.output.label)}</p>
+        ${captions(script.output.views)}
         <p>${escapeHtml(script.outro)}</p>
       </section>
     </div>
@@ -68,6 +93,8 @@ export function renderSteps(root: HTMLElement, script: TourScript, graph: Locate
   driver.onPlaying = playing;
   root.onclick = (e) => {
     const t = e.target as HTMLElement;
+    const dim = t.closest<HTMLElement>("[data-dim]")?.dataset.dim;
+    if (dim) return onTrace(dim);
     const go = t.closest<HTMLElement>("[data-go]")?.dataset.go;
     if (go !== undefined) return driver.goTo(script, Number(go));
     const action = t.closest<HTMLElement>("[data-nav]")?.dataset.nav;

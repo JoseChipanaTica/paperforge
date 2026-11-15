@@ -497,7 +497,7 @@ async function showArtifact(kind: LearnKind, english: AnyArtifact, g: LocatedArc
   // A language or level change mid-tour keeps the visitor on the same step.
   const at = driver.active && tourKind === kind ? driver.index : (tourAt[kind] ?? -1);
   tourKind = kind;
-  renderSteps(panel.tab(kind), script, view, driver, at);
+  renderSteps(panel.tab(kind), script, view, driver, at, (token) => trace(token === tracing ? null : token), tracing);
 }
 
 // ---------- language and level ----------
@@ -583,6 +583,7 @@ function refreshTrace() {
   const t = tracing && g ? traceDim(g, tracing) : null;
   scene.setTrace(t ? new Set(t.blocks.keys()) : null);
   overview.setTraced(t ? t.token : null);
+  for (const el of panel.tab("journey").querySelectorAll<HTMLElement>(".dim")) el.setAttribute("aria-pressed", String(el.dataset.dim === t?.token));
   traceCard.hidden = !t;
   traceCard.innerHTML = t && g ? traceCardHtml(t, g) : "";
 }
