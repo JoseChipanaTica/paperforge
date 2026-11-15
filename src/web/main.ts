@@ -26,6 +26,7 @@ import { StudyPanel } from "./studyPanel";
 import { assemble } from "./timeline";
 import { traceCardHtml, traceDim } from "./trace";
 import { renderSteps } from "./stepsView";
+import { Specimen } from "./specimen";
 import { TourDriver, tourSteps } from "./tour";
 import { revealSymbol, showCode } from "./codeView";
 
@@ -35,7 +36,8 @@ const scene = new ForgeScene($("#stage"));
 const paper = new PaperView($("#paper"));
 const statusEl = $("#status");
 const controls = $("#controls");
-const driver = new TourDriver(scene);
+const specimen = new Specimen(scene);
+const driver = new TourDriver(scene, specimen);
 const panel = new StudyPanel($("#panel"));
 const sheet = new Sheet($("#panel"), $<HTMLButtonElement>(".sheet-handle"));
 // On phones, tapping a tab opens the sheet to half.
@@ -362,6 +364,7 @@ panel.onSelect = (tab) => {
   if (tourKind && tab !== tourKind && driver.active) {
     tourAt[tourKind] = driver.index;
     driver.pause();
+    specimen.hide(); // it comes back on the same step when the tab does
   }
   const again = tab === openTab;
   openTab = tab;

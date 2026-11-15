@@ -38,7 +38,13 @@ export function tourSteps(a: JourneyArtifact): TourScript {
   };
 }
 
-const PLAY_MS = 4000;
+/** Where the tour's data is drawn (specimen.ts); the tour says what to show and where. */
+export interface SpecimenHost {
+  show(views: View[], at: string, from: string | null, run: Run): Promise<void>;
+  hide(): void;
+}
+
+const PLAY_MS = 4500;
 
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -56,7 +62,10 @@ export class TourDriver {
   // Where a stopped tour was, so Next / Back / Play pick it up again after Esc.
   private resume: { script: TourScript; index: number } | null = null;
 
-  constructor(private scene: ForgeScene) {}
+  constructor(
+    private scene: ForgeScene,
+    private specimen: SpecimenHost | null = null,
+  ) {}
 
   get active() {
     return this.script !== null;
@@ -67,6 +76,7 @@ export class TourDriver {
   }
 
   goTo(script: TourScript, index: number) {
+    const before = this.script ? this.index : null;
     this.script = script;
     this.index = Math.max(-1, Math.min(script.steps.length, index));
     const step = script.steps[this.index];
@@ -75,7 +85,22 @@ export class TourDriver {
     if (reducedMotion()) this.run.skip(); // cut instead of flying
     this.scene.highlight(step?.block_id ?? null);
     void this.scene.focusOn(step?.block_id ?? null, this.run);
+    this.showData(script, before);
     this.onIndex(this.index);
+  }
+
+  /** The data at this point: the input at the first block, each step's result, the output at the last. */
+  private showData(script: TourScript, before: number | null) {
+    const n = script.steps.length;
+    if (!this.specimen || !n) return;
+    const i = this.index;
+    const [views, at] =
+      i < 0 ? [script.intro.views, script.steps[0]!.block_id]
+      : i >= n ? [script.output.views, script.steps[n - 1]!.block_id]
+      : [script.steps[i]!.views, script.steps[i]!.block_id];
+    // Only a step to the next (or previous) block travels along the wire; a jump just appears.
+    const from = i >= 0 && i < n && before !== null && before >= 0 && before < n && Math.abs(before - i) === 1 ? script.steps[before]!.block_id : null;
+    void this.specimen.show(views, at, from, this.run);
   }
 
   /** The tour to step through: the running one, or the one Esc stopped. */
@@ -126,6 +151,7 @@ export class TourDriver {
   stop() {
     this.pause();
     this.run.cancel();
+    this.specimen?.hide();
     if (!this.script) return;
     this.resume = { script: this.script, index: this.index };
     this.script = null;
