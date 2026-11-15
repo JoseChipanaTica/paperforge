@@ -72,7 +72,25 @@ Reading a paper takes a minute or two the first time, and it's instant after tha
 | `bun test` | Unit tests: link parsing, quote matching, layout, sample checks |
 | `bun run typecheck` | TypeScript check |
 
-Settings in `.env`: `ANTHROPIC_API_KEY` (required to read new papers), `PAPERFORGE_EFFORT` (`low`, `medium` (the default), or `high`; higher is slower but more careful), and `PORT`.
+You can also skip `.env` and paste your key into **API key** in the top bar; it stays in your browser.
+
+Settings in `.env` (see `.env.example`): `ANTHROPIC_API_KEY` (local fallback key), `PAPERFORGE_EFFORT` (`low`, `medium` (the default), or `high`; higher is slower but more careful), `DATABASE_URL` (gallery database; unset uses `data/paperforge.db`), `PAPERFORGE_SECRET`, and `PORT`.
+
+### The gallery
+
+After Claude builds a new paper, **Publish to gallery** saves its 3D model so anyone can open it instantly, no key needed, and gives you a link to share. Each paper is published once; the first save stays. Only the model is saved, never the paper's text: viewers' copies of the paper come straight from arXiv.
+
+## Deploy your own
+
+Paperforge runs on Vercel's Bun runtime as is (`vercel.json`), with visitors bringing their own Anthropic key.
+
+1. Import the repo into Vercel (or run `vercel` in the repo).
+2. In the project's **Storage** tab, add **Neon** from the Marketplace and connect it. Make sure the project has a `DATABASE_URL` env var with the Neon connection string; if the integration names it differently (e.g. `POSTGRES_URL`), add `DATABASE_URL` with the same value.
+3. Add `PAPERFORGE_SECRET` (`openssl rand -hex 32`).
+4. Do **not** set `ANTHROPIC_API_KEY`: on the hosted site every visitor uses their own.
+5. Deploy. The gallery table is created on first use.
+
+Forging takes a minute or two; `vercel.json` allows the function up to 300 seconds (the Hobby limit).
 
 ### Viewer controls
 
