@@ -43,6 +43,23 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .examples button { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; color: var(--text); font-size: 12px; }
 .examples button:hover { border-color: rgba(255, 255, 255, 0.35); }
 
+.key { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.key button { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; font-size: 12px; color: var(--muted); }
+.key button.set { color: var(--text); }
+.key input { width: 220px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; color: var(--text); font: 12px var(--mono); padding: 6px 8px; outline: 0; }
+.key input:focus { border-color: rgba(255, 255, 255, 0.35); }
+
+/* ---------- gallery (empty state) ---------- */
+.gallery { position: fixed; left: 0; right: 0; bottom: 6vh; z-index: 3; display: grid; justify-items: center; gap: 10px; padding: 0 16px; }
+body:not(.empty) .gallery { display: none; }
+.gallery h3 { margin: 0; font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.gallery-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 980px; max-height: 32vh; overflow: auto; }
+.gallery-card { display: grid; gap: 2px; text-align: left; width: 220px; padding: 10px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.gallery-card:hover { border-color: rgba(255, 255, 255, 0.35); }
+.gallery-card span { font-size: 12px; color: #c3cad9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gallery-card small { font: 11px var(--mono); color: var(--muted); }
+.gallery-note { margin: 0; font-size: 12px; color: var(--muted); }
+
 /* ---------- title card ---------- */
 .title-card { position: fixed; left: 24px; top: 84px; z-index: 10; max-width: 340px; pointer-events: none; transition: opacity 0.6s; }
 .assembling .title-card { opacity: 0; }
@@ -149,6 +166,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .controls button:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
 .controls button.on { color: var(--text); background: rgba(255, 255, 255, 0.09); }
 .controls .skip { display: none; color: var(--text); }
+.controls .publish { color: var(--accent); }
 .assembling .controls .skip { display: block; }
 .assembling .controls button:not(.skip) { display: none; }
 

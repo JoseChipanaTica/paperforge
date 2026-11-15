@@ -35,3 +35,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # paperforge: downloaded PDFs, extracted text, Claude results
 data/
+
+# superpowers plan workspaces (ledgers, briefs)
+.superpowers/

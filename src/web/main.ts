@@ -2,6 +2,7 @@ import "katex/dist/katex.min.css";
 import type { ForgeEvent, LocatedArchitecture } from "../shared/graph";
 import { Run, ease } from "./anim";
 import { TYPE_COLOR } from "./blocks";
+import { loadGallery } from "./gallery";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
 import { assemble } from "./timeline";
@@ -18,6 +19,51 @@ let run = new Run();
 let graph: LocatedArchitecture | null = null;
 let pages: string[] = [];
 let pinned: string | null = null;
+// The graph exactly as the server signed it: publishing re-checks the signature, so never mutate this.
+let rawGraph: LocatedArchitecture | null = null;
+let saveToken: string | null = null;
+
+// ---------- API key (bring your own; stays in this browser) ----------
+
+const KEY_STORAGE = "paperforge.key";
+const keyInput = $<HTMLInputElement>("#key");
+const keyToggle = $("#key-toggle");
+
+function storedKey(): string {
+  try {
+    return localStorage.getItem(KEY_STORAGE) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function syncKey() {
+  keyToggle.classList.toggle("set", !!storedKey());
+  keyToggle.textContent = storedKey() ? "API key ✓" : "API key";
+}
+
+function openKey() {
+  keyInput.hidden = false;
+  keyInput.value = storedKey();
+  keyInput.focus();
+}
+
+keyToggle.addEventListener("click", () => (keyInput.hidden ? openKey() : (keyInput.hidden = true)));
+keyInput.addEventListener("change", () => {
+  try {
+    const key = keyInput.value.trim();
+    if (key) localStorage.setItem(KEY_STORAGE, key);
+    else localStorage.removeItem(KEY_STORAGE);
+  } catch {}
+  syncKey();
+});
+keyInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    keyInput.dispatchEvent(new Event("change"));
+    keyInput.hidden = true;
+  }
+});
+syncKey();
 
 // ---------- forging ----------
 
@@ -35,12 +81,15 @@ async function forgePaper(input: string, refresh = false) {
   setStatus("Fetching paper…");
   inspector.hidden = true;
   pinned = null;
+  rawGraph = saveToken = shareUrl = null;
+  syncPublish();
 
+  const key = storedKey();
   let res: Response;
   try {
     res = await fetch("/api/forge", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(key && { "x-anthropic-key": key }) },
       body: JSON.stringify({ url: input, refresh }),
     });
   } catch {
@@ -78,6 +127,9 @@ async function handle(e: ForgeEvent, myRun: Run) {
       history.replaceState(null, "", `?paper=${encodeURIComponent(e.arxiv_id)}`);
       break;
     case "graph":
+      rawGraph = structuredClone(e.graph);
+      saveToken = e.save_token ?? null;
+      syncPublish();
       graph = e.graph;
       paper.stopReading();
       setStatus(null);
@@ -87,6 +139,7 @@ async function handle(e: ForgeEvent, myRun: Run) {
     case "error":
       paper.stopReading();
       setStatus(e.message, true);
+      if (e.code === "needs_key") openKey();
       break;
   }
 }
@@ -173,6 +226,43 @@ function closePaper() {
   syncToggles();
 }
 
+// ---------- publishing ----------
+
+const publishBtn = controls.querySelector<HTMLButtonElement>('[data-action="publish"]')!;
+let shareUrl: string | null = null;
+
+function syncPublish(label = "Publish to gallery") {
+  publishBtn.hidden = !saveToken && !shareUrl;
+  publishBtn.textContent = shareUrl ? "Copy link" : label;
+}
+
+async function publish() {
+  if (shareUrl) {
+    await navigator.clipboard?.writeText(shareUrl).catch(() => {});
+    syncPublish();
+    publishBtn.textContent = "Link copied";
+    return;
+  }
+  if (!rawGraph || !saveToken) return;
+  publishBtn.textContent = "Publishing…";
+  const res = await fetch("/api/papers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph: rawGraph, save_token: saveToken }),
+  }).catch(() => null);
+  const body = ((await res?.json().catch(() => null)) ?? {}) as { arxiv_id?: string; error?: string };
+  if (res && (res.status === 201 || res.status === 409)) {
+    saveToken = null;
+    shareUrl = `${location.origin}/?paper=${encodeURIComponent(body.arxiv_id ?? rawGraph.arxiv_id)}`;
+    syncPublish();
+    setStatus(res.status === 201 ? "Published to the gallery." : "Already in the gallery — Copy link shares that version.");
+    setTimeout(() => setStatus(null), 3500);
+  } else {
+    syncPublish();
+    setStatus(body.error ?? "Couldn't publish right now.", true);
+  }
+}
+
 // ---------- controls ----------
 
 function syncToggles() {
@@ -218,6 +308,9 @@ controls.addEventListener("click", (e) => {
       if (scene.pulsing) scene.pulsing = false;
       else scene.startPulse();
       break;
+    case "publish":
+      void publish();
+      break;
     case "paper":
       if (paper.visible) closePaper();
       else void openPaper(pinned ?? undefined);
@@ -246,6 +339,13 @@ window.addEventListener("keydown", (e) => {
   if (e.key === " " && document.body.classList.contains("assembling")) run.skip();
   if (e.key === "Escape") closePaper();
 });
+
+if (document.body.classList.contains("empty")) {
+  void loadGallery($("#gallery"), (id) => {
+    $<HTMLInputElement>("#url").value = id.includes("/") ? id : `https://arxiv.org/abs/${id}`;
+    void forgePaper(id);
+  });
+}
 
 const initial = new URLSearchParams(location.search).get("paper");
 if (initial) {

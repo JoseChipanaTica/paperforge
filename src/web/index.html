@@ -32,7 +32,13 @@
         <button data-paper="1512.03385">ResNet</button>
         <button data-paper="2010.11929">ViT</button>
       </div>
+      <div class="key">
+        <button id="key-toggle" type="button" title="Your Anthropic API key stays in this browser">API key</button>
+        <input id="key" type="password" spellcheck="false" autocomplete="off" placeholder="sk-ant-…" hidden />
+      </div>
     </header>
+
+    <section id="gallery" class="gallery"></section>
 
     <section id="title" class="title-card" hidden>
       <div class="tc-paper"></div>
@@ -62,6 +68,7 @@
       <button data-action="labels" class="on">Labels</button>
       <button data-action="pulse" class="on">Pulse</button>
       <button data-action="paper">Paper</button>
+      <button data-action="publish" class="publish" hidden>Publish to gallery</button>
     </nav>
 
     <div id="hint" class="hint">Hover any block to see the sentence it came from · drag to orbit · scroll to zoom</div>
