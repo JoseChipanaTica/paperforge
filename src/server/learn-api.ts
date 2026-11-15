@@ -105,7 +105,8 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
     try {
       const published = await publishedGraph(d.store, id);
       // Motion animates a walkthrough: the one everyone sees for this paper, else the visitor's own.
-      const journey = k === "motion" ? await journeyFor(d, id, published, body?.journey) : null;
+      const found = k === "motion" ? await journeyFor(d, id, published, body?.journey) : null;
+      const journey = found?.journey ?? null;
       if (k === "motion" && !journey) return fail("Open the walkthrough first.", "bad_input");
       const fits = (a: AnyArtifact) => k !== "motion" || motionFits(a as MotionArtifact, journey!);
       if (published) {
@@ -126,7 +127,8 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
       const artifact = k === "motion" ? cleanMotion(generated as MotionArtifact, graph, journey) : pruneArtifact(k, generated, graph);
       if (!isUsable(k, artifact)) return fail(UNUSABLE[k]);
 
-      if (!published) return emit({ type: "learn", kind: k, artifact, source: "claude", saved: false });
+      // Only shared inputs make shared results: motion from a visitor's own walkthrough isn't saved.
+      if (!published || found?.posted) return emit({ type: "learn", kind: k, artifact, source: "claude", saved: false });
       try {
         // First save wins: if another visitor's landed meanwhile, show everyone that one.
         const result = await d.store.putArtifact(id, k, artifact);
@@ -155,16 +157,24 @@ const UNUSABLE: Record<LearnKind, string> = {
   motion: "Couldn't animate this model.",
 };
 
-/** The walkthrough motion follows: published (gallery), then the committed sample, then the one posted. */
-async function journeyFor(d: LearnDeps, id: string, published: Architecture | null, posted: unknown): Promise<JourneyArtifact | null> {
+/**
+ * The walkthrough motion follows: published (gallery), then the committed sample, then the one the
+ * visitor posted (`posted`: its motion is never saved for everyone).
+ */
+async function journeyFor(
+  d: LearnDeps,
+  id: string,
+  published: Architecture | null,
+  body: unknown,
+): Promise<{ journey: JourneyArtifact; posted: boolean } | null> {
   if (published) {
     const saved = await d.store.getArtifact(id, "journey").catch(() => null);
-    if (saved) return saved as JourneyArtifact;
+    if (saved) return { journey: saved as JourneyArtifact, posted: false };
   }
   const sample = await readSample(d.samplesDir, id, "journey", published);
-  if (sample) return sample as JourneyArtifact;
-  const parsed = JourneyArtifact.safeParse(posted);
-  return parsed.success ? parsed.data : null;
+  if (sample) return { journey: sample as JourneyArtifact, posted: false };
+  const parsed = JourneyArtifact.safeParse(body);
+  return parsed.success ? { journey: parsed.data, posted: true } : null;
 }
 
 function parseHistory(raw: unknown): AskTurn[] | null {

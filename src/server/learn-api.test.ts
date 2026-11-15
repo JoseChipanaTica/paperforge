@@ -294,6 +294,15 @@ describe("POST /api/learn, motion", () => {
     expect(calls[0]!.journey!.intro).toBe(journey.intro);
   });
 
+  test("a published paper's motion built from a visitor's posted journey is shown but never saved", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    next = motion;
+    const e = await learn({ arxiv_id: ID, kind: "motion", journey }, deps(store));
+    expect(e).toMatchObject({ type: "learn", source: "claude", saved: false });
+    expect(await store.getArtifact(ID, "motion")).toBeNull();
+  });
+
   test("a motion sample that doesn't fit the published journey isn't served", async () => {
     const store = createStore("sqlite://:memory:");
     const renamed = { ...graph, blocks: graph.blocks.map((b) => ({ ...b, id: `x_${b.id}` })), edges: [] };
