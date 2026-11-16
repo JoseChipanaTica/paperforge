@@ -68,7 +68,7 @@ Reading a paper takes a minute or two the first time, and it's instant after tha
 | Command | What it does |
 | --- | --- |
 | `bun run forge <arxiv-link> [--refresh]` | Run the pipeline in the terminal and print the extracted blocks |
-| `bun run learn <arxiv-link> <pytorch\|walkthrough\|example>` | Generate one learning artifact and print its token usage (including prompt-cache reads) |
+| `bun run learn <arxiv-link> <pytorch\|walkthrough\|example\|training>` | Generate one learning artifact and print its token usage (including prompt-cache reads) |
 | `bun test` | Unit tests: link parsing, quote matching, layout, sample checks |
 | `bun run typecheck` | TypeScript check |
 
@@ -108,6 +108,8 @@ Forging takes a minute or two; `vercel.json` allows the function up to 900 secon
 ### Viewer controls
 
 The model sits on the left and the study panel on the right (on phones the panel is a sheet you drag up from the bottom). Drag to orbit and scroll or pinch to zoom. Hover a block to see the sentence it came from; click it to keep it in **Overview** and ask about it, or use **Show in paper** to jump to that sentence in the **Paper** tab. Press **Space** to skip the assembly animation. **Explode** pulls the model apart, and **Replay** runs the build again. The panel's tabs work from the keyboard (arrow keys between tabs), and during a walkthrough the arrow keys step through it and **Esc** ends it. Share a link straight to a paper with `?paper=<arxiv id>`.
+
+The last walkthrough step offers **Train on this example →**: the same example runs one training step, and the tour walks backward through the model with vermilion heat on the blocks that learn the most.
 
 ## Limitations
 

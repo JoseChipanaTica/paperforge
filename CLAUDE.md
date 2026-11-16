@@ -40,11 +40,16 @@ make that 30-second moment look better or work more reliably. Polish what the ca
   number. `cleanMotion` clamps to 8×8 and turns ops it can't compute into captioned placeholders.
 - `src/shared/svg.ts` — `sanitizeSvg`: rebuilds Claude's SVG from allowlisted elements/attributes (no DOMParser, so
   server and browser run the same code). The only way generated markup reaches the page.
+- `src/shared/train/` — a tiny deterministic trainer: `tensor.ts` (tensors + reverse-mode tape), `gradcheck.ts`,
+  `ops.ts` (toy ops), `loss.ts`, `optim.ts`, `run.ts` (`train(a) → Trace`), `fixtures.ts` (TRANSFORMER_TOY, RAISING_TOY).
+  The browser and tests both run it; Claude never supplies numbers.
+- `src/shared/training.ts` — `TrainingArtifact` schema (the toy model for the walkthrough's example); `cleanTraining`
+  clamps and validates, retrying `lr_toy` ×0.1/×10 when the loss drop is < 1%; `trainingFits`, `optimizerKind`.
 - `src/shared/palette.ts` — the ink colours, shared by the 3D scene, the motion figures and the tutor's SVG rules
 - `src/server/tutor.ts` — Claude calls for learning features. All share one system prompt and one
   `[paper, graph]` prefix with a cache breakpoint; keep it byte-identical and effort fixed. The output
   format is part of the cache: learning kinds share `ANY_ARTIFACT`, inside views `INSIDE_ARTIFACT` (the
-  journey and the block graph together exceed the API's grammar size limit), motion `MOTION_ARTIFACT` (with the
+  journey and the block graph together exceed the API's grammar size limit), motion `MOTION_ARTIFACT` and training `TRAINING_ARTIFACT` (both with the
   walkthrough after the breakpoint).
 - `src/shared/translate.ts` — languages, reading levels (Beginner / Engineer / Researcher), and the prose
   of each graph/artifact (`pickText` / `applyText`). Claude always writes English for an engineer; a
@@ -68,6 +73,9 @@ make that 30-second moment look better or work more reliably. Polish what the ca
     `specimenLayout.ts` (a `View` → cells, pure) + `specimen.ts` (the data as a printed card beside the current
     block; between steps it flies along the wire as a packet), `motion/` (step motion: `compute.ts` the math per op,
     `templates.ts` op → frames, `player.ts` tweens SVG items by id, `figure.ts` the figure under each step),
+    `trainingTour.ts` (trace → `TourScript`, `traceViews`, `trainingHeat`: "Train on this example →" on the last
+    step walks the model backward with vermilion heat via `scene.setHeat`; prefetch only when the kinds list already
+    has training, never an unasked Claude call; `specimenLayout` shows small numbers as compact exponents),
     `codeView.ts` (PyTorch), `learn.ts` (learn/ask/inside clients, request bookkeeping), `lang.ts`
     (language + level pickers, translate client), `trace.ts` (shape tracing: dimensions, aliases via
     hyperparameters, splits like 512 = h × d_k). `main.ts` keeps `graph` (English, signed, sent to the
@@ -75,7 +83,7 @@ make that 30-second moment look better or work more reliably. Polish what the ca
   - `styles/tokens.css` holds every colour, font and spacing token; `blocks.ts` mirrors ink /
     highlighter / vermilion and owns the block palette. One CSS file per component.
 - `samples/` — committed block graphs (`<id>.json`), learning artifacts (`<id>.<kind>.json`, kind `pytorch` or
-  `journey` or `motion`; `bun run learn <url> <kind> --write` regenerates one, motion from the committed journey) and inside
+  `journey` or `motion` or `training`; `bun run learn <url> <kind> --write` regenerates one, motion and training from the committed journey) and inside
   views (`<id>.inside.<block_id>.json`, with `<id>.inside.<block_id>.{journey,motion}.json` for their walkthrough;
   `bun run learn <url> <journey|motion> --inside <block_id> --write`) that seed the cache, so the demo runs without an API key
 
@@ -103,5 +111,5 @@ make that 30-second moment look better or work more reliably. Polish what the ca
 - `bun run dev` — hot-reloading server on http://localhost:3000
 - `bun test` — unit tests (arXiv parsing, quote locator, layout, schema/sample validity)
 - `bun run forge <arxiv-url> [--refresh]` — run the pipeline from the CLI, write cache
-- `bun run learn <arxiv-url> <kind>` — generate one learning artifact, print token usage (cache check)
+- `bun run learn <arxiv-url> <kind>` (`pytorch|journey|motion|training`) — generate one learning artifact, print token usage (cache check)
 - `bunx tsc --noEmit` — type-check
