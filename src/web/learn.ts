@@ -1,6 +1,7 @@
 import type { Architecture, LocatedArchitecture } from "../shared/graph";
 import type { AnyArtifact, AskEvent, AskTurn, InsideEvent, InsideLearnEvent, InsideLearnKind, JourneyArtifact, LearnEvent, LearnKind, View } from "../shared/learn";
 import type { Lang, Level } from "../shared/translate";
+import { claudeHeaders } from "./model";
 
 /** Browser side of the learning features: the /api/learn and /api/ask clients and the code panel. */
 
@@ -13,7 +14,7 @@ export class LearnError extends Error {
   }
 }
 
-const headers = (key: string) => ({ "Content-Type": "application/json", ...(key && { "x-anthropic-key": key }) });
+const headers = claudeHeaders;
 
 async function* lines<T>(res: Response): AsyncGenerator<T> {
   const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();

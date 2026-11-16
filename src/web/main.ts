@@ -4,10 +4,12 @@ import { blockEnds, type AnyArtifact, type JourneyArtifact, type LearnKind, type
 import type { MotionArtifact } from "../shared/motion";
 import { FigureSlot, StepFigure, figureState, type FigureStatus } from "./motion/figure";
 import { locateQuote } from "../shared/locate";
+import { MODELS, modelName, type ModelId } from "../shared/models";
 import { isOriginal, type TranslateKind } from "../shared/translate";
 import { Run } from "./anim";
 import { initLanding } from "./landing";
 import { initReadingPickers, readingMessage, storedReading, translate, type Reading } from "./lang";
+import { chooseModel, chosenModel, claudeHeaders } from "./model";
 import { initToolbar } from "./toolbar";
 import {
   InFlight,
@@ -100,6 +102,24 @@ const keyInput = $<HTMLInputElement>("#key");
 const keyToggle = $("#key-toggle");
 const keyPanel = $("#key-panel");
 
+// The visitor's model, picked next to the key and named wherever we ask for the key.
+const modelSelect = $<HTMLSelectElement>("#model");
+const modelHint = $("#model-hint");
+modelSelect.innerHTML = MODELS.map((m) => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join("");
+modelSelect.value = chosenModel();
+
+function syncModel() {
+  const model = MODELS.find((m) => m.id === chosenModel())!;
+  modelHint.textContent = model.note;
+  for (const el of document.querySelectorAll(".model-name")) el.textContent = model.name;
+}
+
+modelSelect.addEventListener("change", () => {
+  chooseModel(modelSelect.value as ModelId);
+  syncModel();
+});
+syncModel();
+
 function storedKey(): string {
   try {
     return localStorage.getItem(KEY_STORAGE) ?? "";
@@ -174,7 +194,7 @@ async function forgePaper(input: string, refresh = false) {
   try {
     res = await fetch("/api/forge", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(key && { "x-anthropic-key": key }) },
+      headers: claudeHeaders(key),
       body: JSON.stringify({ url: input, refresh }),
     });
   } catch {
@@ -403,7 +423,7 @@ function renderState(kind: TabKind) {
     root.innerHTML = `
       <form class="learn-state key-card">
         <h3>Add your Anthropic API key</h3>
-        <p>Claude writes the ${NAMES[kind]} for this paper using your key. It stays in this browser: Paperforge's server uses it for this request only and never saves or logs it.</p>
+        <p><b class="model-name">${escapeHtml(modelName(chosenModel()))}</b> writes the ${NAMES[kind]} for this paper using your key. It stays in this browser: Paperforge's server uses it for this request only and never saves or logs it.</p>
         <label class="sr-only" for="key-${kind}">Anthropic API key</label>
         <input id="key-${kind}" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" required />
         <button class="btn btn-primary">Save key and write the ${NAMES[kind]}</button>
@@ -427,7 +447,7 @@ function renderState(kind: TabKind) {
     root.innerHTML = `
       <div class="learn-state">
         <h3>${kind === "pytorch" ? "PyTorch code for this model" : "An example, followed through the model"}</h3>
-        <p>Claude writes this from the paper, usually in under a minute, using your API key.</p>
+        <p><b class="model-name">${escapeHtml(modelName(chosenModel()))}</b> writes this from the paper, usually in under a minute, using your API key.</p>
         <button type="button" class="btn btn-primary" data-generate>Write the ${NAMES[kind]}</button>
       </div>`;
     root.querySelector("[data-generate]")!.addEventListener("click", () => void openLearn(kind));
@@ -567,7 +587,7 @@ async function openInsideJourney(blockId: string) {
     root.innerHTML = `
       <div class="learn-state">
         <h3>${e.code === "needs_key" ? "Add your Anthropic API key" : `The walkthrough inside ${escapeHtml(label)} didn't come through`}</h3>
-        <p>${escapeHtml(e.code === "needs_key" ? "Claude writes this walkthrough using your key. Add it in the top bar, then try again." : e.message)}</p>
+        <p>${escapeHtml(e.code === "needs_key" ? `${modelName(chosenModel())} writes this walkthrough using your key. Add it in the top bar, then try again.` : e.message)}</p>
         <button type="button" class="btn btn-primary" data-retry>Try again</button>
       </div>`;
     root.querySelector("[data-retry]")!.addEventListener("click", () => void openInsideJourney(blockId));

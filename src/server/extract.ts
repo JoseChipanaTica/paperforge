@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { Architecture } from "../shared/graph";
+import { currentModel } from "./model";
 
-const MODEL = process.env.PAPERFORGE_MODEL ?? "claude-opus-5-5";
 const EFFORT = (process.env.PAPERFORGE_EFFORT ?? "medium") as "low" | "medium" | "high";
 
 // ~1M-token context; a typical paper is 30–150k chars. Refuse rather than silently truncate.
@@ -35,7 +35,7 @@ export async function extractArchitecture(pages: string[], opts: { apiKey?: stri
   // Per-request client: on the hosted site each visitor brings their own key.
   const client = new Anthropic({ apiKey: opts.apiKey?.trim() || undefined });
   const response = await client.beta.messages.parse({
-    model: MODEL,
+    model: currentModel(),
     max_tokens: 16000,
     system: SYSTEM,
     output_config: { effort: EFFORT, format: betaZodOutputFormat(Architecture) },

@@ -24,6 +24,7 @@ import { DEFAULT_LEVEL, Lang, Level } from "../shared/translate";
 import { errorMessage } from "./api";
 import { parseArxivId } from "./arxiv";
 import { loadPaperPages } from "./forge";
+import { sharesResults } from "./model";
 import { getStore, type Store } from "./store";
 import { ndjson } from "./stream";
 import { askStream, generateArtifact, generateInside, generateInsideLearn } from "./tutor";
@@ -128,7 +129,7 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
       if (!isUsable(k, artifact) || !fits(artifact)) return fail(UNUSABLE[k]);
 
       // Only shared inputs make shared results: motion from a visitor's own walkthrough isn't saved.
-      if (!published || found?.posted) return emit({ type: "learn", kind: k, artifact, source: "claude", saved: false });
+      if (!published || found?.posted || !sharesResults()) return emit({ type: "learn", kind: k, artifact, source: "claude", saved: false });
       try {
         // First save wins: if another visitor's landed meanwhile, show everyone that one.
         const result = await d.store.putArtifact(id, k, artifact, { replace: unusable });
@@ -270,7 +271,7 @@ export async function insideHandler(req: Request, overrides: Partial<LearnDeps> 
       emit({ type: "status", message: `Claude is looking inside ${block.label}…` });
       const pages = await d.loadPages(id);
       const inside = await d.inside(block, { pages, graph, apiKey });
-      if (!published) return done(inside, "claude", false);
+      if (!published || !sharesResults()) return done(inside, "claude", false);
       try {
         // First save wins: if another visitor's landed meanwhile, show everyone that one.
         const result = await d.store.putInside(id, blockId, inside);
@@ -381,7 +382,7 @@ export async function insideLearnHandler(req: Request, overrides: Partial<LearnD
       const artifact = kind === "journey" ? cleanJourney(made as JourneyArtifact, inside) : cleanMotion(made as MotionArtifact, inside, journey);
       if (!isUsable(kind, artifact) || !fits(artifact)) return fail(UNUSABLE[kind]);
 
-      if (!published || !shared || ownEnds) return done(artifact, "claude", false);
+      if (!published || !shared || ownEnds || !sharesResults()) return done(artifact, "claude", false);
       try {
         const result = await d.store.putInsideLearn(id, blockId, kind, artifact, { replace: unusable });
         const stored = result === "exists" ? await d.store.getInsideLearn(id, blockId, kind) : artifact;

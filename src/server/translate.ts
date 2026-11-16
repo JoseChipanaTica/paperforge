@@ -11,12 +11,10 @@ import {
   type TranslateKind,
   type TranslatedText,
 } from "../shared/translate";
+import { currentModel, TIMEOUT_MS } from "./model";
 
 /** Claude call that rewrites the prose of a graph or artifact for a language and reader (see shared/translate.ts). */
 
-const MODEL = process.env.PAPERFORGE_MODEL ?? "claude-opus-5-5";
-// Under Vercel's 300 s function limit; also opts out of the SDK's non-streaming duration guard.
-const TIMEOUT_MS = 290_000;
 
 export const TRANSLATE_SYSTEM = `You translate study material about a deep learning paper for Paperforge, a site that turns papers into 3D models a reader can explore.
 
@@ -32,7 +30,7 @@ const PYTORCH_NOTE = `In "code", change only comments and docstrings. Every othe
 export function translateRequest(kind: TranslateKind, text: TranslatedText, lang: Lang, level: Level) {
   const task = `Write this in ${languageName(lang)}, for ${levelReader(level)}.${kind === "pytorch" ? ` ${PYTORCH_NOTE}` : ""}`;
   return {
-    model: MODEL,
+    model: currentModel(),
     max_tokens: 32000,
     system: TRANSLATE_SYSTEM,
     output_config: { effort: "low" as const, format: betaZodOutputFormat(TEXT_SCHEMA[kind] as (typeof TEXT_SCHEMA)["graph"]) },

@@ -4,6 +4,7 @@ import { fetchArxivPdf, parseArxivId } from "./arxiv";
 import { extractArchitecture } from "./extract";
 import { locateQuote } from "../shared/locate";
 import { extractPages } from "./pdf";
+import { sharesResults } from "./model";
 import { getStore, type Store } from "./store";
 import { getSecret, signGraph } from "./token";
 
@@ -65,7 +66,8 @@ async function loadArchitecture(
   getSecret(); // fail before the visitor pays for a Claude call we couldn't let them publish
   emit({ type: "status", stage: "extract", message: "Claude is reading the paper" });
   const arch = await extract(pages, { apiKey });
-  await Bun.write(cachePath, JSON.stringify(arch, null, 2));
+  // The disk cache serves every later visitor, so only a model that shares results writes it.
+  if (sharesResults()) await Bun.write(cachePath, JSON.stringify(arch, null, 2));
   return { arch, source: "claude" };
 }
 
@@ -114,8 +116,9 @@ export async function forge(
   emit({ type: "status", stage: "locate", message: "Finding each block in the text" });
   const graph = locate(id, arch, pages);
   // Fresh or disk-cached Claude output is this server's own and publishable, so a reload
-  // before clicking Publish keeps the option. Gallery and sample graphs are not.
-  const publishable = source === "claude" || source === "cache";
+  // before clicking Publish keeps the option. Gallery and sample graphs are not, nor graphs
+  // from a model whose results stay with the visitor.
+  const publishable = source === "cache" || (source === "claude" && sharesResults());
   emit({ type: "graph", graph, source, ...(publishable && { save_token: signGraph(graph) }) });
   return graph;
 }

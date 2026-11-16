@@ -15,6 +15,7 @@ import {
 import { errorMessage } from "./api";
 import { parseArxivId } from "./arxiv";
 import { CACHE_DIR } from "./forge";
+import { sharesResults } from "./model";
 import { getStore, type Store } from "./store";
 import { translateText } from "./translate";
 
@@ -125,6 +126,7 @@ export async function translateHandler(req: Request, overrides: Partial<Translat
     const e = errorMessage(err);
     return json({ error: e.message, code: e.code }, e.code === "needs_key" ? 401 : e.code === "rate_limited" ? 429 : 502);
   }
+  if (!sharesResults()) return reply(translated, "claude"); // stays with this visitor: no cache, no gallery
   await Bun.write(cachePath, JSON.stringify(translated));
   if (await isPublic(d, id, k, hash, blockId)) {
     try {

@@ -7,6 +7,7 @@ import { MotionArtifact } from "../shared/motion";
 import { HIGHLIGHTER, INK, SHEET, VERMILION } from "../shared/palette";
 import { DEFAULT_LEVEL, languageName, levelReader, type Lang, type Level } from "../shared/translate";
 import { formatPaper } from "./extract";
+import { currentModel, TIMEOUT_MS } from "./model";
 
 /**
  * The tutor: Claude calls behind the learning features. Every request starts with the same
@@ -15,10 +16,7 @@ import { formatPaper } from "./extract";
  * across kinds, and keep effort fixed (an effort change invalidates the cache).
  */
 
-const MODEL = process.env.PAPERFORGE_MODEL ?? "claude-opus-5-5";
 const EFFORT = "medium" as const;
-// Under Vercel's 300 s function limit; also opts out of the SDK's non-streaming duration guard.
-const TIMEOUT_MS = 290_000;
 // On a safety decline, let the API route to a fallback model inside the same call (as extract.ts).
 const fallback = () => ({ betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const });
 
@@ -159,7 +157,7 @@ function tutorRequest(
   format: typeof ANY_ARTIFACT | typeof INSIDE_ARTIFACT | typeof MOTION_ARTIFACT,
 ) {
   return {
-    model: MODEL,
+    model: currentModel(),
     max_tokens: 32000,
     system: TUTOR_SYSTEM,
     output_config: { effort: EFFORT, format: betaZodOutputFormat(format as typeof ANY_ARTIFACT) },
@@ -196,7 +194,7 @@ export function askRequest({ pages, graph, block, question, history, lang = "en"
     lang === "en" ? "" : ` Answer in ${languageName(lang)}, whatever language the question is in; refer to blocks by their ids as usual.`
   }${level === DEFAULT_LEVEL ? "" : ` Write for ${levelReader(level)}.`}`;
   return {
-    model: MODEL,
+    model: currentModel(),
     max_tokens: 4000,
     system: TUTOR_SYSTEM,
     output_config: { effort: EFFORT },

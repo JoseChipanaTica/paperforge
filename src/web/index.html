@@ -47,7 +47,12 @@
         <button id="key-toggle" type="button" class="btn btn-quiet" title="Your Anthropic key stays in this browser" aria-expanded="false" aria-controls="key-panel">API key</button>
         <div id="key-panel" class="key-panel" hidden>
           <input id="key" type="password" spellcheck="false" autocomplete="off" placeholder="sk-ant-…" aria-label="Anthropic API key" aria-describedby="key-note" />
-          <p id="key-note" class="key-note">Kept only in this browser. It's sent with each request to call Claude and never saved or logged on our server.</p>
+          <label class="key-model">
+            <span>Model</span>
+            <select id="model" aria-describedby="model-hint"></select>
+          </label>
+          <p id="model-hint" class="key-hint"></p>
+          <p id="key-note" class="key-note">Paperforge calls <b class="model-name">Claude</b> with your key. It's kept only in this browser, sent with each request, and never saved or logged on our server.</p>
         </div>
       </div>
     </header>

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Architecture } from "../shared/graph";
 import type { AnyArtifact, AskEvent, InsideEvent, InsideLearnEvent, JourneyArtifact, LearnEvent, LearnKind } from "../shared/learn";
 import { askHandler, insideHandler, insideLearnHandler, kindsHandler, learnHandler, type LearnDeps } from "./learn-api";
+import { withModel } from "./model";
 import { createStore, type Store } from "./store";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
@@ -106,6 +107,16 @@ describe("POST /api/learn", () => {
     expect(e).toMatchObject({ type: "learn", source: "claude", saved: true });
     expect(calls[0]!.graph.model_name).toBe(graph.model_name);
     expect(await store.getArtifact(ID, "journey")).toEqual(journey);
+  });
+
+  test("a model whose results stay with the visitor generates for them but saves nothing", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    const haiku = new Request("http://x/api/learn", { headers: { "x-anthropic-model": "claude-haiku-5-5" } });
+    const res = await withModel(haiku, () => learnHandler(post("/api/learn", { arxiv_id: ID, kind: "journey", graph }), deps(store)));
+    const e = (await events<LearnEvent>(res)).find((e) => e.type === "learn");
+    expect(e).toMatchObject({ type: "learn", source: "claude", saved: false, artifact: journey });
+    expect(await store.getArtifact(ID, "journey")).toBeNull();
   });
 
   test("when another visitor saved first, everyone gets the stored one", async () => {

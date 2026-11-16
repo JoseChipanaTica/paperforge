@@ -49,6 +49,15 @@ body:not(.has-paper) .topbar .forge-form { visibility: hidden; }
 .key input { width: 100%; background: var(--paper); border: 1px solid var(--rule-strong); border-radius: var(--r-control); font: var(--t-xs) var(--mono); padding: 7px 9px; outline: 0; }
 .key input:focus { border-color: var(--ink); background: var(--sheet); }
 .key-note { margin: 0; font: var(--t-xs) / 1.45 var(--ui); color: var(--ink-soft); }
+.key-note b { font-weight: 600; color: var(--ink); }
+.key-model { display: flex; align-items: center; gap: var(--s2); font: var(--t-xs) var(--ui); color: var(--ink-soft); }
+.key-model select {
+  flex: 1; min-width: 0; cursor: pointer; background: var(--paper); color: var(--ink);
+  border: 1px solid var(--rule-strong); border-radius: var(--r-control); font: var(--t-xs) var(--ui); padding: 6px 8px; outline: 0;
+}
+.key-model select:focus-visible { border-color: var(--ink); box-shadow: var(--focus); }
+.key-hint { margin: calc(-1 * var(--s1)) 0 0; font: var(--t-xs) / 1.4 var(--ui); color: var(--ink-faint); }
+.key-note { padding-top: var(--s2); border-top: 1px solid var(--rule); }
 
 @media (max-width: 899px) {
   .topbar { padding: 0 var(--s3); gap: var(--s2); }

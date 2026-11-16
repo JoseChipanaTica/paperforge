@@ -18,6 +18,11 @@ make that 30-second moment look better or work more reliably. Polish what the ca
   LLM, the server and the front end. Change it here and nowhere else.
 - `src/server/arxiv.ts` — parse arXiv ids/URLs, download PDFs
 - `src/server/pdf.ts` — pdf.js (`pdfjs-dist/legacy`) text extraction, one string per page
+- `src/shared/models.ts` — the Claude models a visitor can pick (Opus 5.5 default, Fable 5.1, Sonnet 5.5, Haiku 5.5);
+  the browser sends the pick as `x-anthropic-model` (`web/model.ts`), the server accepts only ids from this list.
+  Only `shares` models (Opus, Fable) save for everyone: gallery, shared disk cache, publish tokens (`sharesResults()`)
+- `src/server/model.ts` — `currentModel()`: the request's pick (set by `withModel` in `routes.ts`, an `AsyncLocalStorage`),
+  else `PAPERFORGE_MODEL` or the default; and the SDK timeout under the function limit
 - `src/server/extract.ts` — Claude call (structured output via `betaZodOutputFormat`)
 - `src/shared/locate.ts` — find each block's verbatim `source_quote` in the page text
 - `src/server/forge.ts` — pipeline; lookup order gallery → disk cache (`data/cache/`, `/tmp/paperforge`
@@ -80,7 +85,8 @@ make that 30-second moment look better or work more reliably. Polish what the ca
   No express/vite/dotenv (Bun loads `.env`).
 - Bring your own key: the browser keeps the visitor's Anthropic key in `localStorage`; the server
   uses it per request and never logs or stores it. `ANTHROPIC_API_KEY` is a local-only fallback.
-- Claude model: `claude-opus-5-5` via `@anthropic-ai/sdk`. Thinking is always on for this
+- Claude model: `claude-opus-5-5` by default via `@anthropic-ai/sdk`; visitors can pick another from `MODELS`, so
+  never hard-code the id in a request: use `currentModel()`. Thinking is always on for this
   model; tune `output_config.effort`, never send `thinking: {type: "disabled"}` or `budget_tokens`.
   No forced `tool_choice`, no assistant prefill — use structured outputs.
 - `/api/forge` streams NDJSON events (`status`, `paper`, `graph`, `error`). Keep events

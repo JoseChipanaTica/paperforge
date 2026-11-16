@@ -10,6 +10,7 @@ import {
   type TranslateResponse,
 } from "../shared/translate";
 import { LearnError } from "./learn";
+import { claudeHeaders } from "./model";
 
 /** How the visitor reads: language and level pickers, where they're remembered, and the /api/translate client. */
 
@@ -78,7 +79,7 @@ export async function translate<C extends object>(
   if (isOriginal(lang, level)) return content;
   const res = await fetch("/api/translate", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(key && { "x-anthropic-key": key }) },
+    headers: claudeHeaders(key),
     body: JSON.stringify({ arxiv_id: id, kind, lang, level, content, ...(blockId && { block_id: blockId }) }),
   }).catch(() => null);
   if (!res) throw new LearnError("Can't reach the Paperforge server.");

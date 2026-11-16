@@ -1,20 +1,21 @@
 import type { Server } from "bun";
 import { errorMessage, listHandler, publishHandler } from "./api";
 import { forge } from "./forge";
+import { withModel } from "./model";
 import { askHandler, insideHandler, insideLearnHandler, kindsHandler, learnHandler } from "./learn-api";
 import { ndjson } from "./stream";
 import { translateHandler } from "./translate-api";
 import type { ForgeEvent } from "../shared/graph";
 
 /**
- * A route that may wait on Claude for minutes. Bun drops a connection idle for `idleTimeout`
- * (255 s at most); the function's own limit (vercel.json) is what bounds these instead.
+ * A route that calls Claude: it runs with the visitor's model, and may wait for minutes. Bun drops a
+ * connection idle for `idleTimeout` (255 s at most); the function's own limit (vercel.json) bounds these.
  */
 const long =
   (handler: (req: Request) => Response | Promise<Response>) =>
   (req: Request, server: Server<unknown>) => {
     server.timeout(req, 0);
-    return handler(req);
+    return withModel(req, () => handler(req));
   };
 
 /** Every /api route. `index.ts` (local, with the page) and `server.ts` (Vercel, API only) both serve these. */
