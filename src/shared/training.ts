@@ -48,7 +48,7 @@ export const TrainingArtifact = z.object({
     nodes: z
       .array(ToyNode)
       .describe(
-        "≤ 24 nodes in forward (data-flow) order; each reads only earlier nodes. Width ≤ 8, sequence ≤ 4, heads ≤ 2. A group the paper repeats N times is one toy layer. The last node is the model output (logits, probabilities or values). Pooling is max/avg over fixed non-overlapping 2×2 windows",
+        "≤ 32 nodes in forward (data-flow) order; each reads only earlier nodes. Width ≤ 8 (hidden layers too), sequence ≤ 4, heads ≤ 2. A group the paper repeats N times is one toy layer. The last node is the model output (logits, probabilities or values). Pooling is max/avg over fixed non-overlapping 2×2 windows",
       ),
   }),
   vocab: z

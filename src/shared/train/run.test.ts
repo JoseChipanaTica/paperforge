@@ -26,7 +26,7 @@ describe("training contract", () => {
   test("the fixture stays inside the toy limits and on the sample's blocks", () => {
     const ids = new Set(graph.blocks.map((b) => b.id));
     const { nodes } = TRANSFORMER_TOY.toy;
-    expect(nodes.length).toBeLessThanOrEqual(24);
+    expect(nodes.length).toBeLessThanOrEqual(32);
     expect(TRANSFORMER_TOY.vocab.length).toBeLessThanOrEqual(8);
     for (const n of nodes) {
       expect(ids.has(n.block_id)).toBe(true);
@@ -129,17 +129,17 @@ describe("train", () => {
 
   test("a pass-through node is identity forward and backward", () => {
     const a = clone(TRANSFORMER_TOY);
-    const ffn = a.toy.nodes.find((n) => n.id === "enc_ffn")!;
-    Object.assign(ffn, { kind: "dropout", fn: "passthrough", params: [] });
+    const relu = a.toy.nodes.find((n) => n.id === "enc_ffn_relu")!;
+    Object.assign(relu, { kind: "dropout", fn: "passthrough", params: [] });
     const t = train(a);
-    const n = node(t, "enc_ffn");
+    const n = node(t, "enc_ffn_relu");
     expect(n.passthrough).toBe(true);
-    close(n.value, node(t, "enc_norm1").value);
+    close(n.value, node(t, "enc_ffn1").value);
     close(n.gradIn[0]!, n.gradOut);
     // A kind the engine lacks is a pass-through too.
     const b = clone(TRANSFORMER_TOY);
-    Object.assign(b.toy.nodes.find((x) => x.id === "enc_ffn")!, { kind: "mixture_of_experts", params: [] });
-    const u = node(train(b), "enc_ffn");
+    Object.assign(b.toy.nodes.find((x) => x.id === "enc_ffn_relu")!, { kind: "mixture_of_experts", params: [] });
+    const u = node(train(b), "enc_ffn_relu");
     expect(u.passthrough).toBe(true);
     expect(u.kind).toBe("dropout");
   });

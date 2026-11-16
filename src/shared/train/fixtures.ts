@@ -1,5 +1,5 @@
 // The hand-written toy Transformer (1706.03762) used by the training tests: block ids from
-// samples/1706.03762.json, the journey's example "the cat sat" → "die Katze saß", width 4, 2 heads, one layer each.
+// samples/1706.03762.json, the journey's example "the cat sat" → "die Katze saß", width 4, 2 heads, feed-forward 8, one layer each.
 
 import type { TrainingArtifact } from "../training";
 
@@ -31,13 +31,18 @@ const attention = (id: string, block_id: string, fn: string, inputs: string[]) =
   node(id, block_id, "attention", inputs, ["Wq", "Wk", "Wv", "Wo"].map((name) => ({ name, values: w(D, D) })), fn, 2);
 const norm = (id: string, block_id: string, input: string) =>
   node(id, block_id, "normalization", [input], [{ name: "gamma", values: ones }, { name: "beta", values: zeros }], "layer");
-const ffn = (id: string, block_id: string, input: string) =>
-  node(id, block_id, "linear", [input], [{ name: "W", values: w(D, D) }, { name: "b", values: w(1, D) }]);
+const HIDDEN = 8;
+/** FFN(x) = max(0, xW1 + b1)W2 + b2: three nodes sharing one block. */
+const ffn = (prefix: string, block_id: string, input: string): Node[] => [
+  node(`${prefix}1`, block_id, "linear", [input], [{ name: "W", values: w(D, HIDDEN) }, { name: "b", values: w(1, HIDDEN) }]),
+  node(`${prefix}_relu`, block_id, "activation", [`${prefix}1`], [], "relu"),
+  node(`${prefix}2`, block_id, "linear", [`${prefix}_relu`], [{ name: "W", values: w(HIDDEN, D) }, { name: "b", values: w(1, D) }]),
+];
 
 export const TRANSFORMER_TOY: TrainingArtifact = {
   toy: {
     dims:
-      "d_model 512 → 4, 8 heads → 2, 6 layers → 1 encoder and 1 decoder layer, the 2048-wide feed-forward → one 4×4 layer, vocabulary 37 000 → 7",
+      "d_model 512 → 4, 8 heads → 2, 6 layers → 1 encoder and 1 decoder layer, feed-forward 2048 → 8, vocabulary 37 000 → 7. Unlike the paper, the toy doesn't tie the embedding and output weights: each has its own.",
     nodes: [
       node("src", "inputs", "input", [], [{ name: "values", values: [[1, 2, 3]] }]),
       node("src_embed", "input_embedding", "embedding_lookup", ["src"], [{ name: "E", values: w(VOCAB.length, D) }]),
@@ -45,8 +50,8 @@ export const TRANSFORMER_TOY: TrainingArtifact = {
       attention("enc_attn", "encoder_self_attention", "self", ["enc_pos"]),
       node("enc_add1", "encoder_add_norm_1", "residual_add", ["enc_attn", "enc_pos"]),
       norm("enc_norm1", "encoder_add_norm_1", "enc_add1"),
-      ffn("enc_ffn", "encoder_ffn", "enc_norm1"),
-      node("enc_add2", "encoder_add_norm_2", "residual_add", ["enc_ffn", "enc_norm1"]),
+      ...ffn("enc_ffn", "encoder_ffn", "enc_norm1"),
+      node("enc_add2", "encoder_add_norm_2", "residual_add", ["enc_ffn2", "enc_norm1"]),
       norm("enc_norm2", "encoder_add_norm_2", "enc_add2"),
       node("tgt", "outputs", "input", [], [{ name: "values", values: [[0, 4, 5]] }]),
       node("tgt_embed", "output_embedding", "embedding_lookup", ["tgt"], [{ name: "E", values: w(VOCAB.length, D) }]),
@@ -57,8 +62,8 @@ export const TRANSFORMER_TOY: TrainingArtifact = {
       attention("dec_cross", "decoder_cross_attention", "cross", ["dec_norm1", "enc_norm2"]),
       node("dec_add2", "decoder_add_norm_2", "residual_add", ["dec_norm1", "dec_cross"]),
       norm("dec_norm2", "decoder_add_norm_2", "dec_add2"),
-      ffn("dec_ffn", "decoder_ffn", "dec_norm2"),
-      node("dec_add3", "decoder_add_norm_3", "residual_add", ["dec_ffn", "dec_norm2"]),
+      ...ffn("dec_ffn", "decoder_ffn", "dec_norm2"),
+      node("dec_add3", "decoder_add_norm_3", "residual_add", ["dec_ffn2", "dec_norm2"]),
       norm("dec_norm3", "decoder_add_norm_3", "dec_add3"),
       node("final_linear", "final_linear", "linear", ["dec_norm3"], [
         { name: "W", values: w(D, VOCAB.length) },
