@@ -445,23 +445,31 @@ async function publish() {
     return;
   }
   if (!rawGraph || !saveToken) return;
+  // Everything about this paper is read now: the visitor may open another before the answer comes back.
+  const sent = rawGraph;
+  const id = sent.arxiv_id;
+  const token = saveToken;
+  const saved = paperSaved; // this paper's record write, which forgetToken must follow
   publishBtn.textContent = "Publishing…";
   const res = await fetch("/api/papers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ graph: rawGraph, save_token: saveToken }),
+    body: JSON.stringify({ graph: sent, save_token: token }),
   }).catch(() => null);
   const body = ((await res?.json().catch(() => null)) ?? {}) as { arxiv_id?: string; error?: string };
+  const stillOpen = rawGraph === sent;
   if (res && (res.status === 201 || res.status === 409)) {
+    // Spent: Publish must not come back when this paper reopens from the store, even if the visitor moved on.
+    const forgot = saved.then(() => storeReady).then((s) => s.forgetToken(id));
+    if (!stillOpen) return;
+    paperSaved = forgot;
     saveToken = null;
-    const id = rawGraph.arxiv_id;
-    // Spent: Publish must not come back when this paper reopens from the store.
-    paperSaved = paperSaved.then(() => storeReady).then((s) => s.forgetToken(id));
-    shareUrl = `${location.origin}/?paper=${encodeURIComponent(body.arxiv_id ?? rawGraph.arxiv_id)}`;
+    shareUrl = `${location.origin}/?paper=${encodeURIComponent(body.arxiv_id ?? id)}`;
     syncPublish();
     setStatus(res.status === 201 ? "Published to the gallery." : "Already in the gallery — Copy link shares that version.");
     setTimeout(() => setStatus(null), 3500);
   } else {
+    if (!stillOpen) return;
     syncPublish();
     setStatus(body.error ?? "Couldn't publish right now.", true);
   }
