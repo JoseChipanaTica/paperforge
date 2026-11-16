@@ -20,6 +20,12 @@ async function readJson<T>(path: string): Promise<T | null> {
   return (await f.exists()) ? ((await f.json()) as T) : null;
 }
 
+/** The committed sample graph for an arXiv id, if there is one. */
+export async function readSampleGraph(id: string): Promise<Architecture | null> {
+  const sample = await readJson(join(SAMPLES, `${fileId(id)}.json`));
+  return sample ? Architecture.parse(sample) : null;
+}
+
 async function loadPages(id: string, emit: (e: ForgeEvent) => void, cacheDir: string): Promise<string[]> {
   const pagesPath = join(cacheDir, `${fileId(id)}.pages.json`);
   const cached = await readJson<string[]>(pagesPath);
@@ -60,8 +66,8 @@ async function loadArchitecture(
     if (published) return { arch: published, source: "gallery" };
     const cached = await readJson(cachePath);
     if (cached) return { arch: Architecture.parse(cached), source: "cache" };
-    const sample = await readJson(join(SAMPLES, `${fileId(id)}.json`));
-    if (sample) return { arch: Architecture.parse(sample), source: "sample" };
+    const sample = await readSampleGraph(id);
+    if (sample) return { arch: sample, source: "sample" };
   }
   getSecret(); // fail before the visitor pays for a Claude call we couldn't let them publish
   emit({ type: "status", stage: "extract", message: "Claude is reading the paper" });

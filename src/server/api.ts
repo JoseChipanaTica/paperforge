@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { Architecture, type ForgeEvent } from "../shared/graph";
+import { parseArxivId } from "./arxiv";
+import { readSampleGraph } from "./forge";
 import { getStore, type Store } from "./store";
 import { verifyGraph } from "./token";
 
@@ -20,6 +22,20 @@ export async function listHandler(req: Request, store: Store = getStore()): Prom
     console.error("gallery list failed:", err);
     return unavailable();
   }
+}
+
+/** The shared graph (gallery, then committed sample) for an id. Never downloads a PDF or calls Claude. */
+export async function graphHandler(req: Request, store: Store = getStore()): Promise<Response> {
+  const headers = { "Cache-Control": "no-store" };
+  const reply = (body: unknown, status = 200) => Response.json(body, { status, headers });
+  const raw = new URL(req.url).searchParams.get("arxiv_id");
+  const id = raw ? parseArxivId(raw) : null;
+  if (!id) return reply({ error: "Expected ?arxiv_id=<arXiv id>" }, 400);
+  const published = await store.getPaper(id).catch((err) => (console.error("gallery lookup failed:", err), null));
+  if (published) return reply({ graph: published, source: "gallery" });
+  const sample = await readSampleGraph(id).catch(() => null);
+  if (sample) return reply({ graph: sample, source: "sample" });
+  return reply({ error: "No shared graph for this paper" }, 404);
 }
 
 export async function publishHandler(req: Request, store: Store = getStore()): Promise<Response> {

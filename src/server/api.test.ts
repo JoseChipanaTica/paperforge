@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Architecture } from "../shared/graph";
-import { errorMessage, listHandler, publishHandler } from "./api";
+import { errorMessage, graphHandler, listHandler, publishHandler } from "./api";
 import { locate } from "./forge";
 import { createStore, type Store } from "./store";
 import { signGraph } from "./token";
@@ -96,5 +96,44 @@ describe("errorMessage", () => {
 
   test("bad link → bad_input", () => {
     expect(errorMessage(new Error(`That doesn't look like an arXiv link or id: "x"`)).code).toBe("bad_input");
+  });
+});
+
+describe("GET /api/graph", () => {
+  const get = (q: string, store: Store) => graphHandler(new Request(`http://x/api/graph${q}`), store);
+
+  test("returns the published graph first", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper("1706.03762", { ...sample, model_name: "Published" });
+    const res = await get("?arxiv_id=1706.03762", store);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const body = (await res.json()) as { graph: Architecture; source: string };
+    expect(body.source).toBe("gallery");
+    expect(body.graph.model_name).toBe("Published");
+  });
+
+  test("falls back to the committed sample", async () => {
+    const res = await get("?arxiv_id=1706.03762", createStore("sqlite://:memory:"));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { source: string }).source).toBe("sample");
+  });
+
+  test("404 when neither exists", async () => {
+    const res = await get("?arxiv_id=2001.00001", createStore("sqlite://:memory:"));
+    expect(res.status).toBe(404);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  test("400 on a malformed id", async () => {
+    const store = createStore("sqlite://:memory:");
+    expect((await get("?arxiv_id=nope", store)).status).toBe(400);
+    expect((await get("", store)).status).toBe(400);
+  });
+
+  test("a broken gallery still serves the sample", async () => {
+    const res = await get("?arxiv_id=1706.03762", broken);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { source: string }).source).toBe("sample");
   });
 });

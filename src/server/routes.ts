@@ -1,5 +1,5 @@
 import type { Server } from "bun";
-import { errorMessage, listHandler, publishHandler } from "./api";
+import { errorMessage, graphHandler, listHandler, publishHandler } from "./api";
 import { forge } from "./forge";
 import { withModel } from "./model";
 import { askHandler, insideHandler, insideLearnHandler, kindsHandler, learnHandler } from "./learn-api";
@@ -36,6 +36,7 @@ export const apiRoutes = {
     }),
   },
   "/api/papers": { GET: (req: Request) => listHandler(req), POST: (req: Request) => publishHandler(req) },
+  "/api/graph": { GET: (req: Request) => graphHandler(req) },
   "/api/learn": { GET: (req: Request) => kindsHandler(req), POST: long(learnHandler) },
   "/api/ask": { POST: long(askHandler) },
   "/api/inside": { POST: long(insideHandler) },
