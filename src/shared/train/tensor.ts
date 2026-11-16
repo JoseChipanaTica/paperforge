@@ -246,7 +246,7 @@ export function maxAxis(t: Tensor, axis: number, keepdim = false): Tensor {
   for (let o = 0; o < outer; o++)
     for (let k = 0; k < inner; k++) {
       let best = -Infinity;
-      let bi = 0;
+      let bi = o * n * inner + k;
       for (let j = 0; j < n; j++) {
         const i = (o * n + j) * inner + k;
         if (t.data[i]! > best) {

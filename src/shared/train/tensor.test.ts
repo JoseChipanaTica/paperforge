@@ -49,10 +49,23 @@ test("every primitive's gradient matches finite differences", () => {
     slice: [([a]) => mul(slice(a!, 1, 1, 3), slice(a!, 1, 0, 2)), [r([2, 4])]],
     concat: [([a, b]) => mul(concat([a!, b!], 1), concat([b!, a!], 1)), [r([2, 2]), r([2, 3])]],
     gather: [([t]) => mul(gather(t!, [2, 0, 2]), gather(t!, [1, 1, 0])), [r([3, 4])]],
+    maxAxis0: [([a]) => maxAxis(a!, 0), [r([3, 2, 4])]],
+    maxAxisLast: [([a]) => maxAxis(a!, 2), [r([3, 2, 4])]],
+    maxAxisKeep: [([a]) => maxAxis(a!, 1, true), [r([3, 2, 4])]],
+    sumKeep: [([a]) => sum(a!, 1, true), [r([3, 2, 4])]],
+    meanKeep: [([a]) => mean(a!, 2, true), [r([3, 2, 4])]],
+    slice3: [([a]) => slice(a!, 2, 1, 3), [r([2, 3, 4])]],
+    slice3a0: [([a]) => slice(a!, 0, 1, 2), [r([2, 3, 4])]],
+    concat3: [([a, b]) => concat([a!, b!], 2), [r([2, 3, 2]), r([2, 3, 3])]],
+    concat3a1: [([a, b]) => concat([a!, b!], 1), [r([2, 2, 3]), r([2, 1, 3])]],
+    reshape3: [([a]) => reshape(a!, [3, 8]), [r([2, 3, 4])]],
     where: [([a]) => mul(where([[true, false], [true, true]], a!, 0.5), a!), [r([2, 2, 2])]],
   };
   for (const [name, [f, inputs]] of Object.entries(checks)) {
-    const err = gradcheck(f, inputs);
+    // A fixed, non-uniform upstream gradient so wrong-offset backwards cannot hide.
+    const shape = f(inputs).shape;
+    const c = rng(7)(shape);
+    const err = gradcheck((x) => mul(f(x), c), inputs);
     expect(err, name).toBeLessThan(1e-6);
   }
 });
