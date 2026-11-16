@@ -278,4 +278,43 @@ describe("the cap", () => {
     await store.putArtifact("new", "h", "main", "journey", journey);
     expect(await mem.get("artifacts", ["h", "main", "journey"])).toBeUndefined();
   });
+
+  test("orphan artifacts bigger than the floor are evicted before any paper", async () => {
+    const b = memoryBackend();
+    const store = new LocalStore(b, () => 9999, opts);
+    await seedPaper(b, "a", 1, 50);
+    await seedPaper(b, "b", 2, 50);
+    await seedArtifact(b, "gone", "kg", 900);
+    await trigger(store);
+    expect(await b.get("artifacts", ["kg", "main", "journey"])).toBeUndefined();
+    expect(await b.get("papers", "a")).toBeDefined();
+    expect(await b.get("papers", "b")).toBeDefined();
+  });
+
+  test("a translation whose papers are all gone is evicted", async () => {
+    const b = memoryBackend();
+    const store = new LocalStore(b, () => 9999, opts);
+    await seedPaper(b, "a", 1, 50);
+    await b.put("translations", ["t1", "fr", "engineer"], { arxiv_ids: ["x", "y"], text: {}, saved_at: 0, bytes: 1000 });
+    await b.put("translations", ["t2", "fr", "engineer"], { arxiv_ids: ["a", "x"], text: {}, saved_at: 0, bytes: 20 });
+    await trigger(store);
+    expect(await b.get("translations", ["t1", "fr", "engineer"])).toBeUndefined();
+    expect(((await b.get("translations", ["t2", "fr", "engineer"])) as { arxiv_ids: string[] }).arxiv_ids).toEqual(["a"]);
+    expect(await b.get("papers", "a")).toBeDefined();
+  });
+
+  test("the quota retry never evicts the paper of the pending write", async () => {
+    const mem = memoryBackend();
+    let fail = 1;
+    const b: Backend = {
+      ...mem,
+      put: (s, k, v) => (s === "artifacts" && fail-- > 0 ? Promise.reject({ name: "QuotaExceededError" }) : mem.put(s, k, v)),
+    };
+    const store = new LocalStore(b, () => 9999, opts);
+    await seedPaper(b, "mine", 1, 500);
+    await seedPaper(b, "other", 2, 500);
+    await store.putArtifact("mine", "h", "main", "journey", journey);
+    expect(await b.get("papers", "mine")).toBeDefined();
+    expect(await b.get("papers", "other")).toBeUndefined();
+  });
 });

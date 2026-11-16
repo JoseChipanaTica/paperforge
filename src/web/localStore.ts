@@ -91,20 +91,16 @@ export class LocalStore {
   }
 
   /** A put that retries once after evicting when the browser says the quota is full. */
-  private async put(store: StoreName, key: IDBValidKey, value: unknown): Promise<void> {
+  private async put(store: StoreName, key: IDBValidKey, value: unknown, owner: string): Promise<void> {
     const r = await this.write(store, key, value);
-    if (r.ok) return void (await this.enforceCap());
+    if (r.ok) return void (await this.evict(this.capBytes, owner));
     if (r.name !== "QuotaExceededError") return;
-    await this.evict(0);
+    await this.evict(0, owner);
     await this.write(store, key, value);
   }
 
-  private async enforceCap(): Promise<void> {
-    await this.evict(this.capBytes);
-  }
-
   /** When the total exceeds `trigger`, delete whole papers (least recently opened first) down to the floor. */
-  private async evict(trigger: number): Promise<void> {
+  private async evict(trigger: number, owner: string): Promise<void> {
     try {
       const size = (v: unknown) => {
         const b = (v as { bytes?: unknown } | null)?.bytes;
@@ -118,8 +114,30 @@ export class LocalStore {
       let total = 0;
       for (const [, v] of [...papers, ...artifacts, ...translations]) total += size(v);
       if (total <= trigger) return;
+      // Orphans first: artifacts and translations whose papers are gone count but nothing would ever free them.
+      const ids = new Set<string>([...papers.map(([k]) => String(k)), owner]);
+      if (this.open) ids.add(this.open);
+      for (const [k, v] of artifacts) {
+        const id = (v as { arxiv_id?: unknown } | null)?.arxiv_id;
+        if (typeof id === "string" && ids.has(id)) continue;
+        await this.drop("artifacts", k);
+        total -= size(v);
+      }
+      for (const [k, v] of translations) {
+        const t = v as Partial<StoredTranslation> | null;
+        const have = Array.isArray(t?.arxiv_ids) ? t.arxiv_ids : [];
+        const kept = have.filter((x) => ids.has(x));
+        if (kept.length === have.length && have.length > 0) continue;
+        if (kept.length === 0) {
+          await this.drop("translations", k);
+          total -= size(v);
+        } else {
+          t!.arxiv_ids = kept;
+          await this.write("translations", k, t);
+        }
+      }
       const order = papers
-        .filter(([k]) => k !== this.open)
+        .filter(([k]) => k !== this.open && k !== owner)
         .sort((a, b) => ((a[1] as { opened_at?: number })?.opened_at ?? 0) - ((b[1] as { opened_at?: number })?.opened_at ?? 0));
       for (const [key, value] of order) {
         if (total <= this.floorBytes) break;
@@ -212,7 +230,7 @@ export class LocalStore {
   }
 
   async putPaper(p: Omit<StoredPaper, "opened_at" | "bytes">): Promise<void> {
-    await this.put("papers", p.arxiv_id, { ...p, opened_at: this.now(), bytes: byteLength(p) });
+    await this.put("papers", p.arxiv_id, { ...p, opened_at: this.now(), bytes: byteLength(p) }, p.arxiv_id);
   }
 
   // ---- artifacts (learning artifacts and inside graphs) ----
@@ -230,7 +248,7 @@ export class LocalStore {
 
   async putArtifact(id: string, hash: string, scope: string, kind: string, value: ArtifactValue): Promise<void> {
     const entry: StoredArtifact = { arxiv_id: id, artifact: value, saved_at: this.now(), bytes: byteLength(value) };
-    await this.put("artifacts", [hash, scope, kind], entry);
+    await this.put("artifacts", [hash, scope, kind], entry, id);
   }
 
   // ---- translations ----
@@ -259,7 +277,7 @@ export class LocalStore {
     const ids = Array.isArray(prior?.arxiv_ids) ? prior.arxiv_ids.filter((x) => typeof x === "string") : [];
     if (!ids.includes(id)) ids.push(id);
     const entry: StoredTranslation = { arxiv_ids: ids, text, saved_at: this.now(), bytes: byteLength(text) };
-    await this.put("translations", key, entry);
+    await this.put("translations", key, entry, id);
   }
 
   // ---- the whole store ----
