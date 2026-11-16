@@ -2,11 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Architecture } from "./graph";
 import { ARTIFACT_SCHEMA, LEARN_KINDS, type JourneyArtifact, type PytorchArtifact } from "./learn";
-import { TEXT_SCHEMA, applyText, codeSkeleton, pickText, textMatches, type TranslatedText } from "./translate";
+import { TRANSFORMER_TOY } from "./train/fixtures";
+import { TEXT_SCHEMA, applyText, codeSkeleton, trainingSkeleton, pickText, textMatches, type TranslatedText } from "./translate";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
 const graph = Architecture.parse(await Bun.file(join(SAMPLES, "1706.03762.json")).json());
-const sample = async (kind: (typeof LEARN_KINDS)[number]) =>
+const sample = async (kind: Exclude<(typeof LEARN_KINDS)[number], "training">) =>
   ARTIFACT_SCHEMA[kind].parse(await Bun.file(join(SAMPLES, `1706.03762.${kind}.json`)).json());
 
 /** A fake translation: every string value except ids gets a prefix. */
@@ -50,7 +51,7 @@ describe("graph text", () => {
 });
 
 describe("artifact text", () => {
-  for (const kind of LEARN_KINDS) {
+  for (const kind of LEARN_KINDS.filter((k) => k !== "training")) {
     test(`${kind}: round-trips and keeps block links`, async () => {
       const a = await sample(kind);
       const text = pickText(kind, a);
@@ -97,6 +98,26 @@ describe("artifact text", () => {
     expect(out.steps[0]!.ops.map((o) => o.caption)).toEqual(["ES Mix the words", "ES Again"]);
     expect({ ...out.steps[0]!.ops[0]!, caption: "" }).toEqual({ ...op, caption: "" });
     expect(textMatches("motion", text, { steps: [{ block_id: "a", captions: ["x"] }] } as never)).toBe(false);
+  });
+
+  test("pickText/applyText round-trip for training keeps the skeleton", () => {
+    const a = TRANSFORMER_TOY;
+    const text = pickText("training", a);
+    expect(TEXT_SCHEMA.training.safeParse(text).success).toBe(true);
+    const t = fake(text);
+    expect(textMatches("training", text, t)).toBe(true);
+    const out = applyText("training", a, t);
+    expect(out.intro).toBe(`ES ${a.intro}`);
+    expect(out.steps[0]!.learns).toBe(`ES ${a.steps[0]!.learns}`);
+    expect(out.loss.caption).toBe(`ES ${a.loss.caption}`);
+    expect(out.optimizer.schedule_note).toBe(`ES ${a.optimizer.schedule_note}`);
+    expect(trainingSkeleton(out)).toBe(trainingSkeleton(a));
+    expect(trainingSkeleton(a)).not.toBe(JSON.stringify(a));
+  });
+
+  test("textMatches rejects a training translation with a missing step", () => {
+    const text = pickText("training", TRANSFORMER_TOY) as any;
+    expect(textMatches("training", text, { ...text, steps: text.steps.slice(1) })).toBe(false);
   });
 
   test("steps out of order don't match", async () => {

@@ -150,12 +150,14 @@ const STATUS: Record<LearnKind, string> = {
   pytorch: "Claude is writing the PyTorch code…",
   journey: "Claude is following an input through the model…",
   motion: "Claude is animating each block…",
+  training: "Claude is building a toy model to train…",
 };
 
 const UNUSABLE: Record<LearnKind, string> = {
   pytorch: "Claude couldn't map this to the model's blocks. Try again.",
   journey: "Couldn't build the walkthrough. Try again.",
   motion: "Couldn't animate this model.",
+  training: "Couldn't build a toy model of this paper to train.",
 };
 
 /**

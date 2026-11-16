@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Architecture } from "./graph";
 import { LEARN_KINDS, type JourneyArtifact, type PytorchArtifact } from "./learn";
 import type { MotionArtifact } from "./motion";
+import type { TrainingArtifact } from "./training";
 
 /**
  * Language and reading level: Claude writes everything in English for an engineer (what the
@@ -74,6 +75,14 @@ const JourneyText = z.object({
 });
 // Motion: only each op's caption; every number and any custom SVG stay as they are.
 const MotionText = z.object({ steps: z.array(z.object({ block_id: z.string(), captions: z.array(z.string()) })) });
+// Training: the prose around a toy model; the toy itself (dims, nodes, numbers, quotes) stays as is.
+const TrainingText = z.object({
+  intro: z.string(),
+  steps: z.array(z.object({ block_id: z.string(), title: z.string(), narration: z.string(), learns: z.string() })),
+  loss_caption: z.string(),
+  schedule_note: z.string(),
+  outro: z.string(),
+});
 const PytorchText = z.object({
   code: z.string().describe("The code with only comments and docstrings translated"),
   notes: z.array(z.string()),
@@ -84,11 +93,12 @@ export const TEXT_SCHEMA = {
   expansion: GraphText,
   journey: JourneyText,
   motion: MotionText,
+  training: TrainingText,
   pytorch: PytorchText,
 } as const;
 
 export type TranslatedText = z.infer<(typeof TEXT_SCHEMA)[TranslateKind]>;
-type Content = Architecture | PytorchArtifact | JourneyArtifact | MotionArtifact;
+type Content = Architecture | PytorchArtifact | JourneyArtifact | MotionArtifact | TrainingArtifact;
 
 /** The prose of a graph or artifact: what is sent for translation and what the cache is keyed on. */
 export function pickText(kind: TranslateKind, content: Content): TranslatedText {
@@ -124,6 +134,16 @@ export function pickText(kind: TranslateKind, content: Content): TranslatedText 
       const a = content as MotionArtifact;
       return { steps: a.steps.map((s) => ({ block_id: s.block_id, captions: s.ops.map((o) => o.caption) })) };
     }
+    case "training": {
+      const a = content as TrainingArtifact;
+      return {
+        intro: a.intro,
+        steps: a.steps.map((s) => ({ block_id: s.block_id, title: s.title, narration: s.narration, learns: s.learns })),
+        loss_caption: a.loss.caption,
+        schedule_note: a.optimizer.schedule_note,
+        outro: a.outro,
+      };
+    }
     case "pytorch": {
       const a = content as PytorchArtifact;
       return { code: a.code, notes: a.notes };
@@ -142,6 +162,10 @@ export function textMatches(kind: TranslateKind, original: TranslatedText, trans
     const [o, t] = [original as z.infer<typeof MotionText>, translated as z.infer<typeof MotionText>];
     const counts = (m: z.infer<typeof MotionText>) => m.steps.map((s) => s.captions.length).join(",");
     return ids(o.steps) === ids(t.steps) && counts(o) === counts(t);
+  }
+  if (kind === "training") {
+    const [o, t] = [original as z.infer<typeof TrainingText>, translated as z.infer<typeof TrainingText>];
+    return ids(o.steps) === ids(t.steps);
   }
   if (kind === "pytorch") return (translated as z.infer<typeof PytorchText>).notes.length === (original as z.infer<typeof PytorchText>).notes.length;
   const [o, t] = [original as z.infer<typeof JourneyText>, translated as z.infer<typeof JourneyText>];
@@ -197,11 +221,38 @@ export function applyText<C extends Content>(kind: TranslateKind, content: C, te
         steps: a.steps.map((s, i) => ({ ...s, ops: s.ops.map((o, j) => ({ ...o, caption: t.steps[i]?.captions[j] ?? o.caption })) })),
       } as C;
     }
+    case "training": {
+      const a = content as TrainingArtifact;
+      const t = text as z.infer<typeof TrainingText>;
+      return {
+        ...a,
+        intro: t.intro,
+        steps: a.steps.map((s, i) => {
+          const ts = t.steps[i];
+          return ts ? { ...s, title: ts.title, narration: ts.narration, learns: ts.learns } : s;
+        }),
+        loss: { ...a.loss, caption: t.loss_caption },
+        optimizer: { ...a.optimizer, schedule_note: t.schedule_note },
+        outro: t.outro,
+      } as C;
+    }
     case "pytorch": {
       const t = text as z.infer<typeof PytorchText>;
       return { ...(content as PytorchArtifact), code: t.code, notes: t.notes } as C;
     }
   }
+}
+
+/** Everything of a training artifact except its prose: a translation must match the original on this. */
+export function trainingSkeleton(a: TrainingArtifact): string {
+  return JSON.stringify({
+    ...a,
+    intro: "",
+    steps: a.steps.map((s) => ({ ...s, title: "", narration: "", learns: "" })),
+    loss: { ...a.loss, caption: "" },
+    optimizer: { ...a.optimizer, schedule_note: "" },
+    outro: "",
+  });
 }
 
 /**

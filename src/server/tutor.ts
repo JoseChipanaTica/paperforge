@@ -29,7 +29,7 @@ Whenever you refer to a block, use its exact "id" from <graph>; the viewer uses 
 Write for a curious engineer: plain language first, then the precise detail. Be concrete and brief.`;
 
 /** The kinds written through the shared learning format (motion has its own, and needs the journey). */
-export type TaskKind = Exclude<LearnKind, "motion">;
+export type TaskKind = Exclude<LearnKind, "motion" | "training">;
 
 export const LEARN_TASK: Record<TaskKind, string> = {
   pytorch: `Write PyTorch code that implements this architecture.
@@ -220,6 +220,7 @@ export async function generateArtifact(
   kind: LearnKind,
   { pages, graph, apiKey, journey }: { pages: string[]; graph: Architecture; apiKey?: string; journey?: JourneyArtifact },
 ): Promise<AnyArtifact> {
+  if (kind === "training") throw new Error("Training needs the walkthrough it trains on.");
   if (kind === "motion" && !journey) throw new Error("Motion needs the walkthrough it animates.");
   const request = kind === "motion" ? motionRequest(pages, graph, journey!) : learnRequest(kind, pages, graph);
   const response = await client(apiKey).beta.messages.parse(request);

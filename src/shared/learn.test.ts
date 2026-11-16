@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Architecture } from "./graph";
-import { ARTIFACT_SCHEMA, LEARN_KINDS, cleanJourney, pruneArtifact, type JourneyArtifact, type LearnKind, type View } from "./learn";
+import { TRANSFORMER_TOY } from "./train/fixtures";
+import { ARTIFACT_SCHEMA, LEARN_KINDS, artifactBlockCount, cleanJourney, isUsable, pruneArtifact, type JourneyArtifact, type LearnKind, type View } from "./learn";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
 const graph = Architecture.parse(await Bun.file(join(SAMPLES, "1706.03762.json")).json());
@@ -12,7 +13,7 @@ const blockIds = (kind: LearnKind, a: any): string[] =>
   kind === "pytorch" ? a.block_map.map((m: any) => m.block_id) : a.steps.map((s: any) => s.block_id);
 
 describe("Transformer sample artifacts", () => {
-  for (const kind of LEARN_KINDS) {
+  for (const kind of LEARN_KINDS.filter((k) => k !== "training")) {
     test(`${kind} matches its schema and only uses the graph's blocks`, async () => {
       const a = ARTIFACT_SCHEMA[kind].parse(await sample(kind));
       const used = blockIds(kind, a);
@@ -116,4 +117,12 @@ describe("cleanJourney", () => {
     expect(j.input.views.length).toBe(2);
     expect(j.output.views.length).toBe(2);
   });
+});
+
+test("isUsable training needs 2 blocks", () => {
+  expect(LEARN_KINDS).toEqual(["pytorch", "journey", "motion", "training"]);
+  expect(artifactBlockCount("training", TRANSFORMER_TOY)).toBe(new Set(TRANSFORMER_TOY.toy.nodes.map((n) => n.block_id)).size);
+  expect(isUsable("training", TRANSFORMER_TOY)).toBe(true);
+  expect(isUsable("training", { ...TRANSFORMER_TOY, toy: { ...TRANSFORMER_TOY.toy, nodes: TRANSFORMER_TOY.toy.nodes.slice(0, 1) } })).toBe(false);
+  expect(isUsable("training", { ...TRANSFORMER_TOY, toy: { ...TRANSFORMER_TOY.toy, nodes: [] } })).toBe(false);
 });

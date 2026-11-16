@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Architecture } from "./graph";
 import { MotionArtifact, cleanMotion } from "./motion";
+import { TrainingArtifact, cleanTraining } from "./training";
 
 /**
  * Learning artifacts: what Claude writes to help someone understand a forged paper.
@@ -8,7 +9,7 @@ import { MotionArtifact, cleanMotion } from "./motion";
  * Same rule as graph.ts: no constraints structured outputs can't express.
  */
 
-export const LEARN_KINDS = ["pytorch", "journey", "motion"] as const;
+export const LEARN_KINDS = ["pytorch", "journey", "motion", "training"] as const;
 export const LearnKind = z.enum(LEARN_KINDS);
 export type LearnKind = z.infer<typeof LearnKind>;
 
@@ -142,10 +143,11 @@ export const ARTIFACT_SCHEMA = {
   pytorch: PytorchArtifact,
   journey: JourneyArtifact,
   motion: MotionArtifact,
+  training: TrainingArtifact,
 } as const;
 
 export type Artifact<K extends LearnKind> = z.infer<(typeof ARTIFACT_SCHEMA)[K]>;
-export type AnyArtifact = PytorchArtifact | JourneyArtifact | MotionArtifact;
+export type AnyArtifact = PytorchArtifact | JourneyArtifact | MotionArtifact | TrainingArtifact;
 
 /** What a block's inside view can have of its own: a walkthrough of the inside graph, and its motion. */
 export type InsideLearnKind = "journey" | "motion";
@@ -154,6 +156,10 @@ export type InsideLearnKind = "journey" | "motion";
 export function pruneArtifact(kind: LearnKind, artifact: AnyArtifact, graph: Architecture): AnyArtifact {
   if (kind === "journey") return cleanJourney(artifact as JourneyArtifact, graph);
   if (kind === "motion") return cleanMotion(artifact as MotionArtifact, graph, null);
+  if (kind === "training") {
+    const t = artifact as TrainingArtifact;
+    return cleanTraining(t, graph) ?? { ...t, toy: { ...t.toy, nodes: [] } };
+  }
   const ids = new Set(graph.blocks.map((b) => b.id));
   const a = artifact as PytorchArtifact;
   return { ...a, block_map: a.block_map.filter((m) => ids.has(m.block_id)) };
@@ -161,11 +167,12 @@ export function pruneArtifact(kind: LearnKind, artifact: AnyArtifact, graph: Arc
 
 /** How many blocks an artifact still ties to the model. */
 export function artifactBlockCount(kind: LearnKind, artifact: AnyArtifact): number {
+  if (kind === "training") return new Set((artifact as TrainingArtifact).toy.nodes.map((n) => n.block_id)).size;
   return kind === "pytorch" ? (artifact as PytorchArtifact).block_map.length : (artifact as JourneyArtifact | MotionArtifact).steps.length;
 }
 
 /** Enough left to show: code mapped to a block, a journey of at least two steps, motion for one step. */
-export const isUsable = (kind: LearnKind, artifact: AnyArtifact) => artifactBlockCount(kind, artifact) >= (kind === "journey" ? 2 : 1);
+export const isUsable = (kind: LearnKind, artifact: AnyArtifact) => artifactBlockCount(kind, artifact) >= (kind === "journey" || kind === "training" ? 2 : 1);
 
 type LearnError = { type: "error"; message: string; code?: "needs_key" | "rate_limited" | "bad_input" };
 
