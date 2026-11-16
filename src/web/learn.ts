@@ -1,4 +1,4 @@
-import type { Architecture, LocatedArchitecture } from "../shared/graph";
+import { Architecture, type LocatedArchitecture } from "../shared/graph";
 import type { AnyArtifact, AskEvent, AskTurn, InsideEvent, InsideLearnEvent, InsideLearnKind, JourneyArtifact, LearnEvent, LearnKind, View } from "../shared/learn";
 import type { Lang, Level } from "../shared/translate";
 import { claudeHeaders } from "./model";
@@ -39,6 +39,20 @@ export async function fetchKinds(id: string): Promise<LearnKind[]> {
     return res.ok ? await res.json() : [];
   } catch {
     return [];
+  }
+}
+
+/** The shared (gallery or sample) graph for a paper, or null: none exists, the server is unreachable, or the body is invalid. */
+export async function fetchSharedGraph(id: string): Promise<{ graph: Architecture; source: "gallery" | "sample" } | null> {
+  try {
+    const res = await fetch(`/api/graph?arxiv_id=${encodeURIComponent(id)}`);
+    if (!res.ok) return null;
+    const body = (await res.json()) as { graph?: unknown; source?: unknown };
+    if (body.source !== "gallery" && body.source !== "sample") return null;
+    const graph = Architecture.safeParse(body.graph);
+    return graph.success ? { graph: graph.data, source: body.source } : null;
+  } catch {
+    return null;
   }
 }
 

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { LocatedArchitecture } from "../shared/graph";
 import type { AskTurn } from "../shared/learn";
-import { InFlight, LearnError, askHistoryPayload, inspectTarget, requestArtifact } from "./learn";
+import { InFlight, LearnError, askHistoryPayload, inspectTarget, requestArtifact, fetchSharedGraph } from "./learn";
 
 describe("askHistoryPayload", () => {
   test("sends at most the last 10 turns, each clipped to 4000 chars (the server's limits)", () => {
@@ -67,5 +67,43 @@ describe("requestArtifact, prefetch", () => {
     await requestArtifact("1706.03762", "training", g, "", () => {}).catch(() => {});
     expect(bodies[0]!.existing_only).toBe(true);
     expect("existing_only" in bodies[1]!).toBe(false);
+  });
+});
+
+describe("fetchSharedGraph", () => {
+  const real = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = real;
+  });
+  const stub = (f: (url: string) => Response | Promise<Response>) => {
+    globalThis.fetch = (async (url: string) => f(url)) as unknown as typeof fetch;
+  };
+
+  test("null on 404, a network error, or a body that doesn't parse", async () => {
+    stub(() => new Response("{}", { status: 404 }));
+    expect(await fetchSharedGraph("1706.03762")).toBeNull();
+    globalThis.fetch = (async () => {
+      throw new Error("down");
+    }) as unknown as typeof fetch;
+    expect(await fetchSharedGraph("1706.03762")).toBeNull();
+    stub(() => Response.json({ graph: { nope: 1 }, source: "gallery" }));
+    expect(await fetchSharedGraph("1706.03762")).toBeNull();
+    stub(() => new Response("not json"));
+    expect(await fetchSharedGraph("1706.03762")).toBeNull();
+  });
+
+  test("returns a valid graph and source, rejects other sources, encodes the id", async () => {
+    const graph = await Bun.file(new URL("../../samples/1706.03762.json", import.meta.url)).json();
+    let seen = "";
+    stub((u) => {
+      seen = u;
+      return Response.json({ graph, source: "sample" });
+    });
+    const r = await fetchSharedGraph("a/b");
+    expect(seen).toBe("/api/graph?arxiv_id=a%2Fb");
+    expect(r?.source).toBe("sample");
+    expect(r?.graph.blocks.length).toBe(graph.blocks.length);
+    stub(() => Response.json({ graph, source: "claude" }));
+    expect(await fetchSharedGraph("1706.03762")).toBeNull();
   });
 });

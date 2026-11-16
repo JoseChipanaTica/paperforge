@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Architecture, LocatedArchitecture } from "../shared/graph";
 import type { JourneyArtifact, PytorchArtifact } from "../shared/learn";
 import { pickText } from "../shared/translate";
-import { LocalStore, graphHash, textHash } from "./localStore";
+import { LocalStore, graphHash, sharedDecision, textHash } from "./localStore";
 import { type Backend, memoryBackend, nullBackend } from "./storeBackend";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
@@ -316,5 +316,16 @@ describe("the cap", () => {
     await store.putArtifact("mine", "h", "main", "journey", journey);
     expect(await b.get("papers", "mine")).toBeDefined();
     expect(await b.get("papers", "other")).toBeUndefined();
+  });
+});
+
+describe("sharedDecision", () => {
+  const local = { graph_hash: "aaa" } as import("./localStore").StoredPaper;
+  const shared = { graph, source: "gallery" as const };
+  test("replaces only when a shared graph has a different hash", () => {
+    expect(sharedDecision(local, shared, "bbb")).toBe("replace");
+    expect(sharedDecision(local, shared, "aaa")).toBe("keep");
+    expect(sharedDecision(local, null, null)).toBe("keep");
+    expect(sharedDecision(local, null, "bbb")).toBe("keep");
   });
 });

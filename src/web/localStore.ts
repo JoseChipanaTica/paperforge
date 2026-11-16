@@ -53,6 +53,15 @@ export type StoredPaper = {
   bytes: number;
 };
 
+/** Shared wins: a gallery or sample graph replaces the stored one only when its hash differs. */
+export function sharedDecision(
+  local: StoredPaper,
+  shared: { graph: Architecture; source: "gallery" | "sample" } | null,
+  sharedHash: string | null,
+): "keep" | "replace" {
+  return shared && sharedHash !== null && sharedHash !== local.graph_hash ? "replace" : "keep";
+}
+
 /** How a write went: Task 3 reads `name` (e.g. "QuotaExceededError") to evict and retry. */
 export type WriteResult = { ok: true } | { ok: false; name: string; error: unknown };
 
