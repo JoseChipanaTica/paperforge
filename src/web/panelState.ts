@@ -30,6 +30,7 @@ export type PanelAction =
   | { type: "kinds"; ready: LearnKind[] }
   | { type: "generate"; kind: LearnKind }
   | { type: "loaded"; kind: LearnKind }
+  | { type: "unready"; kind: LearnKind }
   | { type: "failed"; kind: LearnKind; message: string; needsKey: boolean }
   | { type: "reset" };
 
@@ -55,6 +56,9 @@ export function panelReducer(s: PanelState, a: PanelAction): PanelState {
     }
     case "loaded":
       return { ...s, status: { ...s.status, [a.kind]: "loaded" } };
+    case "unready":
+      // It looked ready (stored in this browser) but wasn't there after all: back to "not written yet".
+      return s.status[a.kind] === "ready" ? { ...s, status: { ...s.status, [a.kind]: "idle" } } : s;
     case "failed":
       return {
         ...s,
@@ -71,6 +75,14 @@ export function panelReducer(s: PanelState, a: PanelAction): PanelState {
  * kinds): reaching the walkthrough's end must never start a Claude call on its own.
  */
 export const trainingPrefetchable = (s: PanelState) => s.status.training === "ready";
+
+/**
+ * A learning tab whose artifact isn't in the browser store after all: write it with Claude only when the visitor
+ * clicked for it or the server listed it as existing (free). A tab that opened on its own because the browser seemed to
+ * hold it shows its "not written yet" state instead, so nothing is paid for unasked.
+ */
+export const missAction = ({ explicit, serverReady }: { explicit: boolean; serverReady: boolean }): "generate" | "unwritten" =>
+  explicit || serverReady ? "generate" : "unwritten";
 
 const FLICK = 500; // px/s
 

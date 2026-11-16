@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { initialPanel, panelReducer, snapSheet, trainingPrefetchable, walkthroughShown, type PanelAction, type PanelState } from "./panelState";
+import { initialPanel, missAction, panelReducer, snapSheet, trainingPrefetchable, walkthroughShown, type PanelAction, type PanelState } from "./panelState";
 
 const run = (...actions: PanelAction[]): PanelState => actions.reduce(panelReducer, initialPanel());
 
@@ -80,5 +80,24 @@ describe("trainingPrefetchable", () => {
     expect(trainingPrefetchable(after({ type: "kinds", ready: ["journey", "motion"] }))).toBe(false);
     expect(trainingPrefetchable(after({ type: "kinds", ready: ["journey", "training"] }))).toBe(true);
     expect(trainingPrefetchable(after({ type: "kinds", ready: ["training"] }, { type: "reset" }))).toBe(false);
+  });
+});
+
+describe("missAction", () => {
+  test("a tab opened on its own generates on a store miss only when the server listed it", () => {
+    expect(missAction({ explicit: false, serverReady: true })).toBe("generate");
+    expect(missAction({ explicit: false, serverReady: false })).toBe("unwritten");
+  });
+
+  test("a click always generates", () => {
+    expect(missAction({ explicit: true, serverReady: false })).toBe("generate");
+    expect(missAction({ explicit: true, serverReady: true })).toBe("generate");
+  });
+
+  test("unready sends a ready tab back to its not-yet-written state, nothing else", () => {
+    const after = (...actions: PanelAction[]) => actions.reduce(panelReducer, initialPanel());
+    expect(after({ type: "kinds", ready: ["pytorch"] }, { type: "unready", kind: "pytorch" }).status.pytorch).toBe("idle");
+    expect(after({ type: "generate", kind: "pytorch" }, { type: "unready", kind: "pytorch" }).status.pytorch).toBe("generating");
+    expect(after({ type: "loaded", kind: "journey" }, { type: "unready", kind: "journey" }).status.journey).toBe("loaded");
   });
 });

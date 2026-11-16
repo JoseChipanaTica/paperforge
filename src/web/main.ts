@@ -1,7 +1,7 @@
 import "katex/dist/katex.min.css";
 import type { Architecture, ForgeEvent, LocatedArchitecture } from "../shared/graph";
 import { LEARN_KINDS, blockEnds, type AnyArtifact, type JourneyArtifact, type LearnKind, type PytorchArtifact } from "../shared/learn";
-import type { MotionArtifact } from "../shared/motion";
+import { motionFits, type MotionArtifact } from "../shared/motion";
 import { train, type Trace } from "../shared/train/run";
 import type { TrainingArtifact } from "../shared/training";
 import { FigureSlot, StepFigure, figureState, type FigureStatus } from "./motion/figure";
@@ -30,10 +30,10 @@ import { openIdbBackend } from "./idbBackend";
 import { LocalStore, graphHash, sharedDecision, type StoredPaper } from "./localStore";
 import { openPlan, replaceWithShared, sharedStillApplies, storedEvents, withTimeout } from "./paperOpen";
 import { nullBackend } from "./storeBackend";
-import { withStored } from "./stored";
+import { insideJourneyFits, withStored } from "./stored";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
-import { isTabKind, trainingPrefetchable, walkthroughShown, type TabId, type TabKind } from "./panelState";
+import { isTabKind, missAction, trainingPrefetchable, walkthroughShown, type TabId, type TabKind } from "./panelState";
 import { Overview } from "./overview";
 import { Sheet } from "./sheet";
 import { StudyPanel } from "./studyPanel";
@@ -125,13 +125,23 @@ let openSeq = 0;
  * holds one for g's hash (no request, no key), else `fetch`, whose result is stored after the paper's own record. The
  * hash and the paper's record write are taken now, so a result that lands after the paper changed is still filed
  * under the graph it was built for. The read is bounded (a slow store is a miss); the write is never awaited.
+ * `fits`: a stored value that no longer fits what's on screen is a miss (and the fetched one replaces it).
  */
-function fromStore<T extends AnyArtifact | Architecture>(g: LocatedArchitecture, scope: string, kind: string, fetch: () => Promise<T>): Promise<T> {
+function fromStore<T extends AnyArtifact | Architecture>(
+  g: LocatedArchitecture,
+  scope: string,
+  kind: string,
+  fetch: () => Promise<T>,
+  fits: (v: T) => boolean | Promise<boolean> = () => true,
+): Promise<T> {
   const hash = graph === g ? graphHashNow : null;
   if (!hash) return fetch();
   const saved = paperSaved;
   return withStored(
-    () => withTimeout(storeReady.then((s) => s.getArtifact(hash, scope, kind) as Promise<T | null>), STORE_WAIT, null),
+    async () => {
+      const hit = await withTimeout(storeReady.then((s) => s.getArtifact(hash, scope, kind) as Promise<T | null>), STORE_WAIT, null);
+      return hit && (await fits(hit)) ? hit : null;
+    },
     fetch,
     (v) => saved.then(() => storeReady).then((s) => s.putArtifact(g.arxiv_id, hash, scope, kind, v)),
   ).then((r) => r.value);
@@ -506,6 +516,8 @@ async function publish() {
 
 // Artifacts opened for this paper, so revisiting a tab never pays for a second generation.
 const artifacts = new Map<LearnKind, AnyArtifact>();
+// Kinds the server says exist for this paper (gallery or sample): opening one is free even when the browser lacks it.
+const serverKinds = new Set<LearnKind>();
 const isKind = isTabKind;
 // The walkthrough, or the training step that follows it; both play in the Walkthrough tab.
 type TourKind = "journey" | "training";
@@ -537,7 +549,7 @@ panel.onSelect = (tab) => {
   if (tab === "journey" && inside) return void openInsideJourney(inside.blockId);
   closeInside();
   if (again && artifacts.has(tab)) return; // already showing (e.g. a tap to open the phone sheet)
-  if (artifacts.has(tab) || panel.state.status[tab] === "ready") void openLearn(tab);
+  if (artifacts.has(tab) || panel.state.status[tab] === "ready") void openLearn(tab, false);
   else renderState(tab);
 };
 
@@ -605,6 +617,7 @@ function resetLearn() {
   trainingOn = false;
   scene.setHeat(null);
   artifacts.clear();
+  serverKinds.clear();
   insideJourneys.clear();
   translations.clear();
   motions.clear();
@@ -619,6 +632,7 @@ async function refreshKinds() {
   const hash = graphHashNow;
   const [kinds, local] = await Promise.all([fetchKinds(id), storedKinds(hash)]);
   if (graph?.arxiv_id !== id || graphHashNow !== hash) return;
+  for (const k of kinds) serverKinds.add(k);
   panel.dispatch({ type: "kinds", ready: [...new Set([...kinds, ...local])] });
 }
 
@@ -631,12 +645,15 @@ async function storedKinds(hash: string | null): Promise<LearnKind[]> {
   return LEARN_KINDS.filter((_, i) => has[i]);
 }
 
-async function openLearn(kind: TabKind) {
+/** `explicit`: the visitor clicked for it (not a "ready" tab opening on its own), so a store miss may call Claude. */
+async function openLearn(kind: TabKind, explicit = true) {
   if (!graph) return;
   const g = graph;
   const cached = artifacts.get(kind);
   // Stored in this browser: shown with no request; otherwise the tab shows its progress while Claude writes.
   const request = async () => {
+    // Opened on its own because the browser seemed to hold it, and the server has none: never a Claude call unasked.
+    if (missAction({ explicit, serverReady: serverKinds.has(kind) }) === "unwritten") throw new LearnError("Not in this browser.", "not_stored");
     if (graph === g) {
       panel.dispatch({ type: "generate", kind });
       if (panel.state.active === kind) renderState(kind);
@@ -658,7 +675,8 @@ async function openLearn(kind: TabKind) {
   } catch (err) {
     if (graph !== g) return;
     const e = err instanceof LearnError ? err : new LearnError(String(err));
-    panel.dispatch({ type: "failed", kind, message: e.message, needsKey: e.code === "needs_key" });
+    if (e.code === "not_stored") panel.dispatch({ type: "unready", kind });
+    else panel.dispatch({ type: "failed", kind, message: e.message, needsKey: e.code === "needs_key" });
     renderState(kind);
   }
 }
@@ -888,7 +906,9 @@ async function openInsideJourney(blockId: string) {
         root.querySelector(".learn-progress")?.replaceChildren(m),
       ).then((r) => r.artifact as JourneyArtifact);
     };
-    const p = fromStore(g, blockId, "journey", request);
+    // A stored one must start from the example the model's walkthrough brings into this block.
+    const ends = blockEnds(artifacts.get("journey") as JourneyArtifact | undefined, blockId);
+    const p = fromStore(g, blockId, "journey", request, (j) => insideJourneyFits(j, ends));
     insideJourneys.set(blockId, (pending = p));
     p.catch(() => insideJourneys.get(blockId) === p && insideJourneys.delete(blockId));
   }
@@ -929,8 +949,16 @@ function loadMotion(scope: string) {
   motions.set(scope, state);
   const request =
     scope === "main"
-      ? fromStore(g, "main", "motion", () =>
-          requestArtifact(g.arxiv_id, "motion", g, storedKey(), () => {}, artifacts.get("journey") as JourneyArtifact | undefined).then((r) => r.artifact),
+      ? fromStore(
+          g,
+          "main",
+          "motion",
+          () => requestArtifact(g.arxiv_id, "motion", g, storedKey(), () => {}, artifacts.get("journey") as JourneyArtifact | undefined).then((r) => r.artifact),
+          // A stored motion must animate the walkthrough on screen.
+          (m) => {
+            const journey = artifacts.get("journey") as JourneyArtifact | undefined;
+            return !!journey && motionFits(m as MotionArtifact, journey);
+          },
         )
       : fromStore(g, scope, "motion", () =>
           insideJourneys
@@ -941,6 +969,7 @@ function loadMotion(scope: string) {
                 : Promise.reject(new LearnError("closed")),
             )
             .then((r) => r.artifact),
+          async (m) => motionFits(m as MotionArtifact, await insideJourneys.get(scope)!),
         );
   request
     .then((artifact) => {

@@ -4,9 +4,12 @@ import type { Architecture } from "../shared/graph";
 import { applyText, pickText, type TranslatedText } from "../shared/translate";
 import { translate, type TranslationStore } from "./lang";
 import { textHash } from "./localStore";
-import { withStored } from "./stored";
+import { insideJourneyFits, withStored } from "./stored";
+import { blockEnds, type JourneyArtifact } from "../shared/learn";
 
 const graph = (await Bun.file(join(import.meta.dir, "../../samples/1706.03762.json")).json()) as Architecture;
+const main = (await Bun.file(join(import.meta.dir, "../../samples/1706.03762.journey.json")).json()) as JourneyArtifact;
+const ffn = (await Bun.file(join(import.meta.dir, "../../samples/1706.03762.inside.encoder_ffn.journey.json")).json()) as JourneyArtifact;
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe("withStored", () => {
@@ -150,5 +153,25 @@ describe("translate with the browser store", () => {
     expect(out).toBe(graph);
     expect(touched).toBe(false);
     expect(calls).toBe(0);
+  });
+});
+
+describe("insideJourneyFits", () => {
+  const ends = blockEnds(main, "encoder_ffn");
+
+  test("a block walkthrough that starts from the main example fits", () => {
+    expect(insideJourneyFits(ffn, ends)).toBe(true);
+  });
+
+  test("with no main walkthrough on screen there is nothing to check against", () => {
+    expect(insideJourneyFits(ffn, { entering: null, leaving: null })).toBe(true);
+  });
+
+  test("one that starts from another example doesn't", () => {
+    const other = {
+      ...ffn,
+      input: { ...ffn.input, views: ffn.input.views.map((v) => ({ ...v, rows: v.rows.map((r) => r + "!") })) },
+    };
+    expect(insideJourneyFits(other, ends)).toBe(false);
   });
 });
