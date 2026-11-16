@@ -99,7 +99,7 @@ describe("train", () => {
     const cross = node(t, "dec_cross");
     close(node(t, "enc_norm2").gradOut, cross.gradIn[1]!);
     // dec_norm1 feeds dec_cross (queries) and dec_add2 (skip).
-    const sum = cross.gradIn[0]!.map((row, i) => row.map((v, j) => v + node(t, "dec_add2").gradIn[0]![i]![j]!));
+    const sum = cross.gradIn[0]!.map((row, i) => row.map((v, j) => v + node(t, "dec_add2").gradIn[1]![i]![j]!));
     close(node(t, "dec_norm1").gradOut, sum);
   });
 

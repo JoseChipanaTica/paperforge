@@ -26,7 +26,7 @@ export const ToyNode = z.object({
   inputs: z
     .array(z.string())
     .describe(
-      "ids of earlier nodes this node reads, in order. input nodes: []. residual_add: the sublayer output and the skip. attention 'cross': [queries, keys/values (the encoder output)]",
+      "ids of earlier nodes this node reads, in order. input nodes: []. residual_add: always [sublayer output, skip]. attention 'cross': [queries, keys/values (the encoder output)]",
     ),
   params: z
     .array(
@@ -70,8 +70,8 @@ export const TrainingArtifact = z.object({
   }),
   optimizer: z.object({
     kind: z.string().describe("The paper's optimizer by name, e.g. 'Adam', 'SGD with momentum', 'AdamW', 'LAMB'"),
-    lr: z.number().describe("The paper's (peak) learning rate"),
-    lr_toy: z.number().describe("The learning rate the toy step uses; write the same value as lr"),
+    lr: z.number().describe("The paper's own (peak) learning rate, as the paper states or its schedule implies, e.g. 0.0007"),
+    lr_toy: z.number().describe("The learning rate this toy step uses: a toy-scale rate, usually 0.01–0.1, picked so one step visibly lowers the loss. `lr` stays the paper's value"),
     momentum: z.number().describe("Momentum coefficient (SGD with momentum), else 0"),
     beta1: z.number().describe("Adam β1 (0.9 if the paper doesn't say)"),
     beta2: z.number().describe("Adam β2 (0.999 if the paper doesn't say)"),
