@@ -26,7 +26,7 @@ import {
 } from "./learn";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
-import { isTabKind, walkthroughShown, type TabId, type TabKind } from "./panelState";
+import { isTabKind, trainingPrefetchable, walkthroughShown, type TabId, type TabKind } from "./panelState";
 import { Overview } from "./overview";
 import { Sheet } from "./sheet";
 import { StudyPanel } from "./studyPanel";
@@ -564,7 +564,7 @@ function renderJourney(journey: JourneyArtifact, scope: string, shownGraph: Loca
     (el, blockId) => {
       figureAt = el && blockId ? { el, blockId, scope } : null;
       refreshFigure();
-      // The last step is in view: have the training step ready by the time the visitor asks for it.
+      // The last step is in view: have an existing training step ready by the time the visitor asks for it.
       if (scope === "main" && driver.index >= script.steps.length - 1) prefetchTraining();
     },
     // Training follows the model's own example; an inside walkthrough has none.
@@ -619,8 +619,9 @@ function fetchTraining(): Promise<TrainingArtifact> | null {
   return trainingReq;
 }
 
+/** Background fetch, only of a training step that already exists (never a Claude call unasked). */
 function prefetchTraining() {
-  if (!trainingFailed) fetchTraining()?.catch(() => {});
+  if (!trainingFailed && trainingPrefetchable(panel.state)) fetchTraining()?.catch(() => {});
 }
 
 /** "Train on this example →": leave the walkthrough where it is and start the training tour at its beginning. */

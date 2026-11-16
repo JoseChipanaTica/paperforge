@@ -59,6 +59,13 @@ describe("the outro", () => {
     expect(outro).toContain("Train on this example →");
   });
 
+  test("the input's note says what the numbers are: illustrative unless the script says otherwise", () => {
+    expect(stepsHtml(script, graph, null)).toContain("Values are illustrative");
+    const computed = stepsHtml({ ...script, intro: { ...script.intro, note: "Computed in your browser on a toy model" } }, graph, null);
+    expect(computed).toContain("Computed in your browser on a toy model");
+    expect(computed).not.toContain("Values are illustrative");
+  });
+
   test("clicking it calls run", () => {
     let ran = 0;
     const calls: string[] = [];

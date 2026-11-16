@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { VIEW_KINDS, type View } from "../shared/learn";
-import { MAX_CELLS, formatValue, layoutView, layoutViews, parseDims } from "./specimenLayout";
+import { MAX_CELLS, colLabelMode, formatValue, labelPx, layoutView, layoutViews, parseDims, rowLabelRoom, rowLabelsOf } from "./specimenLayout";
 
 const view = (v: Partial<View>): View => ({ kind: "tensor", caption: "c", rows: [], cols: [], values: [], dims: "[3, 512]", split: 1, ...v });
 const grid = (n: number, m: number) => Array.from({ length: n }, (_, i) => Array.from({ length: m }, (_, j) => (i * m + j) / (n * m)));
@@ -109,5 +109,42 @@ describe("formatValue", () => {
     expect(formatValue(0.5)).toBe("0.50");
     expect(formatValue(-1.234)).toBe("-1.23");
     expect(formatValue(123.4)).toBe("123.4");
+  });
+});
+
+describe("labels that don't fit", () => {
+  const vocab = ["<s>", "the", "cat", "sat", "die", "Katze", "saß", "<eos>"];
+
+  test("column labels sit flat while the longest fits its column", () => {
+    expect(colLabelMode(["the", "cat", "sat"], 40)).toBe("flat");
+  });
+
+  test("too wide for their columns, they stand on end, and vanish when even a line won't fit", () => {
+    expect(colLabelMode(vocab, 20)).toBe("rotated");
+    expect(colLabelMode(["E[cat,3]", "E[sat,0]"], 30)).toBe("rotated");
+    expect(colLabelMode(vocab, 8)).toBe("none");
+    expect(colLabelMode([], 40)).toBe("none");
+  });
+
+  test("row labels get room for the longest one, more as the card shrinks", () => {
+    const rows = rowLabelsOf(view({ kind: "matrix", rows: ["<s>", "die", "Katze"], cols: [], values: grid(3, 3) }));
+    expect(rows).toEqual(["<s>", "die", "Katze"]);
+    const room = rowLabelRoom(rows, 100);
+    expect(room).toBeGreaterThan(rowLabelRoom(["die"], 100));
+    expect(rowLabelRoom(rows, 50)).toBeGreaterThan(room);
+    expect(room * 100).toBeGreaterThanOrEqual(labelPx("Katze", 11)); // the whole word, in pixels
+    expect(rowLabelRoom([], 100)).toBe(0);
+    expect(rowLabelsOf(view({ kind: "tokens", rows: ["a"] }))).toEqual([]);
+  });
+
+  test("the second view moves over only when its row labels need more than the gap", () => {
+    const vs = [view({ kind: "tokens", rows: ["a", "b"] }), view({ kind: "matrix", rows: ["Katze"], values: grid(1, 3) })];
+    const left = (l: { cells: { x: number; w: number }[] }) => Math.min(...l.cells.map((c) => c.x - c.w / 2));
+    const right = (l: { cells: { x: number; w: number }[] }) => Math.max(...l.cells.map((c) => c.x + c.w / 2));
+    const plain = layoutViews(vs);
+    expect(layoutViews(vs, [0, 0.1])).toEqual(plain.map((l) => ({ ...l, labelRoom: l === plain[0] ? 0 : 0.1 })));
+    const [a, b] = layoutViews(vs, [0, 0.9]);
+    expect(left(b!) - right(a!)).toBeGreaterThanOrEqual(0.9);
+    expect(b!.labelRoom).toBe(0.9);
   });
 });

@@ -4,7 +4,7 @@ import type { View } from "../shared/learn";
 import { ease, type Run } from "./anim";
 import { HIGHLIGHTER, INK, SHEET, TYPE_COLOR, VERMILION } from "./blocks";
 import type { ForgeScene } from "./scene";
-import { layoutViews, type Cell, type Laid } from "./specimenLayout";
+import { CELL_PITCH, colLabelMode, layoutViews, rowLabelRoom, rowLabelsOf, type Cell, type Laid } from "./specimenLayout";
 
 /**
  * The specimen: the journey's data, drawn as a small printed card that floats beside the block
@@ -82,6 +82,8 @@ interface Built {
   at: string;
   views: View[];
   captions: HTMLElement[]; // one per view, in order
+  /** Each matrix's column labels and how they print now (colLabelMode), rechecked as the camera moves. */
+  cols: { labels: HTMLElement[]; texts: string[]; mode: string }[];
 }
 
 export class Specimen {
@@ -142,9 +144,8 @@ export class Specimen {
     await run.wait(Math.max(0, CAMERA_MS - (performance.now() - started)));
     if (token !== this.token) return;
 
-    const built = this.build(views, at);
+    const built = this.build(views, at, anchor, this.scene.blockSize(at));
     this.current = built;
-    this.place(built, at, anchor, this.scene.blockSize(at));
     this.face(built.group);
     this.scene.scene.add(built.group);
 
@@ -172,7 +173,7 @@ export class Specimen {
    * Beside the block, opposite its label, shrunk until its outer edge is in view: a wide card next
    * to the right-hand column would otherwise run under the study panel.
    */
-  private place(b: Built, at: string, anchor: THREE.Vector3, blockSize: number) {
+  private place(group: THREE.Group, width: number, at: string, anchor: THREE.Vector3, blockSize: number): number {
     const camera = this.scene.camera;
     // Away from the block's own label; with the label on top, toward the roomier side of the screen.
     const labelSide = this.scene.labelSide(at);
@@ -180,13 +181,21 @@ export class Specimen {
     const right = new THREE.Vector3().crossVectors(anchor.clone().sub(camera.position).setY(0).normalize(), UP).normalize();
     let scale = SCALE;
     for (let i = 0; i < 6; i++) {
-      b.group.position.copy(specimenOffset(camera.position, anchor, blockSize, b.width * scale, side));
-      const edge = b.group.position.clone().addScaledVector(right, (side * b.width * scale) / 2).project(camera).x;
+      group.position.copy(specimenOffset(camera.position, anchor, blockSize, width * scale, side));
+      const edge = group.position.clone().addScaledVector(right, (side * width * scale) / 2).project(camera).x;
       if (Math.abs(edge) <= 0.94) break;
       scale *= 0.82;
     }
-    b.group.scale.setScalar(scale);
-    b.scale = scale;
+    group.scale.setScalar(scale);
+    return scale;
+  }
+
+  /** Screen pixels per world unit at a point (the card's labels are fixed-size DOM text). */
+  private pxPerWorld(at: THREE.Vector3): number {
+    const camera = this.scene.camera;
+    const h = this.scene.renderer.domElement.clientHeight || 1;
+    const dist = Math.max(1e-3, camera.position.distanceTo(at));
+    return h / (2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
   }
 
   /** Take the specimen off the model (the tour ended, or it no longer applies). */
@@ -211,9 +220,29 @@ export class Specimen {
     if (this.current === b) this.current = null;
   }
 
-  private build(views: View[], at: string): Built {
-    const laid = layoutViews(views);
+  /**
+   * The card, placed: its row labels get room measured at the size it ends up printed (a smaller card needs relatively
+   * more), so the fit check and the printed sheet include them.
+   */
+  private build(views: View[], at: string, anchor: THREE.Vector3, blockSize: number): Built {
     const group = new THREE.Group();
+    const labels = views.slice(0, 2).map(rowLabelsOf);
+    const extent = (l: Laid[]) =>
+      Math.max(...l.flatMap((x) => x.cells.map((c) => c.x + c.w / 2))) - Math.min(...l.flatMap((x) => x.cells.map((c) => c.x - c.w / 2)));
+    let scale = SCALE;
+    let rooms: number[] = [];
+    let laid = layoutViews(views);
+    let width = 0;
+    for (let i = 0; i < 4; i++) {
+      const px = this.pxPerWorld(anchor) * scale;
+      rooms = labels.map((ls) => rowLabelRoom(ls, px));
+      laid = layoutViews(views, rooms);
+      // Symmetric, so the fit check holds on either side.
+      width = extent(laid) + 2 * Math.max(CARD_PAD, rooms[0] ?? 0);
+      const next = this.place(group, width, at, anchor, blockSize);
+      if (Math.abs(next - scale) < 1e-6) break;
+      scale = next;
+    }
     const cells = laid.flatMap((l) => l.cells);
     const splits = laid.flatMap((l, i) => l.cells.map(() => views[i]!.split));
     const mesh = new THREE.InstancedMesh(this.cellGeometry, new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0 }), cells.length);
@@ -221,17 +250,18 @@ export class Specimen {
     mesh.userData.cells = cells;
     mesh.userData.occludes = true;
     group.add(mesh);
-    const captions = laid.map((l, i) => this.decorate(group, l, views[i]!));
-    const minX = Math.min(...laid.map((l) => (l.cells[0] ? Math.min(...l.cells.map((c) => c.x - c.w / 2)) : 0)));
-    const maxX = Math.max(...laid.map((l) => (l.cells[0] ? Math.max(...l.cells.map((c) => c.x + c.w / 2)) : 0)));
-    return { group, mesh, cells, width: maxX - minX + 2 * CARD_PAD, scale: SCALE, at, views, captions };
+    const cols: Built["cols"] = [];
+    const captions = laid.map((l, i) => this.decorate(group, l, views[i]!, cols));
+    return { group, mesh, cells, width, scale, at, views, captions, cols };
   }
 
   /** The printed card behind a view, its row labels, caption and "…512" cap. */
-  private decorate(group: THREE.Group, l: Laid, v: View): HTMLElement {
+  private decorate(group: THREE.Group, l: Laid, v: View, cols: Built["cols"]): HTMLElement {
     const xs = l.cells.map((c) => c.x);
-    const cx = (Math.min(...l.cells.map((c) => c.x - c.w / 2)) + Math.max(...l.cells.map((c) => c.x + c.w / 2))) / 2;
-    const w = l.width + 2 * CARD_PAD;
+    // The sheet reaches past the longest row label on the left.
+    const leftPad = Math.max(CARD_PAD, (l.labelRoom ?? 0) + 0.04);
+    const cx = (Math.min(...l.cells.map((c) => c.x - c.w / 2)) - leftPad + Math.max(...l.cells.map((c) => c.x + c.w / 2)) + CARD_PAD) / 2;
+    const w = l.width + leftPad + CARD_PAD;
     const h = l.height + 2 * CARD_PAD;
     const plane = (color: string, dx: number, dy: number, z: number, pad: number) => {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w + pad, h + pad), new THREE.MeshBasicMaterial({ color }));
@@ -249,10 +279,15 @@ export class Specimen {
     }
     if (v.kind === "matrix" && v.cols.length) {
       const top = Math.max(...l.cells.map((c) => c.y + c.h / 2));
+      const entry = { labels: [] as HTMLElement[], texts: v.cols, mode: "flat" };
       for (const [j, col] of v.cols.entries()) {
         const c = l.cells.find((cell) => cell.key.endsWith(`:${col}`)) ?? l.cells[j];
-        if (c) group.add(label(col, "col", new THREE.Vector3(c.x, top + 0.04, 0), [0.5, 1]));
+        if (!c) continue;
+        const obj = label(col, "col", new THREE.Vector3(c.x, top + 0.04, 0), [0.5, 1]);
+        entry.labels.push(obj.element as HTMLElement);
+        group.add(obj);
       }
+      cols.push(entry);
     }
     if (l.more) {
       const right = Math.max(...xs.map((x, i) => x + l.cells[i]!.w / 2));
@@ -274,6 +309,19 @@ export class Specimen {
     const b = this.current;
     if (!b) return;
     this.face(b.group);
+    // Column labels side by side, standing on end, or left to the tooltip, as the card's size on screen allows.
+    if (b.cols.length) {
+      const pitch = CELL_PITCH * b.scale * this.pxPerWorld(b.group.position);
+      for (const c of b.cols) {
+        const mode = colLabelMode(c.texts, pitch);
+        if (mode === c.mode) continue;
+        c.mode = mode;
+        for (const el of c.labels) {
+          el.classList.toggle("rotated", mode === "rotated");
+          el.hidden = mode === "none";
+        }
+      }
+    }
     const hit = this.scene.hits([b.mesh])[0];
     const cell = hit?.instanceId !== undefined ? b.cells[hit.instanceId] : undefined;
     this.tip.visible = !!cell;

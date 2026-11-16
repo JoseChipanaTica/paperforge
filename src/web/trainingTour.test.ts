@@ -6,7 +6,7 @@ import { train } from "../shared/train/run";
 import type { TrainingArtifact } from "../shared/training";
 import { applyText, pickText } from "../shared/translate";
 import type { TourScript } from "./tour";
-import { traceViews, trainingHeat, trainingScript } from "./trainingTour";
+import { COMPUTED, traceViews, trainingHeat, trainingScript } from "./trainingTour";
 
 const graph = (await Bun.file(new URL("../../samples/1706.03762.json", import.meta.url)).json()) as Architecture;
 const sample = (await Bun.file(new URL("../../samples/1706.03762.training.json", import.meta.url)).json()) as TrainingArtifact;
@@ -196,5 +196,23 @@ describe("trainingHeat", () => {
     const two = trainingHeat(s, trace, 2)!;
     expect(two.size).toBeGreaterThanOrEqual(2);
     for (const [id, l] of two) expect(all.get(id)).toBe(l); // a block's level never depends on the step
+  });
+});
+
+describe("the training script's words", () => {
+  const t = train(TRANSFORMER_TOY);
+  const s = trainingScript(TRANSFORMER_TOY, t);
+
+  test("the intro is said once and its numbers are called computed, not illustrative", () => {
+    expect(s.analogy.text).not.toBe(s.intro.body);
+    expect(s.analogy.text).not.toContain(TRANSFORMER_TOY.intro);
+    expect(s.intro.note).toBe(COMPUTED);
+  });
+
+  test("the update says once how far the weights move", () => {
+    const update = s.steps.at(-2)!.body;
+    expect(update.match(/every weight/g)?.length).toBe(1);
+    expect(update).toContain("every weight with a nonzero gradient");
+    expect(update).toContain("whatever the size of its gradient");
   });
 });

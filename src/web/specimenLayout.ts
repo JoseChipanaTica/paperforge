@@ -21,6 +21,8 @@ export interface Cell {
 
 export interface Laid {
   cells: Cell[];
+  /** Room its row labels need to the left of its cells (layoutViews' `rooms`), 0 when not measured. */
+  labelRoom?: number;
   width: number;
   height: number;
   caption: string;
@@ -33,6 +35,44 @@ const GAP = 0.04;
 const STEP = S + GAP;
 const DEPTH = 0.08;
 const VIEW_GAP = 0.3;
+/** Cell to cell, in layout units: what a column label has to fit in. */
+export const CELL_PITCH = STEP;
+/** A row label sits this far left of its cell (specimen.ts draws it there). */
+export const ROW_LABEL_GAP = 0.06;
+
+// The labels are DOM text in JetBrains Mono (styles/specimen.css): every glyph is 0.6 em wide.
+const MONO_EM = 0.6;
+export const ROW_LABEL_PX = 11;
+export const COL_LABEL_PX = 9.5;
+const COL_LINE_PX = 12; // a column label's line, when it stands on end
+/** How wide a label prints, in screen pixels. */
+export const labelPx = (text: string, fontPx: number) => [...text].length * MONO_EM * fontPx;
+
+/**
+ * Column labels over a matrix: side by side while the longest fits its column, standing on end when it doesn't but a
+ * line does, else none (the cell's tooltip still names its column). `pitchPx`: one column's width on screen now.
+ */
+export function colLabelMode(cols: string[], pitchPx: number): "flat" | "rotated" | "none" {
+  if (!cols.length) return "none";
+  const widest = Math.max(...cols.map((c) => labelPx(c, COL_LABEL_PX)));
+  if (widest + 4 <= pitchPx) return "flat";
+  return COL_LINE_PX <= pitchPx ? "rotated" : "none";
+}
+
+/** The labels a view prints to the left of its rows (tokens and patches print theirs on the cells). */
+export function rowLabelsOf(v: View): string[] {
+  if (v.kind === "tokens" || v.kind === "patches") return [];
+  return lay(v).cells.flatMap((c) => (c.label ? [c.label] : []));
+}
+
+/**
+ * Layout units left of a view's cells that its row labels need, so the card is measured with them and none is
+ * clipped. `pxPerUnit`: how many screen pixels one layout unit covers at the card's size.
+ */
+export function rowLabelRoom(labels: string[], pxPerUnit: number): number {
+  if (!labels.length || !(pxPerUnit > 0)) return 0;
+  return ROW_LABEL_GAP + (Math.max(...labels.map((l) => labelPx(l, ROW_LABEL_PX))) + 4) / pxPerUnit;
+}
 
 /** "[B, 3, 512]" → [4, 3, 512]: symbolic sizes get a token size so they still draw. */
 export const parseDims = (dims: string): number[] =>
@@ -195,14 +235,19 @@ export function layoutView(v: View): Laid {
   };
 }
 
-/** Up to two views side by side, the pair centred on (0, 0). */
-export function layoutViews(vs: View[]): Laid[] {
+/**
+ * Up to two views side by side, the pair centred on (0, 0). `rooms`: per view, the room its row labels need (rowLabelRoom);
+ * the second view moves right only when its labels wouldn't fit in the usual gap.
+ */
+export function layoutViews(vs: View[], rooms: number[] = []): Laid[] {
   const laid = vs.slice(0, 2).map(layoutView);
-  const total = laid.reduce((sum, l) => sum + l.width, 0) + VIEW_GAP * Math.max(0, laid.length - 1);
+  const gap = (i: number) => Math.max(VIEW_GAP, (rooms[i] ?? 0) + GAP);
+  const total = laid.reduce((sum, l, i) => sum + l.width + (i > 0 ? gap(i) : 0), 0);
   let left = -total / 2;
-  return laid.map((l) => {
+  return laid.map((l, i) => {
+    if (i > 0) left += gap(i);
     const dx = left + l.width / 2;
-    left += l.width + VIEW_GAP;
-    return { ...l, cells: l.cells.map((c) => ({ ...c, x: c.x + dx })) };
+    left += l.width;
+    return { ...l, labelRoom: rooms[i] ?? 0, cells: l.cells.map((c) => ({ ...c, x: c.x + dx })) };
   });
 }

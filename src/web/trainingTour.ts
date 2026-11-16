@@ -9,6 +9,11 @@ import type { TourScript, TourStep } from "./tour";
  * `Trace` that `train()` computed; the artifact only brings words. Pure, no DOM.
  */
 
+/** The training tour's box up top (the walkthrough's analogy); its intro paragraph is the artifact's. */
+export const TRAINING_SUMMARY = "The loss, the gradient flowing back block by block, one update, and the same example again.";
+/** Under the input: unlike the walkthrough's, these numbers are real. */
+export const COMPUTED = "Computed in your browser on a toy model";
+
 export const PASSTHROUGH = "This toy can't compute this block, so the gradient passes through unchanged.";
 
 const dims = (m: number[][]) => `[${m.length}, ${m[0]?.length ?? 0}]`;
@@ -198,7 +203,9 @@ export function trainingScript(a: TrainingArtifact, trace: Trace): TourScript {
     body: [
       o.fallback
         ? `The paper trains with ${o.kind}; the toy can't run it, so it takes a plain SGD step instead.`
-        : `${o.kind} moves every weight with a nonzero gradient once.`,
+        : trace.note
+          ? "" // the optimizer's own note says how far each weight moves
+          : `${o.kind} moves every weight with a nonzero gradient once.`,
       nodes.some((n) => n.kind === "embedding_lookup") ? "Rows of the embedding tables for words not in the example get no gradient and stay put." : "",
       sameRate
         ? `The toy uses the paper's learning rate, ${rate(o.lr)}.`
@@ -230,8 +237,8 @@ export function trainingScript(a: TrainingArtifact, trace: Trace): TourScript {
   };
 
   return {
-    analogy: { title: "One training step", text: a.intro },
-    intro: { title: "Training", body: a.intro, label: "Train on this example", views: [guess(before, "the guess"), targetView] },
+    analogy: { title: "One training step", text: TRAINING_SUMMARY },
+    intro: { title: "Training", body: a.intro, label: "Train on this example", views: [guess(before, "the guess"), targetView], note: COMPUTED },
     steps: [lossStep, ...backward, updateStep, againStep],
     output: { label: "After one training step", views: [guess(after, "the new guess")] },
     outro: a.outro,

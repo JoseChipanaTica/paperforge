@@ -40,7 +40,7 @@ export function stepsHtml(script: TourScript, graph: LocatedArchitecture, traced
         <p>${escapeHtml(script.intro.body)}</p>
         <p class="step-moment"><span>Input</span> ${escapeHtml(script.intro.label)}</p>
         ${captions(script.intro.views)}
-        <p class="step-note">Values are illustrative</p>
+        <p class="step-note">${escapeHtml(script.intro.note ?? "Values are illustrative")}</p>
       </section>
       <ol class="step-list">
         ${script.steps

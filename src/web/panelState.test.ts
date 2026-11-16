@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { initialPanel, panelReducer, snapSheet, walkthroughShown, type PanelAction, type PanelState } from "./panelState";
+import { initialPanel, panelReducer, snapSheet, trainingPrefetchable, walkthroughShown, type PanelAction, type PanelState } from "./panelState";
 
 const run = (...actions: PanelAction[]): PanelState => actions.reduce(panelReducer, initialPanel());
 
@@ -69,5 +69,16 @@ describe("walkthroughShown", () => {
   test("on the whole model: the model's walkthrough if loaded, else its start state (never a leftover inside list)", () => {
     expect(walkthroughShown(null, true)).toEqual({ kind: "main" });
     expect(walkthroughShown(null, false)).toEqual({ kind: "state" });
+  });
+});
+
+describe("trainingPrefetchable", () => {
+  const after = (...actions: PanelAction[]) => actions.reduce(panelReducer, initialPanel());
+
+  test("only a training step that already exists is fetched before the visitor asks", () => {
+    expect(trainingPrefetchable(initialPanel())).toBe(false);
+    expect(trainingPrefetchable(after({ type: "kinds", ready: ["journey", "motion"] }))).toBe(false);
+    expect(trainingPrefetchable(after({ type: "kinds", ready: ["journey", "training"] }))).toBe(true);
+    expect(trainingPrefetchable(after({ type: "kinds", ready: ["training"] }, { type: "reset" }))).toBe(false);
   });
 });

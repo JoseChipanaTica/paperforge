@@ -66,6 +66,12 @@ export function panelReducer(s: PanelState, a: PanelAction): PanelState {
   }
 }
 
+/**
+ * Fetch the training step before the visitor asks only when it already exists (gallery or sample, per GET /api/learn's
+ * kinds): reaching the walkthrough's end must never start a Claude call on its own.
+ */
+export const trainingPrefetchable = (s: PanelState) => s.status.training === "ready";
+
 const FLICK = 500; // px/s
 
 /** Where a dragged bottom sheet settles: the nearest snap, or the next one in a flick's direction. */

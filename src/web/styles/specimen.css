@@ -7,6 +7,9 @@
 .specimen-label.on { font-size: 11.5px; }
 .specimen-label.small { font-size: 9.5px; }
 .specimen-label.col { font-size: 9.5px; color: var(--ink-soft); }
+/* Too wide for their columns: each label stands on end (read bottom to top where sideways-lr is supported), on a
+   scrap of sheet over the scene. */
+.specimen-label.col.rotated { writing-mode: vertical-rl; writing-mode: sideways-lr; padding: 1px 0; background: var(--sheet); }
 .specimen-label.more { color: var(--ink-faint); }
 .specimen-label.caption {
   font: italic var(--t-xs) var(--serif); color: var(--ink-soft); max-width: 220px; white-space: normal; text-align: center;

@@ -15,7 +15,8 @@ export interface TourStep {
 
 export interface TourScript {
   analogy: { title: string; text: string };
-  intro: { title: string; body: string; label: string; views: View[] };
+  /** `note`: under the input, what the numbers are (the walkthrough's are illustrative). */
+  intro: { title: string; body: string; label: string; views: View[]; note?: string };
   steps: TourStep[];
   output: { label: string; views: View[] };
   outro: string;

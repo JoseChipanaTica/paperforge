@@ -10,7 +10,7 @@ export type OptimizerSpec = {
   weight_decay: number;
 };
 
-const ADAM_NOTE = "On the first step Adam moves every weight by about the learning rate, whatever the size of its gradient.";
+const ADAM_NOTE = "On its first step Adam moves every weight with a nonzero gradient by about the learning rate, whatever the size of its gradient.";
 
 /** Rows of the last axis (1-D becomes one row). */
 function rows(t: Tensor, values: ArrayLike<number>): number[][] {
