@@ -81,11 +81,79 @@ function artifactSchema(kind: string): z.ZodType | null {
 
 export class LocalStore {
   readonly available: boolean;
+  private capBytes: number;
+  private floorBytes: number;
+  private open: string | null = null;
+
+  /** The paper on screen is never evicted. */
+  setOpen(id: string | null): void {
+    this.open = id;
+  }
+
+  /** A put that retries once after evicting when the browser says the quota is full. */
+  private async put(store: StoreName, key: IDBValidKey, value: unknown): Promise<void> {
+    const r = await this.write(store, key, value);
+    if (r.ok) return void (await this.enforceCap());
+    if (r.name !== "QuotaExceededError") return;
+    await this.evict(0);
+    await this.write(store, key, value);
+  }
+
+  private async enforceCap(): Promise<void> {
+    await this.evict(this.capBytes);
+  }
+
+  /** When the total exceeds `trigger`, delete whole papers (least recently opened first) down to the floor. */
+  private async evict(trigger: number): Promise<void> {
+    try {
+      const size = (v: unknown) => {
+        const b = (v as { bytes?: unknown } | null)?.bytes;
+        return typeof b === "number" && Number.isFinite(b) ? b : 0;
+      };
+      const [papers, artifacts, translations] = await Promise.all([
+        this.all("papers"),
+        this.all("artifacts"),
+        this.all("translations"),
+      ]);
+      let total = 0;
+      for (const [, v] of [...papers, ...artifacts, ...translations]) total += size(v);
+      if (total <= trigger) return;
+      const order = papers
+        .filter(([k]) => k !== this.open)
+        .sort((a, b) => ((a[1] as { opened_at?: number })?.opened_at ?? 0) - ((b[1] as { opened_at?: number })?.opened_at ?? 0));
+      for (const [key, value] of order) {
+        if (total <= this.floorBytes) break;
+        const id = String(key);
+        await this.drop("papers", key);
+        total -= size(value);
+        for (const [k, v] of artifacts) {
+          if ((v as { arxiv_id?: unknown } | null)?.arxiv_id !== id) continue;
+          await this.drop("artifacts", k);
+          total -= size(v);
+        }
+        for (const [k, v] of translations) {
+          const t = v as Partial<StoredTranslation> | null;
+          if (!Array.isArray(t?.arxiv_ids) || !t.arxiv_ids.includes(id)) continue;
+          const rest = t.arxiv_ids.filter((x) => x !== id);
+          if (rest.length === 0) {
+            await this.drop("translations", k);
+            total -= size(v);
+          } else {
+            t.arxiv_ids = rest;
+            await this.write("translations", k, t);
+          }
+        }
+      }
+    } catch {}
+  }
 
   constructor(
     private backend: Backend,
     private now: () => number = () => Date.now(),
+    opts: { capBytes?: number; floorBytes?: number } = {},
   ) {
+    this.capBytes = opts.capBytes ?? 100_000_000;
+    this.floorBytes = opts.floorBytes ?? 80_000_000;
     this.available = backend !== nullBackend;
   }
 
@@ -144,7 +212,7 @@ export class LocalStore {
   }
 
   async putPaper(p: Omit<StoredPaper, "opened_at" | "bytes">): Promise<void> {
-    await this.write("papers", p.arxiv_id, { ...p, opened_at: this.now(), bytes: byteLength(p) });
+    await this.put("papers", p.arxiv_id, { ...p, opened_at: this.now(), bytes: byteLength(p) });
   }
 
   // ---- artifacts (learning artifacts and inside graphs) ----
@@ -162,7 +230,7 @@ export class LocalStore {
 
   async putArtifact(id: string, hash: string, scope: string, kind: string, value: ArtifactValue): Promise<void> {
     const entry: StoredArtifact = { arxiv_id: id, artifact: value, saved_at: this.now(), bytes: byteLength(value) };
-    await this.write("artifacts", [hash, scope, kind], entry);
+    await this.put("artifacts", [hash, scope, kind], entry);
   }
 
   // ---- translations ----
@@ -191,7 +259,7 @@ export class LocalStore {
     const ids = Array.isArray(prior?.arxiv_ids) ? prior.arxiv_ids.filter((x) => typeof x === "string") : [];
     if (!ids.includes(id)) ids.push(id);
     const entry: StoredTranslation = { arxiv_ids: ids, text, saved_at: this.now(), bytes: byteLength(text) };
-    await this.write("translations", key, entry);
+    await this.put("translations", key, entry);
   }
 
   // ---- the whole store ----

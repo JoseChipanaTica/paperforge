@@ -200,3 +200,82 @@ describe("LocalStore", () => {
     expect(await store.getPaper("1706.03762")).toBeNull();
   });
 });
+
+describe("the cap", () => {
+  const opts = { capBytes: 1000, floorBytes: 800 };
+  const seedPaper = (b: Backend, id: string, opened_at: number, bytes: number) =>
+    b.put("papers", id, { arxiv_id: id, opened_at, bytes });
+  const seedArtifact = (b: Backend, id: string, key: string, bytes: number) =>
+    b.put("artifacts", [key, "main", "journey"], { arxiv_id: id, saved_at: 0, bytes });
+  const trigger = (s: LocalStore) => s.putTranslation("zzz", "trig", "fr", "engineer", "graph", {} as never);
+
+  test("over the cap, the least recently opened papers go first, down to the floor", async () => {
+    const b = memoryBackend();
+    const store = new LocalStore(b, () => 9999, opts);
+    await seedPaper(b, "a", 1, 300);
+    await seedArtifact(b, "a", "ka", 100);
+    await seedPaper(b, "b", 2, 300);
+    await seedPaper(b, "c", 3, 400);
+    await trigger(store); // total > 1000
+    expect(await b.get("papers", "a")).toBeUndefined();
+    expect(await b.get("artifacts", ["ka", "main", "journey"])).toBeUndefined();
+    expect(await b.get("papers", "b")).toBeDefined(); // 700 is under the floor: stop
+    expect(await b.get("papers", "c")).toBeDefined();
+    expect((await store.usage()).bytes).toBeLessThanOrEqual(800);
+  });
+
+  test("under the cap nothing is evicted", async () => {
+    const b = memoryBackend();
+    const store = new LocalStore(b, () => 9999, opts);
+    await seedPaper(b, "a", 1, 500);
+    await trigger(store);
+    expect(await b.get("papers", "a")).toBeDefined();
+  });
+
+  test("the open paper is never evicted", async () => {
+    const b = memoryBackend();
+    const store = new LocalStore(b, () => 9999, opts);
+    await seedPaper(b, "a", 1, 700);
+    await seedPaper(b, "b", 2, 700);
+    store.setOpen("a");
+    await trigger(store);
+    expect(await b.get("papers", "a")).toBeDefined();
+    expect(await b.get("papers", "b")).toBeUndefined();
+  });
+
+  test("a translation shared by two papers survives evicting one", async () => {
+    const b = memoryBackend();
+    const store = new LocalStore(b, () => 9999, opts);
+    await seedPaper(b, "a", 1, 600);
+    await seedPaper(b, "b", 2, 600);
+    await b.put("translations", ["t1", "fr", "engineer"], { arxiv_ids: ["a", "b"], text: {}, saved_at: 0, bytes: 50 });
+    await b.put("translations", ["t2", "fr", "engineer"], { arxiv_ids: ["a"], text: {}, saved_at: 0, bytes: 50 });
+    await trigger(store);
+    expect(await b.get("papers", "a")).toBeUndefined();
+    expect(((await b.get("translations", ["t1", "fr", "engineer"])) as { arxiv_ids: string[] }).arxiv_ids).toEqual(["b"]);
+    expect(await b.get("translations", ["t2", "fr", "engineer"])).toBeUndefined();
+  });
+
+  test("a quota error evicts and retries once", async () => {
+    const mem = memoryBackend();
+    let fail = 1;
+    const b: Backend = {
+      ...mem,
+      put: (s, k, v) => (s === "artifacts" && fail-- > 0 ? Promise.reject({ name: "QuotaExceededError" }) : mem.put(s, k, v)),
+    };
+    const store = new LocalStore(b, () => 9999, opts);
+    await seedPaper(b, "old", 1, 900);
+    await store.putArtifact("new", "h", "main", "journey", journey);
+    expect(await b.get("papers", "old")).toBeUndefined();
+    expect(await b.get("artifacts", ["h", "main", "journey"])).toBeDefined();
+  });
+
+  test("a second quota error gives up silently", async () => {
+    const mem = memoryBackend();
+    const b: Backend = { ...mem, put: (s, k, v) => (s === "artifacts" ? Promise.reject({ name: "QuotaExceededError" }) : mem.put(s, k, v)) };
+    const store = new LocalStore(b, () => 9999, opts);
+    await seedPaper(b, "old", 1, 900);
+    await store.putArtifact("new", "h", "main", "journey", journey);
+    expect(await mem.get("artifacts", ["h", "main", "journey"])).toBeUndefined();
+  });
+});
