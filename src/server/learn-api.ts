@@ -25,6 +25,7 @@ import { errorMessage } from "./api";
 import { parseArxivId } from "./arxiv";
 import { loadPaperPages } from "./forge";
 import { getStore, type Store } from "./store";
+import { ndjson } from "./stream";
 import { askStream, generateArtifact, generateInside, generateInsideLearn } from "./tutor";
 
 /** Routes for the learning features: /api/learn (generate or fetch), /api/ask, GET /api/learn (kinds), /api/inside. */
@@ -58,17 +59,6 @@ const MAX_TURN_TEXT = 4000;
 const fileId = (id: string) => id.replace(/\//g, "_");
 const keyOf = (req: Request) => req.headers.get("x-anthropic-key")?.trim() || undefined;
 const bad = (error: string) => Response.json({ error }, { status: 400 });
-
-function ndjson<E>(run: (emit: (e: E) => void) => Promise<void>): Response {
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    async start(controller) {
-      await run((e) => controller.enqueue(encoder.encode(JSON.stringify(e) + "\n")));
-      controller.close();
-    },
-  });
-  return new Response(stream, { headers: { "Content-Type": "application/x-ndjson" } });
-}
 
 /** The published graph, or null when the paper isn't in the gallery (or the gallery is down). */
 const publishedGraph = (store: Store, id: string) =>

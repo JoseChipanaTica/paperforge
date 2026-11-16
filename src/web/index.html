@@ -44,8 +44,11 @@
         </label>
       </div>
       <div class="key">
-        <button id="key-toggle" type="button" class="btn btn-quiet" title="Your Anthropic key stays in this browser">API key</button>
-        <input id="key" type="password" spellcheck="false" autocomplete="off" placeholder="sk-ant-…" aria-label="Anthropic API key" hidden />
+        <button id="key-toggle" type="button" class="btn btn-quiet" title="Your Anthropic key stays in this browser" aria-expanded="false" aria-controls="key-panel">API key</button>
+        <div id="key-panel" class="key-panel" hidden>
+          <input id="key" type="password" spellcheck="false" autocomplete="off" placeholder="sk-ant-…" aria-label="Anthropic API key" aria-describedby="key-note" />
+          <p id="key-note" class="key-note">Kept only in this browser. It's sent with each request to call Claude and never saved or logged on our server.</p>
+        </div>
       </div>
     </header>
 

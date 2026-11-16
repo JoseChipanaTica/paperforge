@@ -68,7 +68,7 @@ const overview = new Overview(panel.tab("overview"), {
     try {
       await askBlock(graph.arxiv_id, blockId, question, askHistoryPayload(history), graph, storedKey(), reading, onDelta);
     } catch (err) {
-      if (err instanceof LearnError && err.code === "needs_key") openKey();
+      if (err instanceof LearnError && err.code === "needs_key") showKey(true);
       throw err;
     }
   },
@@ -98,6 +98,7 @@ let saveToken: string | null = null;
 const KEY_STORAGE = "paperforge.key";
 const keyInput = $<HTMLInputElement>("#key");
 const keyToggle = $("#key-toggle");
+const keyPanel = $("#key-panel");
 
 function storedKey(): string {
   try {
@@ -112,13 +113,15 @@ function syncKey() {
   keyToggle.textContent = storedKey() ? "API key ✓" : "API key";
 }
 
-function openKey() {
-  keyInput.hidden = false;
+function showKey(open: boolean) {
+  keyPanel.hidden = !open;
+  keyToggle.setAttribute("aria-expanded", String(open));
+  if (!open) return;
   keyInput.value = storedKey();
   keyInput.focus();
 }
 
-keyToggle.addEventListener("click", () => (keyInput.hidden ? openKey() : (keyInput.hidden = true)));
+keyToggle.addEventListener("click", () => showKey(keyToggle.getAttribute("aria-expanded") !== "true"));
 /** Remember the visitor's key in this browser (empty clears it). */
 function saveKey(key: string) {
   try {
@@ -135,7 +138,7 @@ keyInput.addEventListener("change", () => {
 keyInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     keyInput.dispatchEvent(new Event("change"));
-    keyInput.hidden = true;
+    showKey(false);
   }
 });
 syncKey();
@@ -230,7 +233,7 @@ async function handle(e: ForgeEvent, myRun: Run) {
     case "error":
       paper.stopReading();
       setStatus(e.message, true);
-      if (e.code === "needs_key") openKey();
+      if (e.code === "needs_key") showKey(true);
       break;
   }
 }
@@ -400,7 +403,7 @@ function renderState(kind: TabKind) {
     root.innerHTML = `
       <form class="learn-state key-card">
         <h3>Add your Anthropic API key</h3>
-        <p>Claude writes the ${NAMES[kind]} for this paper using your key. It stays in this browser and is only sent to Paperforge's server for this request.</p>
+        <p>Claude writes the ${NAMES[kind]} for this paper using your key. It stays in this browser: Paperforge's server uses it for this request only and never saves or logs it.</p>
         <label class="sr-only" for="key-${kind}">Anthropic API key</label>
         <input id="key-${kind}" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" required />
         <button class="btn btn-primary">Save key and write the ${NAMES[kind]}</button>
@@ -568,7 +571,7 @@ async function openInsideJourney(blockId: string) {
         <button type="button" class="btn btn-primary" data-retry>Try again</button>
       </div>`;
     root.querySelector("[data-retry]")!.addEventListener("click", () => void openInsideJourney(blockId));
-    if (e.code === "needs_key") openKey();
+    if (e.code === "needs_key") showKey(true);
   }
 }
 
@@ -668,7 +671,7 @@ async function localized<C extends object>(kind: TranslateKind, english: C, bloc
     const e = err instanceof LearnError ? err : new LearnError(String(err));
     if (e.code === "needs_key") {
       setStatus("Add your Anthropic API key to have Claude rewrite this for you.", true);
-      openKey();
+      showKey(true);
     } else setStatus(`Couldn't rewrite this: ${e.message}`, true);
     return english;
   }
@@ -769,7 +772,7 @@ async function openInside(blockId: string) {
     if (graph !== g) return;
     const e = err instanceof LearnError ? err : new LearnError(String(err));
     setStatus(e.message, true);
-    if (e.code === "needs_key") openKey();
+    if (e.code === "needs_key") showKey(true);
   }
 }
 

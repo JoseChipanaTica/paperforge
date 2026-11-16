@@ -35,12 +35,20 @@ body:not(.has-paper) .topbar .forge-form { visibility: hidden; }
 }
 .reading select:hover { color: var(--ink); background-color: var(--wash); }
 .reading select:focus-visible { outline: 0; box-shadow: var(--focus); color: var(--ink); }
-.key { display: flex; align-items: center; gap: var(--s2); }
+.key { position: relative; display: flex; align-items: center; gap: var(--s2); }
 .key .btn { white-space: nowrap; }
 .key .btn.set { color: var(--ink); }
 .key .btn.set::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #5f8a4f; }
-.key input { width: 230px; background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: var(--r-control); font: var(--t-xs) var(--mono); padding: 7px 9px; outline: 0; }
-.key input:focus { border-color: var(--ink); }
+/* The key opens as a small card under its button, with the promise of what happens to it. */
+.key-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 31; width: 280px;
+  display: grid; gap: var(--s2); padding: var(--s3);
+  background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: var(--r-control);
+}
+.key-panel[hidden] { display: none; }
+.key input { width: 100%; background: var(--paper); border: 1px solid var(--rule-strong); border-radius: var(--r-control); font: var(--t-xs) var(--mono); padding: 7px 9px; outline: 0; }
+.key input:focus { border-color: var(--ink); background: var(--sheet); }
+.key-note { margin: 0; font: var(--t-xs) / 1.45 var(--ui); color: var(--ink-soft); }
 
 @media (max-width: 899px) {
   .topbar { padding: 0 var(--s3); gap: var(--s2); }
@@ -51,7 +59,9 @@ body:not(.has-paper) .topbar .forge-form { visibility: hidden; }
   .forge-form input { width: 0; font-size: 16px; padding: 5px 8px; } /* 16px stops iOS zooming in */
   .forge-form .btn-primary { padding: 5px 12px; }
   body.has-paper .brand { font-size: 0; gap: 0; } /* logo only once a paper is open */
-  .key input { position: absolute; top: calc(var(--topbar-h) + 4px); right: var(--s3); width: min(320px, calc(100vw - 24px)); box-shadow: var(--print); }
+  .key { position: static; }
+  .key-panel { position: absolute; top: calc(var(--topbar-h) + 4px); right: var(--s3); width: min(320px, calc(100vw - 24px)); }
+  .key input { font-size: 16px; } /* 16px stops iOS zooming in */
   .key .btn { padding: 6px 8px; font-size: var(--t-xs); }
   .reading select { max-width: 76px; text-overflow: ellipsis; padding: 6px 18px 6px 6px; font-size: var(--t-xs); background-position: right 9px center, right 5px center; }
   .topbar:has(.forge-form:focus-within) .reading { display: none; } /* the paste box takes the bar while you type */
