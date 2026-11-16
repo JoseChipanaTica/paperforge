@@ -30,12 +30,12 @@ const byteLength = (value: unknown) => new TextEncoder().encode(JSON.stringify(v
 
 /** The graph's identity: its English content without where the quotes were found (nor the arXiv id). */
 export function graphHash(g: Architecture | LocatedArchitecture): Promise<string> {
-  const { paper_title, model_name, summary, hyperparameters, groups, blocks, edges } = g;
+  const { arxiv_id: _id, blocks, ...rest } = g as LocatedArchitecture;
   const bare = blocks.map((b) => {
-    const { source: _, ...rest } = b as typeof b & { source?: unknown };
-    return rest;
+    const { source: _, ...block } = b as typeof b & { source?: unknown };
+    return block;
   });
-  return sha256(canonical({ paper_title, model_name, summary, hyperparameters, groups, blocks: bare, edges }));
+  return sha256(canonical({ ...rest, blocks: bare }));
 }
 
 export function textHash(kind: TranslateKind, text: TranslatedText): Promise<string> {
@@ -47,11 +47,14 @@ export type StoredPaper = {
   pages: string[];
   graph: LocatedArchitecture;
   graph_hash: string;
-  save_token: string | null;
+  save_token?: string | null;
   source: "gallery" | "sample" | "cache" | "claude";
   opened_at: number;
   bytes: number;
 };
+
+/** How a write went: Task 3 reads `name` (e.g. "QuotaExceededError") to evict and retry. */
+export type WriteResult = { ok: true } | { ok: false; name: string; error: unknown };
 
 type ArtifactValue = AnyArtifact | Architecture;
 type StoredArtifact = { arxiv_id: string; artifact: ArtifactValue; saved_at: number; bytes: number };
@@ -62,7 +65,7 @@ const PaperRecord = z.object({
   pages: z.array(z.string()),
   graph: Architecture,
   graph_hash: z.string(),
-  save_token: z.string().nullable(),
+  save_token: z.string().nullish(),
   source: z.enum(["gallery", "sample", "cache", "claude"]),
   opened_at: z.number(),
   bytes: z.number(),
@@ -96,10 +99,15 @@ export class LocalStore {
     }
   }
 
-  private async write(store: StoreName, key: IDBValidKey, value: unknown): Promise<void> {
+  /** Never throws; a failure comes back with its DOMException name ("Error" when it has none). */
+  async write(store: StoreName, key: IDBValidKey, value: unknown): Promise<WriteResult> {
     try {
       await this.backend.put(store, key, value);
-    } catch {}
+      return { ok: true };
+    } catch (error) {
+      const name = (error as { name?: unknown } | null)?.name;
+      return { ok: false, name: typeof name === "string" ? name : "Error", error };
+    }
   }
 
   private async drop(store: StoreName, key: IDBValidKey): Promise<void> {

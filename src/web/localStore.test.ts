@@ -158,6 +158,24 @@ describe("LocalStore", () => {
     }
   });
 
+  test("a quota failure is caught and its name reported by the write helper", async () => {
+    const quota = { name: "QuotaExceededError", message: "full" };
+    const backend: Backend = { ...memoryBackend(), put: () => Promise.reject(quota) };
+    const store = new LocalStore(backend);
+    await store.putPaper(paper("h")); // no throw
+    expect(await store.write("papers", "x", {})).toEqual({ ok: false, name: "QuotaExceededError", error: quota });
+    expect(await new LocalStore(memoryBackend()).write("papers", "x", {})).toEqual({ ok: true });
+  });
+
+  test("a paper without a save token still reads back", async () => {
+    const backend = memoryBackend();
+    const store = new LocalStore(backend);
+    const { save_token: _, ...noToken } = paper("h");
+    await store.putPaper(noToken);
+    expect((await store.getPaper("1706.03762"))?.save_token).toBeUndefined();
+    expect(await backend.get("papers", "1706.03762")).toBeDefined();
+  });
+
   test("the null backend makes the store unavailable", async () => {
     const store = new LocalStore(nullBackend);
     expect(store.available).toBe(false);
