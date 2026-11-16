@@ -41,3 +41,9 @@ data/
 
 # design specs and plans (local only)
 docs/
+.vercel
+.env*
+!.env.example
+
+# built front end (bun run build, for Vercel)
+public/

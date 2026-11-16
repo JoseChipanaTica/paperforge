@@ -95,7 +95,7 @@ Each new artifact is one Claude call on your key, roughly $0.20–0.40 for a 15-
 
 ## Deploy your own
 
-Paperforge runs on Vercel's Bun runtime as is (`vercel.json`), with visitors bringing their own Anthropic key.
+Paperforge runs on Vercel's Bun preset as is (`vercel.json`), with visitors bringing their own Anthropic key. Vercel runs `server.ts` (the API, plus the page that `bun run build` writes to `public/`); `index.ts` is the local entry.
 
 1. Import the repo into Vercel (or run `vercel` in the repo).
 2. In the project's **Storage** tab, add **Neon** from the Marketplace and connect it. Make sure the project has a `DATABASE_URL` env var with the Neon connection string; if the integration names it differently (e.g. `POSTGRES_URL`), add `DATABASE_URL` with the same value. Use Neon's **pooled** connection string (the host contains `-pooler`): each Vercel instance keeps its own connection pool.
@@ -103,7 +103,7 @@ Paperforge runs on Vercel's Bun runtime as is (`vercel.json`), with visitors bri
 4. Do **not** set `ANTHROPIC_API_KEY`: on the hosted site every visitor uses their own.
 5. Deploy. The gallery table is created on first use.
 
-Forging takes a minute or two; `vercel.json` allows the function up to 300 seconds (the Hobby limit).
+Forging takes a minute or two; `vercel.json` allows the function up to 900 seconds, which needs a Pro plan (Hobby is capped at 300).
 
 ### Viewer controls
 

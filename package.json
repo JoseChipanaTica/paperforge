@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "bun --hot ./index.ts",
     "start": "NODE_ENV=production bun ./index.ts",
+    "build": "bun build ./src/web/index.html --outdir public --minify",
     "forge": "bun ./scripts/forge.ts",
     "learn": "bun ./scripts/learn.ts",
     "test": "bun test",

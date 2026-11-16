@@ -1,0 +1,9 @@
+.env*
+!.env.example
+data/
+docs/
+.superpowers/
+node_modules/
+.DS_Store
+# local entry (HTML import); Vercel runs server.ts
+/index.ts

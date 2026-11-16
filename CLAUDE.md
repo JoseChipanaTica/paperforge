@@ -9,8 +9,11 @@ make that 30-second moment look better or work more reliably. Polish what the ca
 
 ## Layout
 
-- `index.ts` — `Bun.serve()` entry (also the Vercel function): serves `src/web/index.html`,
-  `POST /api/forge` (visitor's key in `x-anthropic-key`), `GET|POST /api/papers`
+- `index.ts` — local `Bun.serve()` entry: `src/web/index.html` (HTML import) + the API routes
+- `server.ts` — Vercel entry (Bun preset, `.vercelignore` drops `index.ts`): the API routes + the page
+  built into `public/` by `bun run build` (Vercel doesn't support HTML imports)
+- `src/server/routes.ts` — every `/api` route: `POST /api/forge` (visitor's key in `x-anthropic-key`),
+  `GET|POST /api/papers`, learn/ask/inside/translate
 - `src/shared/graph.ts` — Zod schema for the block graph. **The contract** between the
   LLM, the server and the front end. Change it here and nowhere else.
 - `src/server/arxiv.ts` — parse arXiv ids/URLs, download PDFs
