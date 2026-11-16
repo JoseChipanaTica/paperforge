@@ -1,8 +1,10 @@
+import { SQL } from "bun";
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Architecture } from "../shared/graph";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { pickText } from "../shared/translate";
 import { createStore, storeFromEnv } from "./store";
 
 const sample = Architecture.parse(await Bun.file(join(import.meta.dir, "../../samples/1706.03762.json")).json());
@@ -120,5 +122,25 @@ describe("inside_learn", () => {
     expect(await store.getInsideLearn("1706.03762", "encoder_ffn", "journey")).toEqual(j);
     await store.putInsideLearn("1706.03762", "encoder_ffn", "journey", { ...j, intro: "Better" }, { replace: true });
     expect(((await store.getInsideLearn("1706.03762", "encoder_ffn", "journey")) as { intro: string }).intro).toBe("Better");
+  });
+});
+
+describe("translations table from before reading levels", () => {
+  test("gains a level column (old rows become engineer) and the wider primary key", async () => {
+    const dir = join(tmpdir(), `paperforge-levels-${crypto.randomUUID()}`);
+    mkdirSync(dir, { recursive: true });
+    const url = `sqlite://${join(dir, "g.db")}`;
+    const old = new SQL(url);
+    await old.unsafe(`create table translations (
+      source_hash text not null, lang text not null, kind text not null, arxiv_id text not null,
+      content text not null, created_at text not null, primary key (source_hash, lang))`);
+    const text = pickText("graph", sample);
+    await old`insert into translations values ('h1', 'es', 'graph', '1706.03762', ${JSON.stringify(text)}, '2026-11-01')`;
+    await old.close();
+
+    const store = createStore(url);
+    expect(await store.getTranslation("h1", "es", "engineer", "graph")).toEqual(text);
+    expect(await store.putTranslation("h1", "es", "beginner", "graph", "1706.03762", text)).toBe("created");
+    expect(await store.getTranslation("h1", "es", "beginner", "graph")).toEqual(text);
   });
 });

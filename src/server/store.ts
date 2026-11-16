@@ -38,6 +38,37 @@ export interface Store {
   putInsideLearn(id: string, blockId: string, kind: InsideLearnKind, artifact: AnyArtifact, opts?: { replace?: boolean }): Promise<"created" | "exists">;
 }
 
+/**
+ * Tables made before reading levels have no `level` column and key translations by (hash, lang).
+ * Those rows were all written for the default reader, so they become `engineer`.
+ */
+async function addTranslationLevel(db: SQL, sqlite: boolean) {
+  if (sqlite) {
+    const cols: { name: string }[] = await db.unsafe(`pragma table_info(translations)`);
+    if (cols.some((c) => c.name === "level")) return;
+    // SQLite can't change a primary key in place: rebuild the table.
+    await db.begin(async (tx) => {
+      await tx.unsafe(`alter table translations rename to translations_old`);
+      await tx.unsafe(`create table translations (
+        source_hash text not null, lang text not null, level text not null, kind text not null,
+        arxiv_id text not null, content text not null, created_at text not null,
+        primary key (source_hash, lang, level))`);
+      await tx.unsafe(`insert into translations
+        select source_hash, lang, 'engineer', kind, arxiv_id, content, created_at from translations_old`);
+      await tx.unsafe(`drop table translations_old`);
+    });
+    return;
+  }
+  const [has] = await db`select 1 from information_schema.columns
+    where table_schema = current_schema() and table_name = 'translations' and column_name = 'level'`;
+  if (has) return;
+  await db.begin(async (tx) => {
+    await tx.unsafe(`alter table translations add column level text not null default 'engineer'`);
+    await tx.unsafe(`alter table translations drop constraint if exists translations_pkey`);
+    await tx.unsafe(`alter table translations add primary key (source_hash, lang, level)`);
+  });
+}
+
 export function createStore(url: string): Store {
   const sqlite = url.startsWith("sqlite");
   let db = new SQL(url);
@@ -80,6 +111,7 @@ export function createStore(url: string): Store {
         created_at text not null,
         primary key (source_hash, lang, level)
       )`);
+      await addTranslationLevel(db, sqlite);
       await db.unsafe(`create table if not exists insides (
         arxiv_id text not null,
         block_id text not null,
