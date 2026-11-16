@@ -47,3 +47,6 @@ docs/
 
 # built front end (bun run build, for Vercel)
 public/
+
+# isolated worktrees for feature work
+.worktrees/
