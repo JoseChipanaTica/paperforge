@@ -18,7 +18,7 @@ const args = process.argv.slice(2);
 const write = args.includes("--write");
 const insideAt = args.indexOf("--inside");
 const blockId = insideAt >= 0 ? args[insideAt + 1] : undefined;
-const [input, kindArg] = args.filter((a, i) => a !== "--write" && i !== insideAt && i !== insideAt + 1);
+const [input, kindArg] = args.filter((a, i) => a !== "--write" && (insideAt < 0 || (i !== insideAt && i !== insideAt + 1)));
 const kind = LearnKind.safeParse(kindArg);
 if (!input || !kind.success || (insideAt >= 0 && (!blockId || kind.data === "pytorch" || kind.data === "training"))) {
   console.error("usage: bun run learn <arxiv-url-or-id> <pytorch|journey|motion|training> [--inside <block_id>] [--write]");

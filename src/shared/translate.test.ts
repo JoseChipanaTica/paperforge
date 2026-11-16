@@ -7,7 +7,7 @@ import { TEXT_SCHEMA, applyText, codeSkeleton, trainingSkeleton, pickText, textM
 
 const SAMPLES = join(import.meta.dir, "../../samples");
 const graph = Architecture.parse(await Bun.file(join(SAMPLES, "1706.03762.json")).json());
-const sample = async (kind: Exclude<(typeof LEARN_KINDS)[number], "training">) =>
+const sample = async (kind: (typeof LEARN_KINDS)[number]) =>
   ARTIFACT_SCHEMA[kind].parse(await Bun.file(join(SAMPLES, `1706.03762.${kind}.json`)).json());
 
 /** A fake translation: every string value except ids gets a prefix. */
@@ -51,7 +51,7 @@ describe("graph text", () => {
 });
 
 describe("artifact text", () => {
-  for (const kind of LEARN_KINDS.filter((k) => k !== "training")) {
+  for (const kind of LEARN_KINDS) {
     test(`${kind}: round-trips and keeps block links`, async () => {
       const a = await sample(kind);
       const text = pickText(kind, a);

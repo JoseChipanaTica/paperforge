@@ -1,0 +1,1349 @@
+{
+  "toy": {
+    "dims": "d_model 512 → 4, h 8 → 2 heads (d_k 2), d_ff 2048 → 8, N 6 → 1 encoder + 1 decoder layer, vocabulary ~37000 → 8, sequence 3.",
+    "nodes": [
+      {
+        "id": "src",
+        "block_id": "inputs",
+        "kind": "input",
+        "fn": "",
+        "inputs": [],
+        "params": [
+          {
+            "name": "values",
+            "values": [
+              [
+                1,
+                2,
+                3
+              ]
+            ]
+          }
+        ],
+        "count": 1
+      },
+      {
+        "id": "src_emb",
+        "block_id": "input_embedding",
+        "kind": "embedding_lookup",
+        "fn": "",
+        "inputs": [
+          "src"
+        ],
+        "params": [
+          {
+            "name": "E",
+            "values": [
+              [
+                0.12,
+                -0.31,
+                0.25,
+                0.08
+              ],
+              [
+                0.3,
+                -0.22,
+                0.41,
+                0.1
+              ],
+              [
+                -0.27,
+                0.45,
+                0.12,
+                -0.36
+              ],
+              [
+                0.38,
+                0.14,
+                -0.33,
+                0.29
+              ],
+              [
+                0.05,
+                0.33,
+                -0.18,
+                0.42
+              ],
+              [
+                -0.4,
+                0.21,
+                0.36,
+                -0.12
+              ],
+              [
+                0.22,
+                -0.44,
+                0.07,
+                0.31
+              ],
+              [
+                -0.15,
+                0.09,
+                -0.26,
+                -0.2
+              ]
+            ]
+          }
+        ],
+        "count": 1
+      },
+      {
+        "id": "src_pe",
+        "block_id": "encoder_positional",
+        "kind": "positional_encoding",
+        "fn": "",
+        "inputs": [
+          "src_emb"
+        ],
+        "params": [],
+        "count": 1
+      },
+      {
+        "id": "enc_attn",
+        "block_id": "encoder_self_attention",
+        "kind": "attention",
+        "fn": "self",
+        "inputs": [
+          "src_pe"
+        ],
+        "params": [
+          {
+            "name": "Wq",
+            "values": [
+              [
+                0.21,
+                -0.13,
+                0.34,
+                0.05
+              ],
+              [
+                -0.28,
+                0.17,
+                0.09,
+                0.4
+              ],
+              [
+                0.11,
+                0.36,
+                -0.22,
+                -0.07
+              ],
+              [
+                0.43,
+                -0.05,
+                0.18,
+                -0.31
+              ]
+            ]
+          },
+          {
+            "name": "Wk",
+            "values": [
+              [
+                0.19,
+                0.27,
+                -0.12,
+                0.33
+              ],
+              [
+                0.08,
+                -0.35,
+                0.41,
+                0.14
+              ],
+              [
+                -0.3,
+                0.12,
+                0.25,
+                -0.18
+              ],
+              [
+                0.24,
+                0.06,
+                -0.39,
+                0.22
+              ]
+            ]
+          },
+          {
+            "name": "Wv",
+            "values": [
+              [
+                0.35,
+                -0.1,
+                0.16,
+                -0.24
+              ],
+              [
+                0.13,
+                0.29,
+                -0.33,
+                0.07
+              ],
+              [
+                -0.21,
+                0.44,
+                0.05,
+                0.18
+              ],
+              [
+                0.06,
+                -0.17,
+                0.38,
+                0.3
+              ]
+            ]
+          },
+          {
+            "name": "Wo",
+            "values": [
+              [
+                0.27,
+                0.11,
+                -0.19,
+                0.32
+              ],
+              [
+                -0.14,
+                0.38,
+                0.23,
+                -0.06
+              ],
+              [
+                0.31,
+                -0.25,
+                0.09,
+                0.17
+              ],
+              [
+                0.04,
+                0.2,
+                -0.36,
+                0.28
+              ]
+            ]
+          }
+        ],
+        "count": 2
+      },
+      {
+        "id": "enc_add1",
+        "block_id": "encoder_add_norm_1",
+        "kind": "residual_add",
+        "fn": "",
+        "inputs": [
+          "enc_attn",
+          "src_pe"
+        ],
+        "params": [],
+        "count": 1
+      },
+      {
+        "id": "enc_ln1",
+        "block_id": "encoder_add_norm_1",
+        "kind": "normalization",
+        "fn": "layer",
+        "inputs": [
+          "enc_add1"
+        ],
+        "params": [
+          {
+            "name": "gamma",
+            "values": [
+              [
+                1,
+                1,
+                1,
+                1
+              ]
+            ]
+          },
+          {
+            "name": "beta",
+            "values": [
+              [
+                0,
+                0,
+                0,
+                0
+              ]
+            ]
+          }
+        ],
+        "count": 1
+      },
+      {
+        "id": "enc_ff1",
+        "block_id": "encoder_ffn",
+        "kind": "linear",
+        "fn": "",
+        "inputs": [
+          "enc_ln1"
+        ],
+        "params": [
+          {
+            "name": "W",
+            "values": [
+              [
+                0.21,
+                -0.34,
+                0.15,
+                0.42,
+                -0.08,
+                0.27,
+                -0.19,
+                0.33
+              ],
+              [
+                -0.12,
+                0.29,
+                0.38,
+                -0.25,
+                0.17,
+                -0.41,
+                0.09,
+                0.24
+              ],
+              [
+                0.36,
+                0.07,
+                -0.22,
+                0.13,
+                0.45,
+                0.11,
+                -0.3,
+                -0.16
+              ],
+              [
+                -0.28,
+                0.19,
+                0.05,
+                -0.37,
+                0.23,
+                0.31,
+                0.4,
+                -0.09
+              ]
+            ]
+          },
+          {
+            "name": "b",
+            "values": [
+              [
+                0.01,
+                0.02,
+                -0.01,
+                0.03,
+                0,
+                0.02,
+                0.01,
+                -0.02
+              ]
+            ]
+          }
+        ],
+        "count": 1
+      },
+      {
+        "id": "enc_relu",
+        "block_id": "encoder_ffn",
+        "kind": "activation",
+        "fn": "relu",
+        "inputs": [
+          "enc_ff1"
+        ],
+        "params": [],
+        "count": 1
+      },
+      {
+        "id": "enc_ff2",
+        "block_id": "encoder_ffn",
+        "kind": "linear",
+        "fn": "",
+        "inputs": [
+          "enc_relu"
+        ],
+        "params": [
+          {
+            "name": "W",
+            "values": [
+              [
+                0.24,
+                -0.18,
+                0.31,
+                0.07
+              ],
+              [
+                -0.13,
+                0.35,
+                -0.06,
+                0.22
+              ],
+              [
+                0.29,
+                0.1,
+                -0.27,
+                -0.15
+              ],
+              [
+                0.08,
+                -0.32,
+                0.19,
+                0.36
+              ],
+              [
+                -0.21,
+                0.14,
+                0.4,
+                -0.04
+              ],
+              [
+                0.33,
+                0.26,
+                -0.11,
+                -0.29
+              ],
+              [
+                -0.07,
+                -0.23,
+                0.17,
+                0.3
+              ],
+              [
+                0.16,
+                0.39,
+                0.02,
+                -0.2
+              ]
+            ]
+          },
+          {
+            "name": "b",
+            "values": [
+              [
+                0,
+                0.01,
+                -0.01,
+                0.02
+              ]
+            ]
+          }
+        ],
+        "count": 1
+      },
+      {
+        "id": "enc_add2",
+        "block_id": "encoder_add_norm_2",
+        "kind": "residual_add",
+        "fn": "",
+        "inputs": [
+          "enc_ff2",
+          "enc_ln1"
+        ],
+        "params": [],
+        "count": 1
+      },
+      {
+        "id": "enc_ln2",
+        "block_id": "encoder_add_norm_2",
+        "kind": "normalization",
+        "fn": "layer",
+        "inputs": [
+          "enc_add2"
+        ],
+        "params": [
+          {
+            "name": "gamma",
+            "values": [
+              [
+                1,
+                1,
+                1,
+                1
+              ]
+            ]
+          },
+          {
+            "name": "beta",
+            "values": [
+              [
+                0,
+                0,
+                0,
+                0
+              ]
+            ]
+          }
+        ],
+        "count": 1
+      },
+      {
+        "id": "tgt",
+        "block_id": "outputs",
+        "kind": "input",
+        "fn": "",
+        "inputs": [],
+        "params": [
+          {
+            "name": "values",
+            "values": [
+              [
+                0,
+                4,
+                5
+              ]
+            ]
+          }
+        ],
+        "count": 1
+      },
+      {
+        "id": "tgt_emb",
+        "block_id": "output_embedding",
+        "kind": "embedding_lookup",
+        "fn": "",
+        "inputs": [
+          "tgt"
+        ],
+        "params": [
+          {
+            "name": "E",
+            "values": [
+              [
+                0.12,
+                -0.31,
+                0.25,
+                0.08
+              ],
+              [
+                0.3,
+                -0.22,
+                0.41,
+                0.1
+              ],
+              [
+                -0.27,
+                0.45,
+                0.12,
+                -0.36
+              ],
+              [
+                0.38,
+                0.14,
+                -0.33,
+                0.29
+              ],
+              [
+                0.05,
+                0.33,
+                -0.18,
+                0.42
+              ],
+              [
+                -0.4,
+                0.21,
+                0.36,
+                -0.12
+              ],
+              [
+                0.22,
+                -0.44,
+                0.07,
+                0.31
+              ],
+              [
+                -0.15,
+                0.09,
+                -0.26,
+                -0.2
+              ]
+            ]
+          }
+        ],
+        "count": 1
+      },
+      {
+        "id": "tgt_pe",
+        "block_id": "decoder_positional",
+        "kind": "positional_encoding",
+        "fn": "",
+        "inputs": [
+          "tgt_emb"
+        ],
+        "params": [],
+        "count": 1
+      },
+      {
+        "id": "dec_self",
+        "block_id": "decoder_masked_attention",
+        "kind": "attention",
+        "fn": "causal",
+        "inputs": [
+          "tgt_pe"
+        ],
+        "params": [
+          {
+            "name": "Wq",
+            "values": [
+              [
+                0.16,
+                0.32,
+                -0.21,
+                0.08
+              ],
+              [
+                -0.25,
+                0.11,
+                0.37,
+                -0.14
+              ],
+              [
+                0.3,
+                -0.18,
+                0.06,
+                0.27
+              ],
+              [
+                0.09,
+                0.41,
+                -0.12,
+                -0.33
+              ]
+            ]
+          },
+          {
+            "name": "Wk",
+            "values": [
+              [
+                -0.22,
+                0.14,
+                0.29,
+                0.1
+              ],
+              [
+                0.35,
+                -0.08,
+                0.13,
+                -0.27
+              ],
+              [
+                0.07,
+                0.31,
+                -0.35,
+                0.19
+              ],
+              [
+                -0.16,
+                0.23,
+                0.04,
+                0.38
+              ]
+            ]
+          },
+          {
+            "name": "Wv",
+            "values": [
+              [
+                0.28,
+                0.05,
+                -0.31,
+                0.17
+              ],
+              [
+                -0.09,
+                0.34,
+                0.2,
+                -0.12
+              ],
+              [
+                0.15,
+                -0.26,
+                0.39,
+                0.06
+              ],
+              [
+                0.33,
+                0.12,
+                -0.07,
+                -0.24
+              ]
+            ]
+          },
+          {
+            "name": "Wo",
+            "values": [
+              [
+                0.19,
+                -0.27,
+                0.12,
+                0.36
+              ],
+              [
+                0.31,
+                0.08,
+                -0.23,
+                0.14
+              ],
+              [
+                -0.11,
+                0.4,
+                0.18,
+                -0.05
+              ],
+              [
+                0.26,
+                -0.13,
+                0.33,
+                0.09
+              ]
+            ]
+          }
+        ],
+        "count": 2
+      },
+      {
+        "id": "dec_add1",
+        "block_id": "decoder_add_norm_1",
+        "kind": "residual_add",
+        "fn": "",
+        "inputs": [
+          "dec_self",
+          "tgt_pe"
+        ],
+        "params": [],
+        "count": 1
+      },
+      {
+        "id": "dec_ln1",
+        "block_id": "decoder_add_norm_1",
+        "kind": "normalization",
+        "fn": "layer",
+        "inputs": [
+          "dec_add1"
+        ],
+        "params": [
+          {
+            "name": "gamma",
+            "values": [
+              [
+                1,
+                1,
+                1,
+                1
+              ]
+            ]
+          },
+          {
+            "name": "beta",
+            "values": [
+              [
+                0,
+                0,
+                0,
+                0
+              ]
+            ]
+          }
+        ],
+        "count": 1
+      },
+      {
+        "id": "dec_cross",
+        "block_id": "decoder_cross_attention",
+        "kind": "attention",
+        "fn": "cross",
+        "inputs": [
+          "dec_ln1",
+          "enc_ln2"
+        ],
+        "params": [
+          {
+            "name": "Wq",
+            "values": [
+              [
+                0.33,
+                0.07,
+                -0.18,
+                0.25
+              ],
+              [
+                -0.12,
+                0.39,
+                0.21,
+                -0.06
+              ],
+              [
+                0.24,
+                -0.15,
+                0.3,
+                0.11
+              ],
+              [
+                -0.29,
+                0.2,
+                0.08,
+                0.37
+              ]
+            ]
+          },
+          {
+            "name": "Wk",
+            "values": [
+              [
+                0.27,
+                -0.21,
+                0.14,
+                0.32
+              ],
+              [
+                0.1,
+                0.36,
+                -0.28,
+                0.05
+              ],
+              [
+                -0.17,
+                0.09,
+                0.42,
+                -0.23
+              ],
+              [
+                0.38,
+                0.15,
+                -0.04,
+                0.2
+              ]
+            ]
+          },
+          {
+            "name": "Wv",
+            "values": [
+              [
+                -0.14,
+                0.31,
+                0.22,
+                0.06
+              ],
+              [
+                0.37,
+                -0.09,
+                0.11,
+                0.28
+              ],
+              [
+                0.05,
+                0.25,
+                -0.34,
+                0.17
+              ],
+              [
+                0.2,
+                -0.3,
+                0.13,
+                0.4
+              ]
+            ]
+          },
+          {
+            "name": "Wo",
+            "values": [
+              [
+                0.22,
+                0.34,
+                -0.08,
+                0.15
+              ],
+              [
+                -0.26,
+                0.12,
+                0.31,
+                0.07
+              ],
+              [
+                0.13,
+                -0.2,
+                0.27,
+                0.35
+              ],
+              [
+                0.36,
+                0.04,
+                -0.16,
+                -0.21
+              ]
+            ]
+          }
+        ],
+        "count": 2
+      },
+      {
+        "id": "dec_add2",
+        "block_id": "decoder_add_norm_2",
+        "kind": "residual_add",
+        "fn": "",
+        "inputs": [
+          "dec_cross",
+          "dec_ln1"
+        ],
+        "params": [],
+        "count": 1
+      },
+      {
+        "id": "dec_ln2",
+        "block_id": "decoder_add_norm_2",
+        "kind": "normalization",
+        "fn": "layer",
+        "inputs": [
+          "dec_add2"
+        ],
+        "params": [
+          {
+            "name": "gamma",
+            "values": [
+              [
+                1,
+                1,
+                1,
+                1
+              ]
+            ]
+          },
+          {
+            "name": "beta",
+            "values": [
+              [
+                0,
+                0,
+                0,
+                0
+              ]
+            ]
+          }
+        ],
+        "count": 1
+      },
+      {
+        "id": "dec_ff1",
+        "block_id": "decoder_ffn",
+        "kind": "linear",
+        "fn": "",
+        "inputs": [
+          "dec_ln2"
+        ],
+        "params": [
+          {
+            "name": "W",
+            "values": [
+              [
+                -0.18,
+                0.27,
+                0.33,
+                -0.11,
+                0.2,
+                0.39,
+                -0.24,
+                0.06
+              ],
+              [
+                0.31,
+                -0.15,
+                0.08,
+                0.36,
+                -0.29,
+                0.12,
+                0.22,
+                -0.4
+              ],
+              [
+                0.14,
+                0.42,
+                -0.26,
+                0.05,
+                0.35,
+                -0.19,
+                0.1,
+                0.28
+              ],
+              [
+                -0.33,
+                0.09,
+                0.19,
+                0.25,
+                -0.07,
+                0.3,
+                -0.38,
+                0.16
+              ]
+            ]
+          },
+          {
+            "name": "b",
+            "values": [
+              [
+                0.02,
+                -0.01,
+                0.01,
+                0,
+                0.03,
+                -0.02,
+                0.01,
+                0.02
+              ]
+            ]
+          }
+        ],
+        "count": 1
+      },
+      {
+        "id": "dec_relu",
+        "block_id": "decoder_ffn",
+        "kind": "activation",
+        "fn": "relu",
+        "inputs": [
+          "dec_ff1"
+        ],
+        "params": [],
+        "count": 1
+      },
+      {
+        "id": "dec_ff2",
+        "block_id": "decoder_ffn",
+        "kind": "linear",
+        "fn": "",
+        "inputs": [
+          "dec_relu"
+        ],
+        "params": [
+          {
+            "name": "W",
+            "values": [
+              [
+                0.17,
+                0.3,
+                -0.22,
+                0.09
+              ],
+              [
+                -0.35,
+                0.06,
+                0.28,
+                0.19
+              ],
+              [
+                0.12,
+                -0.27,
+                0.04,
+                0.38
+              ],
+              [
+                0.26,
+                0.15,
+                -0.31,
+                -0.08
+              ],
+              [
+                -0.1,
+                0.37,
+                0.2,
+                -0.25
+              ],
+              [
+                0.32,
+                -0.14,
+                0.11,
+                0.23
+              ],
+              [
+                0.05,
+                0.21,
+                -0.39,
+                0.16
+              ],
+              [
+                -0.24,
+                0.08,
+                0.34,
+                -0.12
+              ]
+            ]
+          },
+          {
+            "name": "b",
+            "values": [
+              [
+                0.01,
+                0,
+                0.02,
+                -0.01
+              ]
+            ]
+          }
+        ],
+        "count": 1
+      },
+      {
+        "id": "dec_add3",
+        "block_id": "decoder_add_norm_3",
+        "kind": "residual_add",
+        "fn": "",
+        "inputs": [
+          "dec_ff2",
+          "dec_ln2"
+        ],
+        "params": [],
+        "count": 1
+      },
+      {
+        "id": "dec_ln3",
+        "block_id": "decoder_add_norm_3",
+        "kind": "normalization",
+        "fn": "layer",
+        "inputs": [
+          "dec_add3"
+        ],
+        "params": [
+          {
+            "name": "gamma",
+            "values": [
+              [
+                1,
+                1,
+                1,
+                1
+              ]
+            ]
+          },
+          {
+            "name": "beta",
+            "values": [
+              [
+                0,
+                0,
+                0,
+                0
+              ]
+            ]
+          }
+        ],
+        "count": 1
+      },
+      {
+        "id": "logits",
+        "block_id": "final_linear",
+        "kind": "linear",
+        "fn": "",
+        "inputs": [
+          "dec_ln3"
+        ],
+        "params": [
+          {
+            "name": "W",
+            "values": [
+              [
+                0.12,
+                0.3,
+                -0.27,
+                0.38,
+                0.05,
+                -0.4,
+                0.22,
+                -0.15
+              ],
+              [
+                -0.31,
+                -0.22,
+                0.45,
+                0.14,
+                0.33,
+                0.21,
+                -0.44,
+                0.09
+              ],
+              [
+                0.25,
+                0.41,
+                0.12,
+                -0.33,
+                -0.18,
+                0.36,
+                0.07,
+                -0.26
+              ],
+              [
+                0.08,
+                0.1,
+                -0.36,
+                0.29,
+                0.42,
+                -0.12,
+                0.31,
+                -0.2
+              ]
+            ]
+          }
+        ],
+        "count": 1
+      },
+      {
+        "id": "probs",
+        "block_id": "softmax",
+        "kind": "softmax",
+        "fn": "",
+        "inputs": [
+          "logits"
+        ],
+        "params": [],
+        "count": 1
+      }
+    ]
+  },
+  "vocab": [
+    "<s>",
+    "the",
+    "cat",
+    "sat",
+    "die",
+    "Katze",
+    "saß",
+    "<eos>"
+  ],
+  "target": {
+    "classes": [
+      4,
+      5,
+      6
+    ],
+    "values": []
+  },
+  "loss": {
+    "kind": "cross_entropy",
+    "label_smoothing": 0.1,
+    "quote": "During training, we employed label smoothing of value ϵ ls = 0 . 1 [36].",
+    "caption": "How little probability each decoder position gives the true next German word (die, Katze, saß), with 10% of the target mass smoothed over the other tokens."
+  },
+  "optimizer": {
+    "kind": "Adam",
+    "lr": 0.0007,
+    "lr_toy": 0.05,
+    "momentum": 0,
+    "beta1": 0.9,
+    "beta2": 0.98,
+    "eps": 1e-9,
+    "weight_decay": 0,
+    "schedule_note": "The paper's rate is d_model^-0.5·min(step^-0.5, step·warmup^-1.5) with warmup_steps = 4000: it rises linearly for 4000 steps to a peak of about 7e-4, then decays as 1/√step; the toy just uses one fixed rate.",
+    "quote": "We used the Adam optimizer [20] with β 1 = 0 . 9 , β 2 = 0 . 98 and ϵ = 10 − 9 .",
+    "fallback": false
+  },
+  "intro": "A 4-wide, one-layer Transformer reads “the cat sat” and the shifted target “<s> die Katze”, predicts the next word at all three positions, and takes one Adam step so that “die”, “Katze” and “saß” become a little more likely. Watch how the error signal flows back through the decoder and, via cross-attention, into the encoder.",
+  "steps": [
+    {
+      "block_id": "softmax",
+      "title": "Compare with the true next words",
+      "narration": "The loss compares each row of probabilities with a label-smoothed target: mostly “die”, then “Katze”, then “saß”. The resulting signal is simple: raise the correct word's probability and lower the others. Label smoothing leaves a little mass on the wrong words, so the push never aims for full certainty.",
+      "learns": "No weights; it only turns scores into probabilities."
+    },
+    {
+      "block_id": "final_linear",
+      "title": "Score the vocabulary",
+      "narration": "Each position receives a request to raise the logit of its correct word and lower the competing ones. That request is passed back as a direction in which the 4-d decoder state should move.",
+      "learns": "Its columns for die, Katze and saß tilt toward the decoder states that should produce them (in the paper this matrix is tied to the embeddings; the toy keeps it separate)."
+    },
+    {
+      "block_id": "decoder_add_norm_3",
+      "title": "Through the last Add & Norm",
+      "narration": "The gradient splits here, flowing into the FFN branch and straight down the residual skip. LayerNorm removes any component that would only shift or rescale the vector as a whole.",
+      "learns": "Gamma and beta adjust the scale and offset of each feature of the final state."
+    },
+    {
+      "block_id": "decoder_ffn",
+      "title": "Refine each position",
+      "narration": "Each position's error passes back through W_2, then through the ReLU, which blocks the hidden units that were off, and then through W_1. Every position is handled separately, but all three share the same weights.",
+      "learns": "W_1 and W_2 learn per-position features that make the correct next word stand out."
+    },
+    {
+      "block_id": "decoder_add_norm_2",
+      "title": "Split toward the source",
+      "narration": "Part of the signal goes down the residual path to the masked-attention state. The rest goes into the cross-attention output, asking for different information to be fetched from the English side.",
+      "learns": "Gamma and beta rescale the merged target-plus-source state."
+    },
+    {
+      "block_id": "decoder_cross_attention",
+      "title": "Which English word to read",
+      "narration": "The gradient flows two ways here. Through the queries it reaches the decoder, and through the keys and values it crosses into the encoder memory z. This is how a German error can change how English words are encoded.",
+      "learns": "W^Q, W^K, W^V and W^O learn alignments, for example that the position predicting “Katze” should look up “cat”."
+    },
+    {
+      "block_id": "decoder_add_norm_1",
+      "title": "Back past the first decoder Add & Norm",
+      "narration": "The signal from cross-attention's queries and from the residual path is combined here. It then splits again, into masked self-attention and the embedded target.",
+      "learns": "Gamma and beta rescale the decoder's self-attended state."
+    },
+    {
+      "block_id": "decoder_masked_attention",
+      "title": "Look only backward",
+      "narration": "Because of the causal mask, a position's error can only reach itself and earlier target words. So “<s>” never receives blame for what “Katze” should see. The two heads each get their own share of the signal.",
+      "learns": "Its projections learn which earlier German words help predict the next one."
+    },
+    {
+      "block_id": "decoder_positional",
+      "title": "Fixed position stamp",
+      "narration": "The gradient passes through unchanged, because the sinusoids are fixed. It continues to the target embeddings.",
+      "learns": "Nothing: the sinusoidal encoding has no parameters."
+    },
+    {
+      "block_id": "output_embedding",
+      "title": "Nudge target word vectors",
+      "narration": "Only the rows for <s>, die and Katze receive gradient, since only those words appeared in the shifted target. Each of those rows is moved in the direction that helps the next-word prediction.",
+      "learns": "The vectors for <s>, die and Katze move toward more useful positions (the paper shares this table with the input embedding and the output layer)."
+    },
+    {
+      "block_id": "outputs",
+      "title": "Target ids",
+      "narration": "The signal stops here. The shifted target is data, not something that can be learned.",
+      "learns": "No weights."
+    },
+    {
+      "block_id": "encoder_add_norm_2",
+      "title": "Encoder memory receives feedback",
+      "narration": "Every bit of gradient reaching the encoder arrived through cross-attention's keys and values. The encoder learns only because the decoder needed something from it.",
+      "learns": "Gamma and beta rescale the memory z that the decoder reads."
+    },
+    {
+      "block_id": "encoder_ffn",
+      "title": "Refine each source word",
+      "narration": "Each English position's error passes back through W_2, the ReLU gate and W_1. Hidden units that were inactive receive no update.",
+      "learns": "W_1 and W_2 learn per-word features that make “the”, “cat” and “sat” easier for the decoder to retrieve."
+    },
+    {
+      "block_id": "encoder_add_norm_1",
+      "title": "Back past the first encoder Add & Norm",
+      "narration": "The residual path carries the signal straight down to the embeddings. The other branch carries it into self-attention.",
+      "learns": "Gamma and beta rescale the self-attended source state."
+    },
+    {
+      "block_id": "encoder_self_attention",
+      "title": "Every word looks at every word",
+      "narration": "With no mask, each source word's error can reach every other source word in a single step. This is the O(1) path length the paper argues for.",
+      "learns": "W^Q, W^K, W^V and W^O learn which English words should borrow context from which, for example “sat” from “cat”."
+    },
+    {
+      "block_id": "encoder_positional",
+      "title": "Fixed position stamp",
+      "narration": "The sinusoids are added and never learned, so the gradient passes straight through to the word vectors.",
+      "learns": "Nothing: the sinusoidal encoding has no parameters."
+    },
+    {
+      "block_id": "input_embedding",
+      "title": "Nudge source word vectors",
+      "narration": "The rows for “the”, “cat” and “sat” receive the final remainder of the signal. It has travelled from the German loss through cross-attention and the whole encoder.",
+      "learns": "The vectors for the, cat and sat shift so they translate better."
+    },
+    {
+      "block_id": "inputs",
+      "title": "Source ids",
+      "narration": "The backward pass ends here. Token ids are fixed data.",
+      "learns": "No weights."
+    }
+  ],
+  "outro": "One loss on the German words trains everything, because the gradient reaches the encoder only through cross-attention, so the English side learns exactly what the decoder needs to read."
+}

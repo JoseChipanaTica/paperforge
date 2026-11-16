@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Architecture } from "./graph";
 import { TRANSFORMER_TOY } from "./train/fixtures";
+import { train } from "./train/run";
+import { cleanTraining, trainingFits } from "./training";
 import { ARTIFACT_SCHEMA, LEARN_KINDS, artifactBlockCount, cleanJourney, isUsable, pruneArtifact, type JourneyArtifact, type LearnKind, type View } from "./learn";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
@@ -10,15 +12,15 @@ const ids = new Set(graph.blocks.map((b) => b.id));
 const sample = async (kind: LearnKind) => Bun.file(join(SAMPLES, `1706.03762.${kind}.json`)).json();
 
 const blockIds = (kind: LearnKind, a: any): string[] =>
-  kind === "pytorch" ? a.block_map.map((m: any) => m.block_id) : a.steps.map((s: any) => s.block_id);
+  kind === "pytorch" ? a.block_map.map((m: any) => m.block_id) : kind === "training" ? a.toy.nodes.map((n: any) => n.block_id) : a.steps.map((s: any) => s.block_id);
 
 describe("Transformer sample artifacts", () => {
-  for (const kind of LEARN_KINDS.filter((k) => k !== "training")) {
+  for (const kind of LEARN_KINDS) {
     test(`${kind} matches its schema and only uses the graph's blocks`, async () => {
       const a = ARTIFACT_SCHEMA[kind].parse(await sample(kind));
       const used = blockIds(kind, a);
       expect(used.filter((id) => !ids.has(id))).toEqual([]);
-      if (kind !== "pytorch") expect(new Set(used)).toEqual(ids); // the tour visits every block
+      if (kind === "journey" || kind === "motion") expect(new Set(used)).toEqual(ids); // the tour visits every block
     });
   }
 });
@@ -125,4 +127,15 @@ test("isUsable training needs 2 blocks", () => {
   expect(isUsable("training", TRANSFORMER_TOY)).toBe(true);
   expect(isUsable("training", { ...TRANSFORMER_TOY, toy: { ...TRANSFORMER_TOY.toy, nodes: TRANSFORMER_TOY.toy.nodes.slice(0, 1) } })).toBe(false);
   expect(isUsable("training", { ...TRANSFORMER_TOY, toy: { ...TRANSFORMER_TOY.toy, nodes: [] } })).toBe(false);
+});
+
+test("the 1706.03762 training sample is usable and lowers the loss", async () => {
+  const a = ARTIFACT_SCHEMA.training.parse(await sample("training"));
+  expect(cleanTraining(a, graph)).not.toBeNull();
+  expect(trainingFits(a, graph)).toBe(true);
+  const t = train(a);
+  expect(t.lossAfter).toBeLessThan(t.lossBefore);
+  const j = await sample("journey");
+  const path = new Set(j.steps.map((s: any) => s.block_id));
+  expect(a.toy.nodes.filter((n) => !path.has(n.block_id))).toEqual([]);
 });
