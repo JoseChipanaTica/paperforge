@@ -38,3 +38,6 @@ data/
 
 # superpowers plan workspaces (ledgers, briefs)
 .superpowers/
+
+# design specs and plans (local only)
+docs/
