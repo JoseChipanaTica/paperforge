@@ -4,6 +4,7 @@ import { z } from "zod";
 import { Architecture, type Block } from "../shared/graph";
 import { ARTIFACT_SCHEMA, type AnyArtifact, type AskTurn, type InsideLearnKind, type JourneyArtifact, type LearnKind, type View } from "../shared/learn";
 import { MotionArtifact } from "../shared/motion";
+import { TrainingArtifact } from "../shared/training";
 import { HIGHLIGHTER, INK, SHEET, VERMILION } from "../shared/palette";
 import { DEFAULT_LEVEL, languageName, levelReader, type Lang, type Level } from "../shared/translate";
 import { formatPaper } from "./extract";
@@ -28,7 +29,7 @@ Whenever you refer to a block, use its exact "id" from <graph>; the viewer uses 
 
 Write for a curious engineer: plain language first, then the precise detail. Be concrete and brief.`;
 
-/** The kinds written through the shared learning format (motion has its own, and needs the journey). */
+/** The kinds written through the shared learning format (motion and training have their own, and need the journey). */
 export type TaskKind = Exclude<LearnKind, "motion" | "training">;
 
 export const LEARN_TASK: Record<TaskKind, string> = {
@@ -75,6 +76,8 @@ export const ANY_ARTIFACT = z.object({
 export const INSIDE_ARTIFACT = z.object({ artifact: Architecture });
 /** Motion's ops would push either shared format over the grammar limit: it gets its own. */
 export const MOTION_ARTIFACT = z.object({ artifact: MotionArtifact });
+/** The toy model's nodes and parameters don't fit the shared formats either. */
+export const TRAINING_ARTIFACT = z.object({ artifact: TrainingArtifact });
 
 export function paperPrefix(pages: string[], graph: Architecture): Anthropic.Beta.BetaTextBlockParam[] {
   return [
@@ -142,6 +145,29 @@ export function insideJourneyRequest(
   return tutorRequest(pages, graph, `${insideJourneyTask(block, inside, entering, leaving)}\n\nWrite it as the "journey" shape of artifact.`, ANY_ARTIFACT);
 }
 
+/** A toy version of the model, built on the walkthrough's example, that the browser trains for one step. */
+export function trainingTask(journey: JourneyArtifact): string {
+  return `Build a tiny toy version of this model that the reader can watch train for one step on the walkthrough's example (given in <journey>). The browser runs the forward pass, the loss, every gradient and the optimizer update itself: you write only the structure, small starting values and the words.
+- toy.nodes: the blocks of <graph> on <journey>'s path, as a small network in forward (data-flow) order; each node reads only earlier nodes, and block_id is the exact id of the <graph> block it belongs to (a block may need several nodes, e.g. a feed-forward layer = linear → activation → linear). A group the paper stacks N times is one toy layer. The last node is the model output (logits, probabilities or values).
+- Keep it tiny: width at most 8 (hidden layers too), sequence at most 4, at most 2 attention heads (dividing the width), every matrix at most 8×8, at most 32 nodes, a vocabulary of at most 8. toy.dims: one sentence on the reduction, e.g. "d_model 512 → 4, 8 heads → 2, 6 layers → 1".
+- Inputs are nodes of kind "input" holding a "values" param: one row of token ids (indices into vocab), or a small data matrix. Take them from <journey>'s input (and, for a model that also reads its shifted output, like a decoder, from <journey>'s output). residual_add inputs are always [sublayer output, skip]. Convolution is single-channel 2-D with one [kh, kw] kernel "W" (stride 1, no padding); pooling is a fixed non-overlapping 2×2 window.
+- vocab and target: from <journey>'s output: classes are the correct class index for each output row (next token, label), or values for regression, never both.
+- Starting weights are small (|w| ≤ 0.5), varied and readable (two decimals); normalization starts at gamma 1, beta 0.
+- loss: the paper's own training loss and label smoothing, with quote one sentence copied verbatim from the paper text about it ('' if the paper says nothing).
+- optimizer: the paper's optimizer and its settings as the paper states them (Adam defaults β1 0.9, β2 0.999, ε 1e-8 where it is silent). lr is the paper's own (peak) learning rate; lr_toy is a toy-scale rate, usually 0.01–0.1, picked so this one step visibly lowers the loss. schedule_note explains the paper's schedule (it isn't simulated). quote: one sentence copied verbatim from the paper naming the optimizer. fallback: true only when the optimizer isn't SGD, SGD with momentum, Adam or AdamW.
+- steps: one per block that carries a node, in reverse data-flow order (from the loss back to the inputs), with that block's id: title, narration on the gradient arriving there and what it says, and learns: what this block's weights learn from this example, or that it has none.
+- Never write gradients, losses or updated weights: the browser computes them.
+- intro: what one training step on this example will show. outro: one sentence to remember.
+
+<journey>
+${JSON.stringify(journey)}
+</journey>`;
+}
+
+export function trainingRequest(pages: string[], graph: Architecture, journey: JourneyArtifact) {
+  return tutorRequest(pages, graph, trainingTask(journey), TRAINING_ARTIFACT);
+}
+
 export function motionRequest(pages: string[], graph: Architecture, journey: JourneyArtifact) {
   return tutorRequest(pages, graph, motionTask(journey), MOTION_ARTIFACT);
 }
@@ -154,7 +180,7 @@ function tutorRequest(
   pages: string[],
   graph: Architecture,
   task: string,
-  format: typeof ANY_ARTIFACT | typeof INSIDE_ARTIFACT | typeof MOTION_ARTIFACT,
+  format: typeof ANY_ARTIFACT | typeof INSIDE_ARTIFACT | typeof MOTION_ARTIFACT | typeof TRAINING_ARTIFACT,
 ) {
   return {
     model: currentModel(),
@@ -220,9 +246,14 @@ export async function generateArtifact(
   kind: LearnKind,
   { pages, graph, apiKey, journey }: { pages: string[]; graph: Architecture; apiKey?: string; journey?: JourneyArtifact },
 ): Promise<AnyArtifact> {
-  if (kind === "training") throw new Error("Training needs the walkthrough it trains on.");
+  if (kind === "training" && !journey) throw new Error("Training needs the walkthrough it trains on.");
   if (kind === "motion" && !journey) throw new Error("Motion needs the walkthrough it animates.");
-  const request = kind === "motion" ? motionRequest(pages, graph, journey!) : learnRequest(kind, pages, graph);
+  const request =
+    kind === "training"
+      ? trainingRequest(pages, graph, journey!)
+      : kind === "motion"
+        ? motionRequest(pages, graph, journey!)
+        : learnRequest(kind, pages, graph);
   const response = await client(apiKey).beta.messages.parse(request);
   logUsage(kind, response.usage);
   if (response.stop_reason === "refusal") {

@@ -20,6 +20,7 @@ import {
   cleanJourney,
 } from "../shared/learn";
 import { cleanMotion, motionFits, type MotionArtifact } from "../shared/motion";
+import { cleanTraining, trainingFits, type TrainingArtifact } from "../shared/training";
 import { DEFAULT_LEVEL, Lang, Level } from "../shared/translate";
 import { errorMessage } from "./api";
 import { parseArxivId } from "./arxiv";
@@ -97,16 +98,22 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
     const fail = (message: string, code?: "bad_input") => emit({ type: "error", message, ...(code && { code }) });
     const id = parseArxivId(String(body?.arxiv_id ?? ""));
     const kind = LearnKind.safeParse(body?.kind);
-    if (!id || !kind.success) return fail("Expected an arXiv id and a kind (pytorch, journey or motion).", "bad_input");
+    if (!id || !kind.success) return fail("Expected an arXiv id and a kind (pytorch, journey, motion or training).", "bad_input");
     const k = kind.data;
 
     try {
       const published = await publishedGraph(d.store, id);
-      // Motion animates a walkthrough: the one everyone sees for this paper, else the visitor's own.
-      const found = k === "motion" ? await journeyFor(d, id, published, body?.journey) : null;
+      // Motion animates a walkthrough and training trains on its example: the one everyone sees for this paper,
+      // else the visitor's own.
+      const needsJourney = k === "motion" || k === "training";
+      const found = needsJourney ? await journeyFor(d, id, published, body?.journey) : null;
       const journey = found?.journey ?? null;
-      if (k === "motion" && !journey) return fail("Open the walkthrough first.", "bad_input");
-      const fits = (a: AnyArtifact) => k !== "motion" || motionFits(a as MotionArtifact, journey!);
+      if (needsJourney && !journey) return fail("Open the walkthrough first.", "bad_input");
+      // The graph a saved training must fit: the published one, else the visitor's own forge.
+      const own = Architecture.safeParse(body?.graph);
+      const graph = published ?? (own.success ? own.data : null);
+      const fits = (a: AnyArtifact) =>
+        k === "motion" ? motionFits(a as MotionArtifact, journey!) : k === "training" ? graph !== null && trainingFits(a as TrainingArtifact, graph) : true;
       // A saved artifact that doesn't fit (e.g. motion for 1 of 18 steps) is replaced, not served forever.
       let unusable = false;
       if (published) {
@@ -118,17 +125,20 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
       if (sample && fits(sample)) return emit({ type: "learn", kind: k, artifact: sample, source: "sample", saved: false });
 
       // A published paper always uses its stored graph; otherwise the visitor's own forge.
-      const parsed = Architecture.safeParse(body?.graph);
-      const graph = published ?? (parsed.success ? parsed.data : null);
       if (!graph) return fail("Forge the paper first, then try again.", "bad_input");
 
       emit({ type: "status", message: STATUS[k] });
       const pages = await d.loadPages(id);
       const generated = await d.generate(k, { pages, graph, apiKey, ...(journey && { journey }) });
-      const artifact = k === "motion" ? cleanMotion(generated as MotionArtifact, graph, journey) : pruneArtifact(k, generated, graph);
-      if (!isUsable(k, artifact) || !fits(artifact)) return fail(UNUSABLE[k]);
+      const artifact =
+        k === "training"
+          ? cleanTraining(generated as TrainingArtifact, graph)
+          : k === "motion"
+            ? cleanMotion(generated as MotionArtifact, graph, journey)
+            : pruneArtifact(k, generated, graph);
+      if (!artifact || !isUsable(k, artifact) || !fits(artifact)) return fail(UNUSABLE[k]);
 
-      // Only shared inputs make shared results: motion from a visitor's own walkthrough isn't saved.
+      // Only shared inputs make shared results: motion or training from a visitor's own walkthrough isn't saved.
       if (!published || found?.posted || !sharesResults()) return emit({ type: "learn", kind: k, artifact, source: "claude", saved: false });
       try {
         // First save wins: if another visitor's landed meanwhile, show everyone that one.
@@ -161,8 +171,8 @@ const UNUSABLE: Record<LearnKind, string> = {
 };
 
 /**
- * The walkthrough motion follows: published (gallery), then the committed sample, then the one the
- * visitor posted (`posted`: its motion is never saved for everyone).
+ * The walkthrough motion and training follow: published (gallery), then the committed sample, then the one the
+ * visitor posted (`posted`: what's built on it is never saved for everyone).
  */
 async function journeyFor(
   d: LearnDeps,

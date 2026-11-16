@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Architecture } from "../shared/graph";
-import { askRequest, cleanInside, insideJourneyRequest, insideRequest, learnRequest, motionRequest } from "./tutor";
+import { askRequest, cleanInside, insideJourneyRequest, insideRequest, learnRequest, motionRequest, trainingRequest } from "./tutor";
+import { currentModel } from "./model";
 import type { JourneyArtifact } from "../shared/learn";
 
 const graph = Architecture.parse(await Bun.file(join(import.meta.dir, "../../samples/1706.03762.json")).json());
@@ -114,6 +115,32 @@ describe("motionRequest", () => {
     const task = (firstContent(motion) as { text: string }[])[2]!.text;
     expect(task).toContain("<journey>");
     for (const s of journey.steps) expect(task).toContain(s.block_id);
+  });
+});
+
+describe("trainingRequest", () => {
+  const load = async () => (await Bun.file(join(import.meta.dir, "../../samples/1706.03762.journey.json")).json()) as JourneyArtifact;
+
+  test("trainingRequest shares the paper prefix and puts the journey after the breakpoint", async () => {
+    const journey = await load();
+    const training = trainingRequest(pages, graph, journey);
+    const motion = motionRequest(pages, graph, journey);
+    expect(training.system).toBe(motion.system);
+    expect(prefix(firstContent(training))).toBe(prefix(firstContent(motion)));
+    const content = firstContent(training) as { text: string; cache_control?: unknown }[];
+    expect(content).toHaveLength(3);
+    expect(content[1]!.cache_control).toEqual({ type: "ephemeral" });
+    expect(content[2]!.cache_control).toBeUndefined();
+    expect(content[2]!.text).toContain("<journey>");
+    expect(content[2]!.text).toContain(journey.intro);
+    expect(JSON.stringify(training.output_config.format.schema)).not.toBe(JSON.stringify(motion.output_config.format.schema));
+  });
+
+  test("uses currentModel() and effort medium", async () => {
+    const training = trainingRequest(pages, graph, await load());
+    expect(training.model).toBe(currentModel());
+    expect(training.output_config.effort).toBe("medium");
+    expect(JSON.stringify(training)).not.toContain("tool_choice");
   });
 });
 

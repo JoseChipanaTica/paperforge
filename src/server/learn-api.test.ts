@@ -7,6 +7,8 @@ import type { AnyArtifact, AskEvent, InsideEvent, InsideLearnEvent, JourneyArtif
 import { askHandler, insideHandler, insideLearnHandler, kindsHandler, learnHandler, type LearnDeps } from "./learn-api";
 import { withModel } from "./model";
 import { createStore, type Store } from "./store";
+import { TRANSFORMER_TOY } from "../shared/train/fixtures";
+import type { TrainingArtifact } from "../shared/training";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
 const graph = Architecture.parse(await Bun.file(join(SAMPLES, "1706.03762.json")).json());
@@ -358,6 +360,74 @@ describe("POST /api/learn, motion", () => {
     const e = await learn({ arxiv_id: ID, kind: "motion" }, deps(store));
     expect(e).toMatchObject({ type: "error", message: "Couldn't animate this model." });
     expect(await store.getArtifact(ID, "motion")).toBeNull();
+  });
+});
+
+describe("POST /api/learn, training", () => {
+  const toy = () => structuredClone(TRANSFORMER_TOY) as AnyArtifact;
+  const nodeCount = (a: unknown) => (a as TrainingArtifact).toy.nodes.length;
+
+  test("training without a journey is bad_input", async () => {
+    const e = await learn({ arxiv_id: ID, kind: "training", graph }, deps(createStore("sqlite://:memory:")));
+    expect(e).toMatchObject({ type: "error", code: "bad_input", message: "Open the walkthrough first." });
+    expect(calls).toHaveLength(0);
+  });
+
+  test("an unpublished paper's training is generated and not saved", async () => {
+    next = toy();
+    const store = createStore("sqlite://:memory:");
+    const e = await learn({ arxiv_id: ID, kind: "training", graph, journey }, deps(store));
+    expect(e).toMatchObject({ type: "learn", kind: "training", source: "claude", saved: false });
+    expect(calls[0]).toMatchObject({ kind: "training" });
+    expect(calls[0]!.journey!.steps.length).toBe(journey.steps.length);
+    expect(nodeCount((e as { artifact: unknown }).artifact)).toBe(TRANSFORMER_TOY.toy.nodes.length);
+    expect(await store.getArtifact(ID, "training")).toBeNull();
+  });
+
+  test("a published paper's training is saved once, then served from the gallery", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    await store.putArtifact(ID, "journey", journey);
+    next = toy();
+    expect(await learn({ arxiv_id: ID, kind: "training" }, deps(store))).toMatchObject({ type: "learn", source: "claude", saved: true });
+    expect(await store.getArtifact(ID, "training")).not.toBeNull();
+    expect(await learn({ arxiv_id: ID, kind: "training" }, deps(store))).toMatchObject({ type: "learn", source: "gallery", saved: true });
+    expect(calls).toHaveLength(1);
+  });
+
+  test("training from a visitor-posted journey is never saved", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    next = toy();
+    const e = await learn({ arxiv_id: ID, kind: "training", journey }, deps(store));
+    expect(e).toMatchObject({ type: "learn", source: "claude", saved: false });
+    expect(await store.getArtifact(ID, "training")).toBeNull();
+  });
+
+  test("a saved training whose blocks are gone from the re-forged graph is replaced", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    await store.putArtifact(ID, "journey", journey);
+    const stale = structuredClone(TRANSFORMER_TOY);
+    stale.toy.nodes = stale.toy.nodes.map((n) => ({ ...n, block_id: `old_${n.block_id}` }));
+    await store.putArtifact(ID, "training", stale);
+    next = toy();
+    const e = await learn({ arxiv_id: ID, kind: "training" }, deps(store));
+    expect(e).toMatchObject({ type: "learn", source: "claude", saved: true });
+    const saved = (await store.getArtifact(ID, "training")) as TrainingArtifact;
+    expect(saved.toy.nodes.every((n) => !n.block_id.startsWith("old_"))).toBe(true);
+  });
+
+  test("an unusable toy model is an error event", async () => {
+    const store = createStore("sqlite://:memory:");
+    await store.publishPaper(ID, graph);
+    await store.putArtifact(ID, "journey", journey);
+    const cyclic = structuredClone(TRANSFORMER_TOY);
+    cyclic.toy.nodes.find((n) => n.id === "enc_pos")!.inputs = ["enc_attn"];
+    next = cyclic;
+    const e = await learn({ arxiv_id: ID, kind: "training" }, deps(store));
+    expect(e).toMatchObject({ type: "error", message: "Couldn't build a toy model of this paper to train." });
+    expect(await store.getArtifact(ID, "training")).toBeNull();
   });
 });
 
