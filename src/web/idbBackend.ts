@@ -4,13 +4,28 @@ const DB_NAME = "paperforge";
 const DB_VERSION = 1;
 const STORES: StoreName[] = ["papers", "artifacts", "translations"];
 
-/** A transaction's end: commit failures such as QuotaExceededError arrive as an abort after the request succeeded. */
-const committed = (tx: IDBTransaction) =>
-  new Promise<void>((resolve, reject) => {
+/**
+ * Run `ops` in a readwrite transaction and settle when it commits. Commit failures such as QuotaExceededError arrive
+ * as an abort after the request succeeded; a failed request's error reaches the transaction before the abort, while
+ * `tx.error` is still null, so its own error is used. A synchronous throw from `ops` aborts the transaction.
+ */
+function commit(tx: IDBTransaction, ops: () => void): Promise<void> {
+  const end = new Promise<void>((resolve, reject) => {
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = (e) => reject((e.target as IDBRequest | null)?.error ?? tx.error);
     tx.onabort = () => reject(tx.error ?? new DOMException("Transaction aborted", "AbortError"));
   });
+  try {
+    ops();
+  } catch (error) {
+    end.catch(() => {});
+    try {
+      tx.abort();
+    } catch {}
+    return Promise.reject(error);
+  }
+  return end;
+}
 
 const done = <T>(req: IDBRequest<T>) =>
   new Promise<T>((resolve, reject) => {
@@ -46,9 +61,7 @@ export async function openIdbBackend(): Promise<Backend> {
   /** A write counts once its transaction commits; the request's own success is not enough. */
   const write = (name: StoreName, op: (s: IDBObjectStore) => IDBRequest) => {
     const tx = db.transaction(name, "readwrite");
-    const end = committed(tx);
-    op(tx.objectStore(name));
-    return end;
+    return commit(tx, () => void op(tx.objectStore(name)));
   };
   return {
     get: (name, key) => done(store(name, "readonly").get(key)),
@@ -61,9 +74,7 @@ export async function openIdbBackend(): Promise<Backend> {
     },
     clear: async () => {
       const tx = db.transaction(STORES, "readwrite");
-      const end = committed(tx);
-      for (const name of STORES) tx.objectStore(name).clear();
-      await end;
+      await commit(tx, () => STORES.forEach((name) => tx.objectStore(name).clear()));
     },
   };
 }
