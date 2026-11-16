@@ -256,3 +256,21 @@ function beforeAfter(n: NodeTrace, vocab: string[]): View {
     top.map((m) => m.label),
   );
 }
+
+/**
+ * Where the error landed, at step `index` of a training script: every block visited so far (steps 0..index) with its
+ * ‖∂L/∂output‖ (the largest of its nodes), divided by the largest over all nodes, so 0–1. Null at the intro and the
+ * outro: the heat belongs to the tour.
+ */
+export function trainingHeat(script: TourScript, trace: Trace, index: number): Map<string, number> | null {
+  if (index < 0 || index >= script.steps.length) return null;
+  const per = new Map<string, number>();
+  for (const n of trace.nodes) per.set(n.block_id, Math.max(per.get(n.block_id) ?? 0, norm(n.gradOut)));
+  const max = Math.max(0, ...per.values());
+  const heat = new Map<string, number>();
+  for (const s of script.steps.slice(0, index + 1)) {
+    const g = per.get(s.block_id);
+    if (g !== undefined) heat.set(s.block_id, max > 0 ? g / max : 0);
+  }
+  return heat;
+}

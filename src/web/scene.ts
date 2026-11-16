@@ -22,6 +22,9 @@ export interface SceneBlock {
   exploded: THREE.Vector3;
   /** 0 = at rest, decays from 1 after a flash */
   glow: number;
+  /** Training heat shown now and where it is heading (0–1, setHeat). */
+  heat: number;
+  heatTarget: number;
   index: number;
 }
 
@@ -247,7 +250,7 @@ export class ForgeScene {
       }
       obj.root.add(label);
 
-      this.blocks.set(block.id, { block, placed, obj, label, labelSide: side, assembled, exploded, glow: 0, index });
+      this.blocks.set(block.id, { block, placed, obj, label, labelSide: side, assembled, exploded, glow: 0, heat: 0, heatTarget: 0, index });
     });
 
     for (const g of layout.groups) {
@@ -373,6 +376,20 @@ export class ForgeScene {
   highlight(id: string | null) {
     this.highlighted = id;
     if (id) this.flash(id, 0.9);
+  }
+
+  /**
+   * Training heat: a persistent vermilion halo per block, 0–1 (where the gradient landed), alongside highlight.
+   * Blocks missing from `levels`, or null, go cold. Eases in from the frame loop unless motion is reduced.
+   */
+  setHeat(levels: ReadonlyMap<string, number> | null) {
+    for (const sb of this.blocks.values()) {
+      sb.heatTarget = Math.max(0, Math.min(1, levels?.get(sb.block.id) ?? 0));
+      if (this.reduceMotion || sb.heatTarget === 0) {
+        sb.heat = sb.heatTarget;
+        paintHeat(sb.obj, sb.heat);
+      }
+    }
   }
 
   /** Light up the blocks a traced dimension flows through and fade the rest, or clear with null. */
@@ -609,6 +626,11 @@ export class ForgeScene {
       const halo = Math.min(1, Math.max(lit ? 0.85 : 0, sb.glow));
       sb.obj.haloMaterial.opacity = halo * 0.9;
       sb.obj.halo.visible = halo > 0.01;
+      if (sb.heat !== sb.heatTarget) {
+        const step = dt * 2.5; // about 0.4 s from cold to full
+        sb.heat = Math.abs(sb.heatTarget - sb.heat) <= step ? sb.heatTarget : sb.heat + Math.sign(sb.heatTarget - sb.heat) * step;
+        paintHeat(sb.obj, sb.heat);
+      }
       (sb.label.element as HTMLElement).style.opacity = String(this.labelAlpha * (sb.obj.root.visible ? 1 : 0) * (faded ? 0.3 : 1));
       sb.label.element.classList.toggle("hot", lit);
     }
@@ -628,6 +650,12 @@ export class ForgeScene {
     this.composer.render();
     this.labels.render(this.scene, this.camera);
   }
+}
+
+/** A block's heat shell at a level 0–1: even a small gradient shows faintly, none shows nothing. */
+function paintHeat(obj: BlockObject, level: number) {
+  obj.heatMaterial.opacity = level > 0.001 ? 0.2 + 0.65 * level : 0;
+  obj.heat.visible = obj.heatMaterial.opacity > 0;
 }
 
 function disposeChildren(group: THREE.Group) {

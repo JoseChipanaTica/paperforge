@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { View } from "../shared/learn";
-import { stepHtml } from "./stepsView";
-import type { TourStep } from "./tour";
+import type { LocatedArchitecture } from "../shared/graph";
+import { stepHtml, stepsClick, stepsHtml } from "./stepsView";
+import type { TourDriver, TourScript, TourStep } from "./tour";
 
 const view = (caption: string): View => ({ kind: "tensor", caption, rows: [], cols: [], values: [], dims: "[3, 512]", split: 1 });
 const step: TourStep = {
@@ -37,5 +38,37 @@ describe("stepHtml", () => {
   test("escapes the narration", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+describe("the outro", () => {
+  const script: TourScript = {
+    analogy: { title: "A", text: "a" },
+    intro: { title: "Walkthrough", body: "in", label: "x", views: [] },
+    steps: [step],
+    output: { label: "y", views: [] },
+    outro: "That's the model.",
+  };
+  const graph = { blocks: [] } as unknown as LocatedArchitecture;
+
+  test("the outro shows the continue button only when onContinue is given", () => {
+    expect(stepsHtml(script, graph, null)).not.toContain("data-continue");
+    const html = stepsHtml(script, graph, null, "Train on this example →");
+    const outro = html.slice(html.indexOf("step-outro"));
+    expect(outro).toContain("data-continue");
+    expect(outro).toContain("Train on this example →");
+  });
+
+  test("clicking it calls run", () => {
+    let ran = 0;
+    const calls: string[] = [];
+    const driver = { next: () => calls.push("next"), back: () => calls.push("back"), togglePlay: () => calls.push("play"), goTo: () => calls.push("go") } as unknown as TourDriver;
+    // A click on the button's label: closest() finds the button itself.
+    const target = { closest: (sel: string) => (sel === "[data-continue]" ? { dataset: {} } : null) } as unknown as HTMLElement;
+    stepsClick(target, script, driver, () => {}, { label: "Train", run: () => ran++ });
+    expect(ran).toBe(1);
+    expect(calls).toEqual([]);
+    stepsClick(target, script, driver, () => {}, undefined); // no button, nothing to run
+    expect(ran).toBe(1);
   });
 });

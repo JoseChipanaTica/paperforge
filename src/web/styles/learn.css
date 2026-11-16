@@ -59,3 +59,6 @@
 .step-body p + p { margin-top: var(--s2); }
 .step-shape { font: var(--t-xs) var(--mono); color: var(--ink-soft); }
 .step-views { margin: var(--s2) 0 0; padding-left: 1.2em; font: italic var(--t-sm) / 1.5 var(--serif); color: var(--ink-soft); }
+
+/* After the outro: go on (the walkthrough's "Train on this example →", the training's way back). */
+.step-continue { margin-top: var(--s4); }

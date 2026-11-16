@@ -38,7 +38,10 @@ const VIEW_GAP = 0.3;
 export const parseDims = (dims: string): number[] =>
   (dims.match(/[A-Za-z_][\w]*|\d+/g) ?? []).map((t) => (/^\d+$/.test(t) ? Number(t) : 4));
 
-const fmt = (n: number) => (Math.abs(n) >= 100 || Number.isInteger(n) ? String(n) : n.toFixed(2));
+/** A value on the card: small magnitudes (gradients, ~1e-3) as a compact exponent so they don't all read "0.00". */
+export const formatValue = (n: number) =>
+  Math.abs(n) >= 100 || Number.isInteger(n) ? String(n) : Math.abs(n) < 0.01 ? n.toExponential(1) : n.toFixed(2);
+const fmt = formatValue;
 
 /** Shades every value of a view between its own min and max. */
 function shader(values: number[][]) {

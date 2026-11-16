@@ -2,6 +2,8 @@ import "katex/dist/katex.min.css";
 import type { ForgeEvent, LocatedArchitecture } from "../shared/graph";
 import { blockEnds, type AnyArtifact, type JourneyArtifact, type LearnKind, type PytorchArtifact } from "../shared/learn";
 import type { MotionArtifact } from "../shared/motion";
+import { train, type Trace } from "../shared/train/run";
+import type { TrainingArtifact } from "../shared/training";
 import { FigureSlot, StepFigure, figureState, type FigureStatus } from "./motion/figure";
 import { locateQuote } from "../shared/locate";
 import { MODELS, modelName, type ModelId } from "../shared/models";
@@ -33,6 +35,7 @@ import { traceCardHtml, traceDim } from "./trace";
 import { renderSteps } from "./stepsView";
 import { Specimen } from "./specimen";
 import { TourDriver, tourSteps } from "./tour";
+import { trainingHeat, trainingScript } from "./trainingTour";
 import { revealSymbol, showCode } from "./codeView";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -310,13 +313,13 @@ scene.onClick = (id) => {
   pinned = id;
   inspect(id);
   if (!id) return;
-  const touring = panel.state.active === "journey" && tourKind === "journey";
+  const touring = panel.state.active === "journey" && tourKind !== null;
   if (sheet.active && !touring) panel.select("overview"); // phones: a tapped block opens Overview
   sheet.reveal();
   const active = panel.state.active;
   if (active === "pytorch") revealSymbol(panel.tab("pytorch"), id);
   else if (active === "paper") void openPaper(id);
-  else if (active === "journey" && tourKind === active && driver.script) {
+  else if (active === "journey" && tourKind && driver.script) {
     // Clicking a block during a tour jumps to its step.
     const step = driver.script.steps.findIndex((s) => s.block_id === id);
     if (step >= 0) driver.goTo(driver.script, step);
@@ -378,9 +381,11 @@ async function publish() {
 // Artifacts opened for this paper, so revisiting a tab never pays for a second generation.
 const artifacts = new Map<LearnKind, AnyArtifact>();
 const isKind = isTabKind;
-type TourKind = "journey";
+// The walkthrough, or the training step that follows it; both play in the Walkthrough tab.
+type TourKind = "journey" | "training";
 // Where each tour was left, so switching tabs mid-tour picks up at the same step.
-// Keyed by scope: "main" for the model's walkthrough, a block id for that block's inside walkthrough.
+// Keyed by scope: "main" for the model's walkthrough, a block id for that block's inside walkthrough,
+// "training" for the training step.
 const tourAt: Record<string, number> = {};
 let tourKind: TourKind | null = null;
 let tourScope = "main";
@@ -392,11 +397,12 @@ const NAMES: Record<TabKind, string> = { journey: "walkthrough", pytorch: "PyTor
 
 let openTab: TabId | null = null;
 panel.onSelect = (tab) => {
-  if (tourKind && tab !== tourKind && driver.active) {
+  if (tourKind && tab !== "journey" && driver.active) {
     tourAt[tourScope] = driver.index;
     driver.pause();
     specimen.hide(); // it comes back on the same step when the tab does
     stopFigure();
+    scene.setHeat(null); // so does the training heat
   }
   const again = tab === openTab;
   openTab = tab;
@@ -468,6 +474,10 @@ function resetLearn() {
   }
   for (const k of Object.keys(tourAt)) delete tourAt[k];
   tourScope = "main";
+  trainingReq = trainingArtifact = null;
+  trainingFailed = false;
+  trainingOn = false;
+  scene.setHeat(null);
   artifacts.clear();
   insideJourneys.clear();
   translations.clear();
@@ -519,6 +529,7 @@ async function openLearn(kind: TabKind) {
 
 /** Render an artifact for the visitor's language and level (the original if the rewrite can't be had). */
 async function showArtifact(kind: TabKind, english: AnyArtifact, g: LocatedArchitecture) {
+  if (kind === "journey" && trainingOn) return openTraining(); // the visitor went on to train: stay there
   const asked = reading;
   if (!isOriginal(asked.lang, asked.level)) panel.tab(kind).querySelector(".learn-progress")?.replaceChildren(readingMessage(asked));
   const artifact = await localized(kind, english);
@@ -541,11 +552,170 @@ function renderJourney(journey: JourneyArtifact, scope: string, shownGraph: Loca
   const at = driver.active && tourKind === "journey" && tourScope === scope ? driver.index : (tourAt[scope] ?? -1);
   tourKind = "journey";
   tourScope = scope;
-  renderSteps(panel.tab("journey"), script, shownGraph, driver, at, (token) => trace(token === tracing ? null : token), tracing, (el, blockId) => {
-    figureAt = el && blockId ? { el, blockId, scope } : null;
-    refreshFigure();
-  });
+  scene.setHeat(null);
+  renderSteps(
+    panel.tab("journey"),
+    script,
+    shownGraph,
+    driver,
+    at,
+    (token) => trace(token === tracing ? null : token),
+    tracing,
+    (el, blockId) => {
+      figureAt = el && blockId ? { el, blockId, scope } : null;
+      refreshFigure();
+      // The last step is in view: have the training step ready by the time the visitor asks for it.
+      if (scope === "main" && driver.index >= script.steps.length - 1) prefetchTraining();
+    },
+    // Training follows the model's own example; an inside walkthrough has none.
+    scope === "main" ? { label: "Train on this example →", run: startTraining } : undefined,
+  );
   loadMotion(scope);
+}
+
+// ---------- training: one real step on the walkthrough's example ----------
+
+// The training artifact for this paper (English): fetched in the background once the walkthrough's last step shows.
+let trainingReq: Promise<TrainingArtifact> | null = null;
+// The background fetch failed (e.g. no key): don't keep asking on every step; the button still asks again.
+let trainingFailed = false;
+// The Walkthrough tab shows the training tour (it comes back there after a tab switch or a language change).
+let trainingOn = false;
+let trainingProgress = "";
+// What trainingReq brought, once it has: the tour then opens without a loading state.
+let trainingArtifact: TrainingArtifact | null = null;
+// One training run per artifact: the numbers never change, only the words do.
+const trainingRuns = new WeakMap<TrainingArtifact, Trace>();
+
+function fetchTraining(): Promise<TrainingArtifact> | null {
+  const g = graph;
+  const journey = artifacts.get("journey") as JourneyArtifact | undefined;
+  if (!g || !journey) return null;
+  if (!trainingReq) {
+    trainingFailed = false;
+    trainingProgress = "";
+    // Always with the graph and the walkthrough: the server fits the toy to them.
+    const p = requestArtifact(
+      g.arxiv_id,
+      "training",
+      g,
+      storedKey(),
+      (m) => {
+        trainingProgress = m;
+        if (trainingOn) panel.tab("journey").querySelector(".learn-progress")?.replaceChildren(m);
+      },
+      journey,
+    ).then(({ artifact }) => {
+      if (trainingReq === p) trainingArtifact = artifact as TrainingArtifact;
+      return artifact as TrainingArtifact;
+    });
+    trainingReq = p;
+    p.catch(() => {
+      if (trainingReq !== p) return;
+      trainingReq = null;
+      trainingFailed = true;
+    });
+  }
+  return trainingReq;
+}
+
+function prefetchTraining() {
+  if (!trainingFailed) fetchTraining()?.catch(() => {});
+}
+
+/** "Train on this example →": leave the walkthrough where it is and start the training tour at its beginning. */
+function startTraining() {
+  if (!graph || inside) return;
+  if (driver.active && tourKind === "journey") tourAt[tourScope] = driver.index;
+  delete tourAt.training;
+  driver.stop();
+  trainingOn = true;
+  void openTraining();
+}
+
+/** Back from the training tour to the walkthrough, at the step it was left on. */
+function leaveTraining() {
+  trainingOn = false;
+  driver.stop();
+  scene.setHeat(null);
+  tourKind = null;
+  tourScope = "main";
+  void showWalkthrough();
+}
+
+/** Show the training tour in the Walkthrough tab (fetching it if it isn't here yet), in the reader's language. */
+async function openTraining() {
+  const g = graph;
+  const root = panel.tab("journey");
+  const pending = fetchTraining();
+  if (!g || !pending) return;
+  const still = () => graph === g && trainingOn && !inside && panel.state.active === "journey";
+  if (!trainingArtifact && still()) {
+    root.innerHTML = `
+      <div class="learn-state" aria-busy="true">
+        <div class="skeleton"><i></i><i></i><i></i><i></i><i></i></div>
+        <p class="learn-progress">${escapeHtml(trainingProgress || "Claude is building a toy version of the model to train…")}</p>
+      </div>`;
+  }
+  try {
+    const english = await pending;
+    if (!still()) return;
+    const asked = reading;
+    const shown = await localized("training", english);
+    if (!still() || reading !== asked || !view) return;
+    let run = trainingRuns.get(english);
+    if (!run) trainingRuns.set(english, (run = train(english)));
+    const t = run;
+    const script = trainingScript(shown, t);
+    // A language or level change mid-tour keeps the visitor on the same step.
+    const at = driver.active && tourKind === "training" ? driver.index : (tourAt.training ?? -1);
+    stopFigure();
+    tourKind = "training";
+    tourScope = "training";
+    renderSteps(
+      root,
+      script,
+      view,
+      driver,
+      at,
+      (token) => trace(token === tracing ? null : token),
+      tracing,
+      // Where the error has landed so far: the blocks visited, glowing with their gradient.
+      () => scene.setHeat(trainingHeat(script, t, driver.index)),
+      { label: "← Back to the walkthrough", run: leaveTraining },
+    );
+  } catch (err) {
+    if (!still()) return;
+    const e = err instanceof LearnError ? err : new LearnError(String(err));
+    if (e.code === "needs_key") {
+      root.innerHTML = `
+        <form class="learn-state key-card">
+          <h3>Add your Anthropic API key</h3>
+          <p><b class="model-name">${escapeHtml(modelName(chosenModel()))}</b> builds a toy version of this model to train, using your key. It stays in this browser: Paperforge's server uses it for this request only and never saves or logs it.</p>
+          <label class="sr-only" for="key-training">Anthropic API key</label>
+          <input id="key-training" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" required />
+          <button class="btn btn-primary">Save key and train</button>
+          <button type="button" class="btn" data-back>← Back to the walkthrough</button>
+        </form>`;
+      root.querySelector("form")!.addEventListener("submit", (ev) => {
+        ev.preventDefault();
+        const key = root.querySelector<HTMLInputElement>("input")!.value.trim();
+        if (!key) return;
+        saveKey(key);
+        void openTraining();
+      });
+    } else {
+      root.innerHTML = `
+        <div class="learn-state">
+          <h3>The training step didn't come through</h3>
+          <p>${escapeHtml(e.message)}</p>
+          <button type="button" class="btn btn-primary" data-retry>Try again</button>
+          <button type="button" class="btn" data-back>← Back to the walkthrough</button>
+        </div>`;
+      root.querySelector("[data-retry]")!.addEventListener("click", () => void openTraining());
+    }
+    root.querySelector("[data-back]")!.addEventListener("click", leaveTraining);
+  }
 }
 
 // ---------- the walkthrough inside a block ----------
@@ -762,6 +932,7 @@ async function openInside(blockId: string) {
   if (!g || !view || !block || inside) return; // one level deep
   if (tourKind && driver.active) tourAt[tourScope] = driver.index; // "← Whole model" comes back here
   driver.stop();
+  scene.setHeat(null);
   let pending = insides.get(blockId);
   if (!pending) {
     setStatus(`Looking inside ${block.label}…`);
@@ -782,6 +953,7 @@ async function openInside(blockId: string) {
     const shown = await localized("expansion", english, blockId);
     if (graph !== g || inside || !view) return;
     inside = { blockId, english, shown };
+    trainingOn = false; // "← Whole model" comes back to the walkthrough
     pinned = null;
     overview.setInside(shown, view.model_name);
     syncInside();
@@ -841,6 +1013,7 @@ const toolbar = initToolbar(controls, {
   replay() {
     if (!graph || !displayed()) return;
     driver.stop();
+    scene.setHeat(null);
     pinned = null;
     inspect(null);
     paper.setPaper(graph.arxiv_id, pages);
@@ -887,9 +1060,12 @@ window.addEventListener("keydown", (e) => {
   if (e.key === " " && document.body.classList.contains("assembling")) run.skip();
   if (e.key === "Escape") {
     // Esc stops a trace, then the tour you can see, then leaves a block's inside; otherwise it collapses the phone sheet.
-    const tourShowing = driver.active && tourKind === panel.state.active;
+    const tourShowing = driver.active && tourKind !== null && panel.state.active === "journey";
     if (tracing) trace(null);
-    else if (tourShowing) driver.stop();
+    else if (tourShowing) {
+      driver.stop();
+      scene.setHeat(null); // Next / Play bring the training heat back with the tour
+    }
     else if (inside) closeInside();
     else sheet.snapTo("tabs");
   }

@@ -43,6 +43,9 @@ export interface BlockObject {
   /** Highlighter-yellow shells, faded in on hover / highlight. */
   halo: THREE.Group;
   haloMaterial: THREE.MeshBasicMaterial;
+  /** Vermilion shells, just inside the halo: where the training step's gradient landed (scene.setHeat). */
+  heat: THREE.Group;
+  heatMaterial: THREE.MeshBasicMaterial;
 }
 
 // Matte paint: no glow, no shine. (The renderer's NeutralToneMapping keeps hues close to the palette.)
@@ -55,6 +58,7 @@ const shadowMaterial = new THREE.MeshBasicMaterial({ color: INK });
 const SHADOW_OFFSET = new THREE.Vector3(0.09, -0.09, -0.09);
 const OUTLINE_PAD = 0.035; // world units: an even ink line on every piece, thin or wide
 const HALO_PAD = 0.16;
+const HEAT_PAD = 0.1; // inside the highlighter halo, so a hovered hot block shows both
 
 /** Per-axis scale that grows a geometry by a fixed padding on every side. */
 function padScale(geometry: THREE.BufferGeometry, pad: number): THREE.Vector3 {
@@ -68,13 +72,21 @@ function padScale(geometry: THREE.BufferGeometry, pad: number): THREE.Vector3 {
 }
 const noRaycast = () => {};
 
-/** Wrap every mesh of a block in an ink outline, an offset ink shadow and a hidden halo. */
+/** Wrap every mesh of a block in an ink outline, an offset ink shadow, a hidden halo and a hidden heat glow. */
 function printDecorations(root: THREE.Group) {
   const outline = new THREE.Group();
   const shadow = new THREE.Group();
   const halo = new THREE.Group();
   const haloMaterial = new THREE.MeshBasicMaterial({
     color: HIGHLIGHTER,
+    side: THREE.BackSide,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  });
+  const heat = new THREE.Group();
+  const heatMaterial = new THREE.MeshBasicMaterial({
+    color: VERMILION,
     side: THREE.BackSide,
     transparent: true,
     opacity: 0,
@@ -93,10 +105,12 @@ function printDecorations(root: THREE.Group) {
     outline.add(shell(inkMaterial, OUTLINE_PAD));
     shadow.add(shell(shadowMaterial, 0, SHADOW_OFFSET));
     halo.add(shell(haloMaterial, HALO_PAD));
+    heat.add(shell(heatMaterial, HEAT_PAD));
   }
   halo.visible = false;
-  root.add(shadow, outline, halo);
-  return { outline, shadow, halo, haloMaterial };
+  heat.visible = false;
+  root.add(shadow, outline, heat, halo);
+  return { outline, shadow, halo, haloMaterial, heat, heatMaterial };
 }
 
 const box = (w: number, h: number, d: number, r = 0.08) =>

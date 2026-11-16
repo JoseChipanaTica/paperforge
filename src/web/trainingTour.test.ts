@@ -6,7 +6,7 @@ import { train } from "../shared/train/run";
 import type { TrainingArtifact } from "../shared/training";
 import { applyText, pickText } from "../shared/translate";
 import type { TourScript } from "./tour";
-import { traceViews, trainingScript } from "./trainingTour";
+import { traceViews, trainingHeat, trainingScript } from "./trainingTour";
 
 const graph = (await Bun.file(new URL("../../samples/1706.03762.json", import.meta.url)).json()) as Architecture;
 const sample = (await Bun.file(new URL("../../samples/1706.03762.training.json", import.meta.url)).json()) as TrainingArtifact;
@@ -172,5 +172,29 @@ describe("traceViews", () => {
   test("rows fall back to positions when there are no token ids", () => {
     const r = train(RAISING_TOY);
     expect(traceViews(r, r.nodes[1]!, [])[0]!.rows).toEqual(["pos 1", "pos 2"]);
+  });
+});
+
+describe("trainingHeat", () => {
+  const trace = train(TRANSFORMER_TOY);
+  const s = trainingScript(TRANSFORMER_TOY, trace);
+
+  test("no heat at the intro or the outro", () => {
+    expect(trainingHeat(s, trace, -1)).toBeNull();
+    expect(trainingHeat(s, trace, s.steps.length)).toBeNull();
+  });
+
+  test("the blocks visited so far keep heat scaled to their gradient, the largest at 1", () => {
+    const first = trainingHeat(s, trace, 0)!;
+    expect([...first.keys()]).toEqual([s.steps[0]!.block_id]);
+    const all = trainingHeat(s, trace, s.steps.length - 1)!;
+    const visited = new Set(s.steps.map((st) => st.block_id));
+    expect([...all.keys()].every((id) => visited.has(id))).toBe(true);
+    const levels = [...all.values()];
+    expect(levels.every((l) => l >= 0 && l <= 1)).toBe(true);
+    expect(Math.max(...levels)).toBe(1);
+    const two = trainingHeat(s, trace, 2)!;
+    expect(two.size).toBeGreaterThanOrEqual(2);
+    for (const [id, l] of two) expect(all.get(id)).toBe(l); // a block's level never depends on the step
   });
 });

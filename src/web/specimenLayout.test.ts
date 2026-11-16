@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { VIEW_KINDS, type View } from "../shared/learn";
-import { MAX_CELLS, layoutView, layoutViews, parseDims } from "./specimenLayout";
+import { MAX_CELLS, formatValue, layoutView, layoutViews, parseDims } from "./specimenLayout";
 
 const view = (v: Partial<View>): View => ({ kind: "tensor", caption: "c", rows: [], cols: [], values: [], dims: "[3, 512]", split: 1, ...v });
 const grid = (n: number, m: number) => Array.from({ length: n }, (_, i) => Array.from({ length: m }, (_, j) => (i * m + j) / (n * m)));
@@ -92,5 +92,22 @@ describe("parseDims", () => {
   test("numbers stay, symbols become 4", () => {
     expect(parseDims("[B, 3, 512]")).toEqual([4, 3, 512]);
     expect(parseDims("")).toEqual([]);
+  });
+});
+
+describe("formatValue", () => {
+  test("small magnitudes read as a compact exponent, not 0.00", () => {
+    expect(formatValue(0.0012)).toBe("1.2e-3");
+    expect(formatValue(-0.00056)).toBe("-5.6e-4");
+    expect(formatValue(0.009)).toBe("9.0e-3");
+  });
+
+  test("other values are unchanged", () => {
+    expect(formatValue(0)).toBe("0");
+    expect(formatValue(3)).toBe("3");
+    expect(formatValue(0.01)).toBe("0.01");
+    expect(formatValue(0.5)).toBe("0.50");
+    expect(formatValue(-1.234)).toBe("-1.23");
+    expect(formatValue(123.4)).toBe("123.4");
   });
 });

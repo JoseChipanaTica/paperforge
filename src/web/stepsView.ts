@@ -19,21 +19,18 @@ export function stepHtml(s: TourStep, traced: string | null): string {
     ${s.views.length ? `<ul class="step-views" aria-label="On the card">${s.views.map((v) => `<li>${escapeHtml(v.caption)}</li>`).join("")}</ul>` : ""}`;
 }
 
-export function renderSteps(
-  root: HTMLElement,
-  script: TourScript,
-  graph: LocatedArchitecture,
-  driver: TourDriver,
-  start = -1,
-  onTrace: (token: string) => void = () => {},
-  traced: string | null = null,
-  /** The current step changed: its figure container and block (null at the intro and outro). */
-  onStep: (figure: HTMLElement | null, blockId: string | null) => void = () => {},
-) {
+/** What comes after the outro: a primary button (the walkthrough's "Train on this example →"). */
+export interface StepsContinue {
+  label: string;
+  run: () => void;
+}
+
+/** The step list and its controls, as markup. */
+export function stepsHtml(script: TourScript, graph: LocatedArchitecture, traced: string | null, continueLabel?: string): string {
   const label = (blockId: string) => graph.blocks.find((b) => b.id === blockId)?.label ?? blockId;
   const captions = (views: { caption: string }[]) =>
     views.length ? `<ul class="step-views">${views.map((v) => `<li>${escapeHtml(v.caption)}</li>`).join("")}</ul>` : "";
-  root.innerHTML = `
+  return `
     <div class="steps">
       <aside class="step-analogy">
         <h3>${escapeHtml(script.analogy.title)}</h3>
@@ -63,6 +60,7 @@ export function renderSteps(
         <p class="step-moment"><span>Output</span> ${escapeHtml(script.output.label)}</p>
         ${captions(script.output.views)}
         <p>${escapeHtml(script.outro)}</p>
+        ${continueLabel ? `<button type="button" class="btn btn-primary step-continue" data-continue>${escapeHtml(continueLabel)}</button>` : ""}
       </section>
     </div>
     <nav class="step-nav" aria-label="Tour controls">
@@ -71,6 +69,41 @@ export function renderSteps(
       <span class="step-pos" aria-live="polite"></span>
       <button type="button" class="btn btn-primary" data-nav="next">Next</button>
     </nav>`;
+}
+
+/** A click anywhere in the step list: trace a dimension, jump to a step, a control, or continue. */
+export function stepsClick(
+  t: HTMLElement,
+  script: TourScript,
+  driver: TourDriver,
+  onTrace: (token: string) => void,
+  onContinue: StepsContinue | undefined,
+) {
+  const dim = t.closest<HTMLElement>("[data-dim]")?.dataset.dim;
+  if (dim) return onTrace(dim);
+  if (t.closest("[data-continue]")) return onContinue?.run();
+  const go = t.closest<HTMLElement>("[data-go]")?.dataset.go;
+  if (go !== undefined) return driver.goTo(script, Number(go));
+  const action = t.closest<HTMLElement>("[data-nav]")?.dataset.nav;
+  if (action === "next") driver.next();
+  else if (action === "back") driver.back();
+  else if (action === "play") driver.togglePlay();
+}
+
+export function renderSteps(
+  root: HTMLElement,
+  script: TourScript,
+  graph: LocatedArchitecture,
+  driver: TourDriver,
+  start = -1,
+  onTrace: (token: string) => void = () => {},
+  traced: string | null = null,
+  /** The current step changed: its figure container and block (null at the intro and outro). */
+  onStep: (figure: HTMLElement | null, blockId: string | null) => void = () => {},
+  /** A primary button at the end of the outro. */
+  onContinue?: StepsContinue,
+) {
+  root.innerHTML = stepsHtml(script, graph, traced, onContinue?.label);
 
   const nav = (name: string) => root.querySelector<HTMLButtonElement>(`[data-nav="${name}"]`)!;
   const show = (i: number) => {
@@ -96,17 +129,7 @@ export function renderSteps(
 
   driver.onIndex = show;
   driver.onPlaying = playing;
-  root.onclick = (e) => {
-    const t = e.target as HTMLElement;
-    const dim = t.closest<HTMLElement>("[data-dim]")?.dataset.dim;
-    if (dim) return onTrace(dim);
-    const go = t.closest<HTMLElement>("[data-go]")?.dataset.go;
-    if (go !== undefined) return driver.goTo(script, Number(go));
-    const action = t.closest<HTMLElement>("[data-nav]")?.dataset.nav;
-    if (action === "next") driver.next();
-    else if (action === "back") driver.back();
-    else if (action === "play") driver.togglePlay();
-  };
+  root.onclick = (e) => stepsClick(e.target as HTMLElement, script, driver, onTrace, onContinue);
 
   playing(driver.playing);
   driver.goTo(script, start);
