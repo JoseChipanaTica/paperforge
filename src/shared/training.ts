@@ -136,7 +136,7 @@ const drops = (l: { before: number; after: number } | null) => l !== null && l.b
  * The gate before anyone sees a training artifact: clamps sizes, drops nodes off the graph, turns unknown kinds into
  * pass-throughs, maps the optimizer to one the engine runs and picks a toy learning rate that trains. Returns `null`
  * when the toy model can't run one finite step (cycle, dangling input, shape mismatch, bad target, non-finite numbers)
- * or fewer than two graph blocks carry a node.
+ * fewer than two graph blocks carry a node, or the model's output (the last node) is dropped or becomes a pass-through.
  */
 export function cleanTraining(raw: TrainingArtifact, graph: Architecture): TrainingArtifact | null {
   const blockIds = new Set(graph.blocks.map((b) => b.id));
@@ -172,6 +172,9 @@ export function cleanTraining(raw: TrainingArtifact, graph: Architecture): Train
   }
   const carried = new Set(nodes.map((n) => n.block_id));
   if (carried.size < 2) return null;
+  // The model's output is what the loss reads: it must still be the last node, and a real one.
+  const output = nodes.at(-1);
+  if (!output || output.id !== raw.toy.nodes.at(-1)?.id || output.fn === "passthrough") return null;
 
   // Target: exactly one of classes / values; class ids inside the vocabulary.
   const vocab = raw.vocab.slice(0, MAX_VOCAB);

@@ -47,6 +47,10 @@ describe("training contract", () => {
     expect(optimizerKind("momentum")).toEqual({ kind: "momentum", fallback: false });
     expect(optimizerKind("sgd")).toEqual({ kind: "sgd", fallback: false });
     expect(optimizerKind("LAMB")).toEqual({ kind: "sgd", fallback: true });
+    expect(optimizerKind("Stochastic gradient descent")).toEqual({ kind: "sgd", fallback: false });
+    expect(optimizerKind("SGD with momentum")).toEqual({ kind: "momentum", fallback: false });
+    expect(optimizerKind("AdamW")).toEqual({ kind: "adamw", fallback: false });
+    for (const name of ["RAdam", "NAdam", "Adamax"]) expect(optimizerKind(name)).toEqual({ kind: "sgd", fallback: true });
   });
 });
 

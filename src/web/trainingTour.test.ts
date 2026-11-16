@@ -216,3 +216,59 @@ describe("the training script's words", () => {
     expect(update).toContain("whatever the size of its gradient");
   });
 });
+
+describe("trainingScript, the paper's words and settings", () => {
+  const STAY = "stay put";
+
+  test("the loss step quotes the paper's loss sentence", () => {
+    const loss = script(sample).steps[0]!;
+    expect(sample.loss.quote.length).toBeGreaterThan(0);
+    expect(loss.body).toContain(`“${sample.loss.quote}”`);
+  });
+
+  test("the update step quotes the optimizer and lists its settings", () => {
+    const update = script(sample).steps.at(-2)!;
+    expect(update.body).toContain(`“${sample.optimizer.quote}”`);
+    expect(update.body).toContain("β1 = 0.9, β2 = 0.98, ε = 1e-9");
+    expect(update.body).not.toContain("weight decay");
+  });
+
+  test("empty quotes add nothing", () => {
+    const a: TrainingArtifact = { ...sample, loss: { ...sample.loss, quote: "" }, optimizer: { ...sample.optimizer, quote: "" } };
+    const s = script(a);
+    expect(s.steps[0]!.body).not.toContain("“”");
+    expect(s.steps.at(-2)!.body).not.toContain("“”");
+  });
+
+  test("AdamW adds its weight decay; momentum gives its coefficient", () => {
+    const adamw: TrainingArtifact = { ...sample, optimizer: { ...sample.optimizer, kind: "AdamW", weight_decay: 0.01 } };
+    expect(script(adamw).steps.at(-2)!.body).toContain("β1 = 0.9, β2 = 0.98, ε = 1e-9, weight decay = 0.01");
+    const mom: TrainingArtifact = { ...sample, optimizer: { ...sample.optimizer, kind: "SGD with momentum", momentum: 0.9 } };
+    const body = script(mom).steps.at(-2)!.body;
+    expect(body).toContain("momentum = 0.9");
+    expect(body).not.toContain("β2");
+  });
+
+  test("unused embedding rows stay put only when it's true", () => {
+    // The sample's example leaves out "saß" and "<eos>", and Adam has no weight decay.
+    expect(script(sample).steps.at(-2)!.body).toContain(STAY);
+    const decayed: TrainingArtifact = { ...sample, optimizer: { ...sample.optimizer, kind: "AdamW", weight_decay: 0.01 } };
+    expect(script(decayed).steps.at(-2)!.body).not.toContain(STAY);
+    // Every row of the table is in the example: nothing is left out.
+    const tiny: TrainingArtifact = {
+      ...sample,
+      toy: {
+        dims: "tiny",
+        nodes: [
+          { id: "x", block_id: "inputs", kind: "input", fn: "", inputs: [], params: [{ name: "values", values: [[0, 1]] }], count: 1 },
+          { id: "e", block_id: "input_embedding", kind: "embedding_lookup", fn: "", inputs: ["x"], params: [{ name: "E", values: [[0.1, -0.2], [0.3, 0.05]] }], count: 1 },
+          { id: "o", block_id: "final_linear", kind: "linear", fn: "", inputs: ["e"], params: [{ name: "W", values: [[0.2, -0.1], [0.1, 0.3]] }], count: 1 },
+        ],
+      },
+      vocab: ["a", "b"],
+      target: { classes: [1, 0], values: [] },
+      steps: [],
+    };
+    expect(script(tiny).steps.at(-2)!.body).not.toContain(STAY);
+  });
+});

@@ -200,6 +200,19 @@ describe("cleanTraining", () => {
     expect(cleanTraining(a, graph)).toBeNull();
   });
 
+  test("the model's output must survive cleaning as a real node, still last", () => {
+    const offGraph = clone(TRANSFORMER_TOY);
+    offGraph.toy.nodes.at(-1)!.block_id = "no_such_block";
+    expect(cleanTraining(offGraph, graph)).toBeNull();
+    const unknown = clone(TRANSFORMER_TOY);
+    unknown.toy.nodes.at(-1)!.kind = "sparsemax";
+    expect(cleanTraining(unknown, graph)).toBeNull();
+    const lostInput = clone(RAISING_TOY);
+    const last = lostInput.toy.nodes.at(-1)!;
+    lostInput.toy.nodes.find((n) => n.id === last.inputs[0])!.block_id = "no_such_block";
+    expect(cleanTraining(lostInput, graph)).toBeNull();
+  });
+
   test("RAISING_TOY parses and fits the sample graph", () => {
     expect(() => TrainingArtifact.parse(RAISING_TOY)).not.toThrow();
     expect(trainingFits(RAISING_TOY, graph)).toBe(true);

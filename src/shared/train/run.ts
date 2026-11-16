@@ -36,11 +36,12 @@ type OptKind = OptimizerSpec["kind"];
 
 /** The paper's optimizer name → one the engine runs (case-insensitive); anything else is SGD with `fallback`. */
 export function optimizerKind(name: string): { kind: OptKind; fallback: boolean } {
+  // Whole words only: RAdam, NAdam and Adamax are other optimizers, so they fall back.
   const n = name.toLowerCase();
-  if (n.includes("adamw")) return { kind: "adamw", fallback: false };
-  if (n.includes("adam")) return { kind: "adam", fallback: false };
-  if (n.includes("momentum") || n.includes("nesterov")) return { kind: "momentum", fallback: false };
-  if (n.includes("sgd")) return { kind: "sgd", fallback: false };
+  if (/\badamw\b/.test(n)) return { kind: "adamw", fallback: false };
+  if (/\badam\b/.test(n)) return { kind: "adam", fallback: false };
+  if (/momentum|nesterov/.test(n)) return { kind: "momentum", fallback: false };
+  if (/\bsgd\b|gradient descent/.test(n)) return { kind: "sgd", fallback: false };
   return { kind: "sgd", fallback: true };
 }
 

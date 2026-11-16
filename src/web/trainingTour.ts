@@ -1,5 +1,5 @@
 import { type View, cleanView } from "../shared/learn";
-import type { NodeTrace, Trace } from "../shared/train/run";
+import { type NodeTrace, type Trace, optimizerKind } from "../shared/train/run";
 import type { TrainingArtifact } from "../shared/training";
 import type { TourScript, TourStep } from "./tour";
 
@@ -21,6 +21,32 @@ const loss3 = (x: number) => x.toFixed(3);
 /** A rate as written: 0.0007, 0.05, 1000. */
 const rate = (x: number) => String(Number(x.toPrecision(3)));
 const pct = (p: number) => `${Math.round(p * 100)}%`;
+/** A setting as written: 0.98, 0.9, 1e-9 (small numbers as compact exponents). */
+const setting = (x: number) => {
+  const r = Number(x.toPrecision(3));
+  return r !== 0 && Math.abs(r) < 1e-3 ? r.toExponential().replace("e+", "e") : String(r);
+};
+/** The paper's own sentence, in quotation marks; nothing when there is none. */
+const quoted = (q: string) => (q.trim() ? `“${q.trim()}”` : "");
+
+/** The optimizer's settings as one line: Adam's β1, β2, ε (+ AdamW's weight decay), or the momentum. */
+function settingsLine(o: TrainingArtifact["optimizer"]): string {
+  if (o.fallback) return "";
+  const k = optimizerKind(o.kind).kind;
+  if (k === "adam" || k === "adamw") {
+    const decay = k === "adamw" && o.weight_decay > 0 ? `, weight decay = ${setting(o.weight_decay)}` : "";
+    return `β1 = ${setting(o.beta1)}, β2 = ${setting(o.beta2)}, ε = ${setting(o.eps)}${decay}.`;
+  }
+  return k === "momentum" ? `momentum = ${setting(o.momentum)}.` : "";
+}
+
+/** Some embedding row got no gradient and didn't move (a word absent from the example, no weight decay). */
+const rowStayedPut = (nodes: NodeTrace[]) =>
+  nodes.some(
+    (n) =>
+      n.kind === "embedding_lookup" &&
+      n.params.some((p) => p.grad.some((r, i) => r.every((x) => x === 0) && r.every((_, j) => p.after[i]?.[j] === p.before[i]?.[j]))),
+  );
 
 function view(kind: View["kind"], caption: string, values: number[][], rows: string[] = [], cols: string[] = [], d = dims(values)): View {
   return cleanView({ kind, caption, rows, cols, values, dims: d, split: 1 });
@@ -154,6 +180,7 @@ export function trainingScript(a: TrainingArtifact, trace: Trace): TourScript {
       a.loss.kind === "cross_entropy" && a.loss.label_smoothing > 0
         ? `With label smoothing ε = ${a.loss.label_smoothing}, the target puts ${pct(1 - a.loss.label_smoothing)} on the right word and spreads the rest over the others.`
         : "",
+      quoted(a.loss.quote),
     ]
       .filter(Boolean)
       .join(" "),
@@ -206,7 +233,9 @@ export function trainingScript(a: TrainingArtifact, trace: Trace): TourScript {
         : trace.note
           ? "" // the optimizer's own note says how far each weight moves
           : `${o.kind} moves every weight with a nonzero gradient once.`,
-      nodes.some((n) => n.kind === "embedding_lookup") ? "Rows of the embedding tables for words not in the example get no gradient and stay put." : "",
+      quoted(o.quote),
+      settingsLine(o),
+      rowStayedPut(nodes) ? "Rows of the embedding tables for words not in the example get no gradient and stay put." : "",
       sameRate
         ? `The toy uses the paper's learning rate, ${rate(o.lr)}.`
         : `The paper's learning rate is ${rate(o.lr)}; this toy uses ${rate(trace.lr)}, a toy-scale rate, so a single step on a single example visibly moves the loss.`,
