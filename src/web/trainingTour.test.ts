@@ -100,6 +100,48 @@ describe("trainingScript", () => {
   });
 });
 
+describe("trainingScript, fix round 1", () => {
+  const s = script(TRANSFORMER_TOY);
+  const step = (id: string) => s.steps.slice(1, -2).find((x) => x.block_id === id)!;
+
+  test("an add & norm step shows the gradient leaving along the skip", () => {
+    for (const a of [TRANSFORMER_TOY, sample]) {
+      const st = script(a).steps.find((x) => x.block_id === "decoder_add_norm_2")!;
+      expect(st.views[0]!.caption).toContain("gradient arriving");
+      expect(st.views[1]!.caption).toContain("skip");
+    }
+  });
+
+  test("attention steps show the weight with the largest gradient", () => {
+    const t = train(sample);
+    const n = (m: number[][]) => Math.hypot(...m.flat());
+    const attn = t.nodes.find((x) => x.block_id === "decoder_masked_attention")!;
+    const top = [...attn.params].sort((x, y) => n(y.grad) - n(x.grad))[0]!;
+    const st = trainingScript(sample, t).steps.find((x) => x.block_id === "decoder_masked_attention")!;
+    expect(st.views[1]!.caption).toBe(`what ${top.name} should change`);
+  });
+
+  test("input steps say the token ids take no gradient", () => {
+    expect(step("inputs").shape).toBe("token ids [1, 3]: no gradient");
+    expect(step("outputs").shape).toBe("token ids [1, 3]: no gradient");
+  });
+
+  test("the update moves only weights with a gradient, labelled by word, to 3 decimals", () => {
+    const update = s.steps.at(-2)!;
+    expect(update.body).toContain("nonzero gradient");
+    const v = update.views[0]!;
+    for (const c of v.cols) expect(c).toMatch(/^E\[(<s>|the|cat|sat|die|Katze|saß),\d\]$/);
+    for (const x of v.values.flat()) expect(Math.round(x * 1000) / 1000).toBe(x);
+  });
+
+  test("a loss unchanged at 3 decimals says so, without overshoot", () => {
+    const t = train(RAISING_TOY);
+    const body = trainingScript(RAISING_TOY, { ...t, lossAfter: t.lossBefore }).steps.at(-1)!.body;
+    expect(body).toContain("unchanged");
+    expect(body).not.toContain("overshoot");
+  });
+});
+
 describe("traceViews", () => {
   const t = train(TRANSFORMER_TOY);
   const vocab = TRANSFORMER_TOY.vocab;
@@ -112,7 +154,10 @@ describe("traceViews", () => {
     expect(vs[0]!.caption).toContain("gradient arriving");
     expect(vs[0]!.rows).toEqual(["the", "cat", "sat"]);
     expect(vs[0]!.dims).toBe("[3, 4]");
-    expect(vs[1]!.caption).toContain("what Wq should change");
+    // The weight with the largest gradient norm, not the first of equal size.
+    const n = (m: number[][]) => Math.hypot(...m.flat());
+    const top = [...node("enc_attn").params].sort((x, y) => n(y.grad) - n(x.grad))[0]!;
+    expect(vs[1]!.caption).toBe(`what ${top.name} should change`);
   });
 
   test("decoder rows come from the decoder's own input", () => {

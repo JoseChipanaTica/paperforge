@@ -51,6 +51,14 @@ function colLabels(trace: Trace, node: NodeTrace, vocab: string[], width: number
 }
 
 const size = (m: number[][]) => m.length * (m[0]?.length ?? 0);
+const norm = (m: number[][]) => Math.sqrt(m.flat().reduce((s, x) => s + x * x, 0));
+
+/** A gradient as a heat map, rows labelled with the node's positions. */
+function gradView(trace: Trace, node: NodeTrace, vocab: string[], caption: string, m: number[][]): View {
+  return view("matrix", caption, m, rowLabels(trace, node, vocab, m.length), colLabels(trace, node, vocab, m[0]?.length ?? 0));
+}
+
+export const SKIP = "gradient leaving along the skip (the sublayer gets the same)";
 
 /**
  * What the specimen card shows at one node: the gradient arriving (∂L/∂output), then either what its largest weight
@@ -63,15 +71,19 @@ export function traceViews(trace: Trace, node: NodeTrace, vocab: string[]): View
       ? [view("tokens", "the example's token ids: data, not weights", [ids], ids.map((i) => vocab[i]!), [], `[${ids.length}]`)]
       : [view("matrix", "the example's data: not weights", node.value, positions(node.value.length))];
   }
-  const rows = (m: number[][]) => rowLabels(trace, node, vocab, m.length);
-  const matrix = (caption: string, m: number[][]) => view("matrix", caption, m, rows(m), colLabels(trace, node, vocab, m[0]?.length ?? 0));
+  const matrix = (caption: string, m: number[][]) => gradView(trace, node, vocab, caption, m);
   const views = [matrix("gradient arriving", node.gradOut)];
-  const param = node.params.reduce<NodeTrace["params"][number] | null>((best, p) => (!best || size(p.grad) > size(best.grad) ? p : best), null);
+  // The weight with the most to learn: largest gradient norm, ties by size.
+  const param = node.params.reduce<NodeTrace["params"][number] | null>((best, p) => {
+    if (!best) return p;
+    const [n, b] = [norm(p.grad), norm(best.grad)];
+    return n > b || (n === b && size(p.grad) > size(best.grad)) ? p : best;
+  }, null);
   if (param) {
     const r = node.kind === "embedding_lookup" && param.grad.length === vocab.length ? vocab : [];
     views.push(view("matrix", `what ${param.name} should change`, param.grad, r));
   } else if (node.kind === "residual_add" && node.gradIn[1]) {
-    views.push(matrix("gradient leaving along the skip (the sublayer gets the same)", node.gradIn[1]));
+    views.push(matrix(SKIP, node.gradIn[1]));
   } else if (node.gradIn[0]) {
     views.push(matrix("gradient leaving", node.gradIn[0]));
   }
@@ -156,14 +168,22 @@ export function trainingScript(a: TrainingArtifact, trace: Trace): TourScript {
     const first = own[0]!;
     const passthrough = own.every((n) => n.passthrough);
     const leaving = first.kind === "embedding_lookup" ? undefined : first.gradIn[0]; // token ids take no gradient
+    const views = traceViews(trace, end, vocab);
+    // A residual inside the block: show the gradient splitting, one copy straight down the skip.
+    const residual = own.find((n) => n.kind === "residual_add" && n.gradIn[1]);
+    if (residual && end !== residual) views.splice(1, 1, gradView(trace, residual, vocab, SKIP, residual.gradIn[1]!));
+    const shape =
+      end.kind === "input"
+        ? `${idsOf(end, vocab) ? "token ids" : "data"} ${dims(end.value)}: no gradient`
+        : leaving ? `gradient ${dims(end.gradOut)} → ${dims(leaving)}` : `gradient ${dims(end.gradOut)}`;
     return [
       {
         block_id: s.block_id,
         title: s.title,
         what: s.learns,
         body: passthrough ? `${s.narration} ${PASSTHROUGH}` : s.narration,
-        shape: leaving ? `gradient ${dims(end.gradOut)} → ${dims(leaving)}` : `gradient ${dims(end.gradOut)}`,
-        views: traceViews(trace, end, vocab),
+        shape,
+        views,
       },
     ];
   });
@@ -173,12 +193,13 @@ export function trainingScript(a: TrainingArtifact, trace: Trace): TourScript {
   const sameRate = Math.abs(o.lr - trace.lr) <= 1e-12 * Math.max(1, Math.abs(o.lr));
   const updateStep: TourStep = {
     block_id: learner.block_id,
-    title: "Update every weight",
-    what: "Every weight moves a little against its gradient.",
+    title: "Update the weights",
+    what: "Every weight with a nonzero gradient moves a little against it.",
     body: [
       o.fallback
         ? `The paper trains with ${o.kind}; the toy can't run it, so it takes a plain SGD step instead.`
-        : `${o.kind} moves every weight once.`,
+        : `${o.kind} moves every weight with a nonzero gradient once.`,
+      nodes.some((n) => n.kind === "embedding_lookup") ? "Rows of the embedding tables for words not in the example get no gradient and stay put." : "",
       sameRate
         ? `The toy uses the paper's learning rate, ${rate(o.lr)}.`
         : `The paper's learning rate is ${rate(o.lr)}; this toy uses ${rate(trace.lr)}, a toy-scale rate, so a single step on a single example visibly moves the loss.`,
@@ -189,19 +210,21 @@ export function trainingScript(a: TrainingArtifact, trace: Trace): TourScript {
       .filter(Boolean)
       .join(" "),
     shape: "",
-    views: [beforeAfter(learner)],
+    views: [beforeAfter(learner, vocab)],
   };
 
-  const dropped = trace.lossAfter < trace.lossBefore;
   const [l0, l1] = [loss3(trace.lossBefore), loss3(trace.lossAfter)];
   const moved = classes ? ` “${right}” ${pct(rightProb(before))} → ${pct(rightProb(after))}.` : "";
   const againStep: TourStep = {
     block_id: last.block_id,
     title: "Guess again",
     what: "The same example runs forward with the new weights.",
-    body: dropped
-      ? `Loss ${l0} → ${l1}.${moved}`
-      : `The loss went from ${l0} to ${l1}: one step at toy size can overshoot.${moved}`,
+    body:
+      l0 === l1
+        ? `The loss is unchanged at three decimals: ${l0}.${moved}`
+        : trace.lossAfter < trace.lossBefore
+          ? `Loss ${l0} → ${l1}.${moved}`
+          : `The loss went from ${l0} to ${l1}: one step at toy size can overshoot.${moved}`,
     shape: `${dims(trace.predictionAfter)} → 1 number`,
     views: [guess(after, "the new guess"), targetView],
   };
@@ -215,12 +238,16 @@ export function trainingScript(a: TrainingArtifact, trace: Trace): TourScript {
   };
 }
 
-/** Four weights of a node before and after the step: the ones that moved most. */
-function beforeAfter(n: NodeTrace): View {
-  const moves = n.params.flatMap((p) =>
-    p.before.flatMap((r, i) => r.map((b, j) => ({ label: `${p.name}[${i},${j}]`, b, a: p.after[i]?.[j] ?? b }))),
-  );
-  const top = moves.sort((x, y) => Math.abs(y.a - y.b) - Math.abs(x.a - x.b)).slice(0, 4);
+const round3 = (x: number) => Math.round(x * 1000) / 1000;
+
+/** Four weights of a node before and after the step (the ones that moved most), to 3 decimals. */
+function beforeAfter(n: NodeTrace, vocab: string[]): View {
+  const moves = n.params.flatMap((p) => {
+    // An embedding table's rows are words: E[cat,3].
+    const word = (i: number) => (n.kind === "embedding_lookup" && p.before.length === vocab.length ? vocab[i]! : String(i));
+    return p.before.flatMap((r, i) => r.map((b, j) => ({ label: `${p.name}[${word(i)},${j}]`, b: round3(b), a: round3(p.after[i]?.[j] ?? b), d: Math.abs((p.after[i]?.[j] ?? b) - b) })));
+  });
+  const top = moves.sort((x, y) => y.d - x.d).slice(0, 4);
   return view(
     "matrix",
     "four weights, before → after",
