@@ -587,7 +587,8 @@ let trainingArtifact: TrainingArtifact | null = null;
 // One training run per artifact: the numbers never change, only the words do.
 const trainingRuns = new WeakMap<TrainingArtifact, Trace>();
 
-function fetchTraining(): Promise<TrainingArtifact> | null {
+/** `existingOnly`: the background prefetch, which takes only a saved or shipped training step (never a Claude call). */
+function fetchTraining(existingOnly = false): Promise<TrainingArtifact> | null {
   const g = graph;
   const journey = artifacts.get("journey") as JourneyArtifact | undefined;
   if (!g || !journey) return null;
@@ -605,6 +606,7 @@ function fetchTraining(): Promise<TrainingArtifact> | null {
         if (trainingOn) panel.tab("journey").querySelector(".learn-progress")?.replaceChildren(m);
       },
       journey,
+      existingOnly,
     ).then(({ artifact }) => {
       if (trainingReq === p) trainingArtifact = artifact as TrainingArtifact;
       return artifact as TrainingArtifact;
@@ -621,7 +623,8 @@ function fetchTraining(): Promise<TrainingArtifact> | null {
 
 /** Background fetch, only of a training step that already exists (never a Claude call unasked). */
 function prefetchTraining() {
-  if (!trainingFailed && trainingPrefetchable(panel.state)) fetchTraining()?.catch(() => {});
+  // Nothing built yet (`not_ready`) just means not prefetched: the button asks for real, without existing_only.
+  if (!trainingFailed && trainingPrefetchable(panel.state)) fetchTraining(true)?.catch(() => {});
 }
 
 /** "Train on this example →": leave the walkthrough where it is and start the training tour at its beginning. */
@@ -688,6 +691,8 @@ async function openTraining() {
   } catch (err) {
     if (!still()) return;
     const e = err instanceof LearnError ? err : new LearnError(String(err));
+    // The button caught the prefetch, which found nothing built: now ask for real (its request is already cleared).
+    if (e.code === "not_ready" && !trainingReq) return void openTraining();
     if (e.code === "needs_key") {
       root.innerHTML = `
         <form class="learn-state key-card">

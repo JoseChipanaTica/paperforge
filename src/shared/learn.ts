@@ -174,7 +174,7 @@ export function artifactBlockCount(kind: LearnKind, artifact: AnyArtifact): numb
 /** Enough left to show: code mapped to a block, a journey of at least two steps, motion for one step. */
 export const isUsable = (kind: LearnKind, artifact: AnyArtifact) => artifactBlockCount(kind, artifact) >= (kind === "journey" || kind === "training" ? 2 : 1);
 
-type LearnError = { type: "error"; message: string; code?: "needs_key" | "rate_limited" | "bad_input" };
+type LearnError = { type: "error"; message: string; code?: "needs_key" | "rate_limited" | "bad_input" | "not_ready" };
 
 export type LearnEvent =
   | { type: "status"; message: string }

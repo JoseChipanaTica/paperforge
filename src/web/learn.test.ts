@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import type { LocatedArchitecture } from "../shared/graph";
 import type { AskTurn } from "../shared/learn";
-import { InFlight, askHistoryPayload, inspectTarget } from "./learn";
+import { InFlight, LearnError, askHistoryPayload, inspectTarget, requestArtifact } from "./learn";
 
 describe("askHistoryPayload", () => {
   test("sends at most the last 10 turns, each clipped to 4000 chars (the server's limits)", () => {
@@ -44,5 +45,27 @@ describe("InFlight", () => {
     expect(f.busy).toBe(true);
     expect((await slow).current).toBe(false);
     expect(f.busy).toBe(false);
+  });
+});
+
+describe("requestArtifact, prefetch", () => {
+  const real = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = real;
+  });
+
+  test("existing_only goes in the body only for a prefetch, and not_ready comes back as its code", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response(`${JSON.stringify({ type: "error", message: "Not built yet.", code: "not_ready" })}\n`);
+    }) as unknown as typeof fetch;
+    const g = { arxiv_id: "1706.03762" } as unknown as LocatedArchitecture;
+    const err = await requestArtifact("1706.03762", "training", g, "", () => {}, undefined, true).catch((e) => e);
+    expect(err).toBeInstanceOf(LearnError);
+    expect((err as LearnError).code).toBe("not_ready");
+    await requestArtifact("1706.03762", "training", g, "", () => {}).catch(() => {});
+    expect(bodies[0]!.existing_only).toBe(true);
+    expect("existing_only" in bodies[1]!).toBe(false);
   });
 });

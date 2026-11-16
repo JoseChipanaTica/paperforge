@@ -123,6 +123,8 @@ export async function learnHandler(req: Request, overrides: Partial<LearnDeps> =
       }
       const sample = await readSample(d.samplesDir, id, k, published);
       if (sample && fits(sample)) return emit({ type: "learn", kind: k, artifact: sample, source: "sample", saved: false });
+      // A background prefetch only takes what already exists: never a Claude call the visitor didn't ask for.
+      if (body?.existing_only === true) return emit({ type: "error", message: "Not built yet.", code: "not_ready" });
 
       // A published paper always uses its stored graph; otherwise the visitor's own forge.
       if (!graph) return fail("Forge the paper first, then try again.", "bad_input");

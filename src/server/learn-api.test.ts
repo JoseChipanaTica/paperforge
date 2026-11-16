@@ -418,6 +418,41 @@ describe("POST /api/learn, training", () => {
     expect(saved.toy.nodes.every((n) => !n.block_id.startsWith("old_"))).toBe(true);
   });
 
+  const trainingSample = () => Bun.file(join(SAMPLES, "1706.03762.training.json")).json();
+
+  test("the kinds list has training when its sample exists", async () => {
+    await Bun.write(join(samplesDir, `${ID}.training.json`), JSON.stringify(await trainingSample()));
+    const res = await kindsHandler(new Request(`http://x/api/learn?arxiv_id=${ID}`), deps(createStore("sqlite://:memory:")));
+    expect(await res.json()).toContain("training");
+  });
+
+  test("an unpublished paper whose posted graph fits gets the sample, with no Claude call", async () => {
+    await Bun.write(join(samplesDir, `${ID}.training.json`), JSON.stringify(await trainingSample()));
+    const e = await learn({ arxiv_id: ID, kind: "training", graph, journey }, deps(createStore("sqlite://:memory:")));
+    expect(e).toMatchObject({ type: "learn", kind: "training", source: "sample", saved: false });
+    expect(calls).toHaveLength(0);
+  });
+
+  test("training with no graph and no fitting sample asks to forge first", async () => {
+    const e = await learn({ arxiv_id: ID, kind: "training", journey }, deps(createStore("sqlite://:memory:")));
+    expect(e).toMatchObject({ type: "error", message: "Forge the paper first, then try again." });
+    expect(calls).toHaveLength(0);
+  });
+
+  test("existing_only never generates: nothing saved is not_ready", async () => {
+    next = toy();
+    const e = await learn({ arxiv_id: ID, kind: "training", graph, journey, existing_only: true }, deps(createStore("sqlite://:memory:")));
+    expect(e).toMatchObject({ type: "error", code: "not_ready" });
+    expect(calls).toHaveLength(0);
+  });
+
+  test("existing_only still serves what exists", async () => {
+    await Bun.write(join(samplesDir, `${ID}.training.json`), JSON.stringify(await trainingSample()));
+    const e = await learn({ arxiv_id: ID, kind: "training", graph, journey, existing_only: true }, deps(createStore("sqlite://:memory:")));
+    expect(e).toMatchObject({ type: "learn", source: "sample" });
+    expect(calls).toHaveLength(0);
+  });
+
   test("an unusable toy model is an error event", async () => {
     const store = createStore("sqlite://:memory:");
     await store.publishPaper(ID, graph);

@@ -49,11 +49,12 @@ export async function requestArtifact(
   key: string,
   onStatus: (message: string) => void,
   journey?: JourneyArtifact, // motion animates this walkthrough (English)
+  existingOnly = false, // a background prefetch: only what's saved or shipped, never a Claude call (error `not_ready`)
 ): Promise<{ artifact: AnyArtifact; source: string; saved: boolean }> {
   const res = await fetch("/api/learn", {
     method: "POST",
     headers: headers(key),
-    body: JSON.stringify({ arxiv_id: id, kind, graph, ...(journey && { journey }) }),
+    body: JSON.stringify({ arxiv_id: id, kind, graph, ...(journey && { journey }), ...(existingOnly && { existing_only: true }) }),
   }).catch(() => null);
   if (!res?.body) throw new LearnError("Can't reach the Paperforge server.");
   for await (const e of lines<LearnEvent>(res)) {
