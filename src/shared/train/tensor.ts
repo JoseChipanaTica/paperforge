@@ -75,7 +75,8 @@ export function withTape<T>(fn: (tape: Tape) => T): T {
   }
 }
 
-function make(data: Float64Array, shape: number[], inputs: Tensor[], backward: (out: Tensor) => void): Tensor {
+/** A new tensor from `inputs`; when any needs grad, `backward` is recorded on the current tape. */
+export function make(data: Float64Array, shape: number[], inputs: Tensor[], backward: (out: Tensor) => void): Tensor {
   const out = new Tensor(data, shape, inputs.some((t) => t.requiresGrad));
   const tape = stack[stack.length - 1];
   if (tape && out.requiresGrad) tape.entries.push({ out, backward: () => backward(out) });
@@ -83,7 +84,7 @@ function make(data: Float64Array, shape: number[], inputs: Tensor[], backward: (
 }
 
 /** The gradient buffer of `t`, created on first use. */
-function gradOf(t: Tensor): Float64Array {
+export function gradOf(t: Tensor): Float64Array {
   return (t.grad ??= new Float64Array(t.size));
 }
 
