@@ -34,10 +34,21 @@ export function replaceWithShared(
   return { ...p, graph, graph_hash: hash, save_token: null, source: shared.source };
 }
 
-/** The background check lands only on the paper it was made for, in the same run, and never during a refresh. */
+/** The background check lands only on the opening it was made for (paper and open sequence), never during a refresh. */
 export function sharedStillApplies(
-  asked: { id: string; run: unknown },
-  now: { id: string | null; run: unknown; refreshing: boolean },
+  asked: { id: string; seq: number },
+  now: { id: string | null; seq: number; refreshing: boolean },
 ): boolean {
-  return !now.refreshing && now.id === asked.id && now.run === asked.run;
+  return !now.refreshing && now.id === asked.id && now.seq === asked.seq;
+}
+
+/** `p`, or `fallback` if it hasn't settled within `ms` or it rejects (e.g. a hung `indexedDB.open`). */
+export function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    p.then(
+      (v) => (clearTimeout(timer), resolve(v)),
+      () => (clearTimeout(timer), resolve(fallback)),
+    );
+  });
 }

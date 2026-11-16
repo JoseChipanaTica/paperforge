@@ -28,7 +28,8 @@ import {
 } from "./learn";
 import { openIdbBackend } from "./idbBackend";
 import { LocalStore, graphHash, sharedDecision, type StoredPaper } from "./localStore";
-import { openPlan, replaceWithShared, sharedStillApplies, storedEvents } from "./paperOpen";
+import { openPlan, replaceWithShared, sharedStillApplies, storedEvents, withTimeout } from "./paperOpen";
+import { nullBackend } from "./storeBackend";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
 import { isTabKind, trainingPrefetchable, walkthroughShown, type TabId, type TabKind } from "./panelState";
@@ -105,14 +106,18 @@ let saveToken: string | null = null;
 
 // ---------- the browser store: papers the visitor opened before reopen with no request ----------
 
-// Opened once at startup; awaited only when a paper opens, so first paint never waits on IndexedDB.
-const storeReady: Promise<LocalStore> = openIdbBackend().then((b) => new LocalStore(b));
+// Opened once at startup; awaited only when a paper opens, so first paint never waits on IndexedDB. A hung
+// `indexedDB.open` (a WebKit bug) gives up after STORE_WAIT and the session runs without a store.
+const STORE_WAIT = 1500;
+const storeReady: Promise<LocalStore> = withTimeout(openIdbBackend(), STORE_WAIT, nullBackend).then((b) => new LocalStore(b));
 // The hash of the English graph on screen (stored replay, network or shared replace): what artifacts are keyed by.
 let graphHashNow: string | null = null;
 // The open paper's record write: anything else stored for this paper waits on it, so the paper is written first.
 let paperSaved: Promise<void> = Promise.resolve();
 // The open run is a "forge again": the store is bypassed and the shared check never lands.
 let refreshing = false;
+// Each forgePaper is one opening: the shared check lands only on the opening it was made for.
+let openSeq = 0;
 
 // ---------- API key (bring your own; stays in this browser) ----------
 
@@ -209,19 +214,26 @@ async function forgePaper(input: string, refresh = false) {
   resetLearn();
   graphHashNow = null;
   refreshing = refresh;
+  const seq = ++openSeq;
 
+  // A slow store falls through to the network.
   const id = parseArxivId(input);
-  const store = await storeReady;
-  if (myRun !== run) return;
-  const hit = id && !refresh ? await store.getPaper(id) : null;
+  const hit =
+    id && !refresh
+      ? await withTimeout(
+          storeReady.then((s) => s.getPaper(id)),
+          STORE_WAIT,
+          null,
+        )
+      : null;
   if (myRun !== run) return;
   if (hit && openPlan(hit, refresh) === "replay") {
-    store.setOpen(hit.arxiv_id);
+    void storeReady.then((s) => s.setOpen(hit.arxiv_id));
     for (const e of storedEvents(hit)) {
       if (myRun !== run) return;
       await handle(e, myRun, hit.graph_hash);
     }
-    void checkShared(hit, myRun);
+    void checkShared(hit, seq);
     return;
   }
 
@@ -257,15 +269,13 @@ async function forgePaper(input: string, refresh = false) {
  * In the background, after a stored paper replays: a gallery or sample graph that differs wins. It is stored with the
  * paper's pages and shown exactly as a fresh graph would be.
  */
-async function checkShared(p: StoredPaper, asked: Run) {
+async function checkShared(p: StoredPaper, seq: number) {
   const shared = await fetchSharedGraph(p.arxiv_id);
   const hash = shared ? await graphHash(shared.graph) : null;
-  const still = (r: Run) => sharedStillApplies({ id: p.arxiv_id, run: r }, { id: graph?.arxiv_id ?? null, run, refreshing });
-  if (!shared || !hash || !still(asked) || sharedDecision(p, shared, hash) !== "replace") return;
+  const still = () => sharedStillApplies({ id: p.arxiv_id, seq }, { id: graph?.arxiv_id ?? null, seq: openSeq, refreshing });
+  if (!shared || !hash || !still() || sharedDecision(p, shared, hash) !== "replace") return;
   const next = replaceWithShared(p, shared, hash);
-  const store = await storeReady;
-  if (!still(asked)) return;
-  paperSaved = store.putPaper(next);
+  paperSaved = storeReady.then((s) => s.putPaper(next));
   // Rebuild as for a fresh graph: the old graph's assembly, learning and inside view are put away.
   run.cancel();
   run = new Run();
@@ -276,7 +286,7 @@ async function checkShared(p: StoredPaper, asked: Run) {
   syncInside();
   resetLearn();
   await handle({ type: "graph", graph: next.graph, source: next.source }, myRun, next.graph_hash);
-  if (still(myRun)) setStatus("Showing the published version of this paper.");
+  if (still() && myRun === run) setStatus("Showing the published version of this paper.");
 }
 
 /** `storedHash`: the graph came from the browser store (already saved, its hash known). */
@@ -307,16 +317,17 @@ async function handle(e: ForgeEvent, myRun: Run, storedHash?: string) {
       graphHashNow = hash;
       if (storedHash === undefined) {
         // Store the paper before anything else for it is written (paperSaved); nothing on screen waits for it.
-        const store = await storeReady;
-        if (myRun !== run) return;
-        store.setOpen(e.graph.arxiv_id);
-        paperSaved = store.putPaper({
+        const record = {
           arxiv_id: e.graph.arxiv_id,
           pages,
           graph: e.graph,
           graph_hash: hash,
           save_token: e.save_token ?? null,
           source: e.source,
+        };
+        paperSaved = storeReady.then((s) => {
+          if (graph?.arxiv_id === record.arxiv_id) s.setOpen(record.arxiv_id);
+          return s.putPaper(record);
         });
       }
       const asked = reading;
@@ -443,6 +454,9 @@ async function publish() {
   const body = ((await res?.json().catch(() => null)) ?? {}) as { arxiv_id?: string; error?: string };
   if (res && (res.status === 201 || res.status === 409)) {
     saveToken = null;
+    const id = rawGraph.arxiv_id;
+    // Spent: Publish must not come back when this paper reopens from the store.
+    paperSaved = paperSaved.then(() => storeReady).then((s) => s.forgetToken(id));
     shareUrl = `${location.origin}/?paper=${encodeURIComponent(body.arxiv_id ?? rawGraph.arxiv_id)}`;
     syncPublish();
     setStatus(res.status === 201 ? "Published to the gallery." : "Already in the gallery — Copy link shares that version.");

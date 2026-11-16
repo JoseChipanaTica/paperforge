@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import type { Architecture, LocatedArchitecture } from "../shared/graph";
 import { sharedDecision, type StoredPaper } from "./localStore";
-import { openPlan, sharedStillApplies, storedEvents, replaceWithShared } from "./paperOpen";
+import { openPlan, replaceWithShared, sharedStillApplies, storedEvents, withTimeout } from "./paperOpen";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
 const graph = (await Bun.file(join(SAMPLES, "1706.03762.json")).json()) as Architecture;
@@ -73,12 +73,28 @@ describe("the background check", () => {
     expect(sharedDecision(stored(), null, null)).toBe("keep");
   });
 
-  test("applies only to the same paper on the same run, never during a refresh", () => {
-    const run = {};
-    expect(sharedStillApplies({ id: "1706.03762", run }, { id: "1706.03762", run, refreshing: false })).toBe(true);
-    expect(sharedStillApplies({ id: "1706.03762", run }, { id: "1512.03385", run, refreshing: false })).toBe(false);
-    expect(sharedStillApplies({ id: "1706.03762", run }, { id: "1706.03762", run: {}, refreshing: false })).toBe(false);
-    expect(sharedStillApplies({ id: "1706.03762", run }, { id: null, run, refreshing: false })).toBe(false);
-    expect(sharedStillApplies({ id: "1706.03762", run }, { id: "1706.03762", run, refreshing: true })).toBe(false);
+  test("applies only to the same opening of the same paper, never during a refresh", () => {
+    const asked = { id: "1706.03762", seq: 3 };
+    expect(sharedStillApplies(asked, { id: "1706.03762", seq: 3, refreshing: false })).toBe(true);
+    expect(sharedStillApplies(asked, { id: "1512.03385", seq: 3, refreshing: false })).toBe(false);
+    expect(sharedStillApplies(asked, { id: "1706.03762", seq: 4, refreshing: false })).toBe(false); // opened again since
+    expect(sharedStillApplies(asked, { id: null, seq: 3, refreshing: false })).toBe(false);
+    expect(sharedStillApplies(asked, { id: "1706.03762", seq: 3, refreshing: true })).toBe(false);
+  });
+});
+
+describe("withTimeout", () => {
+  test("a promise that settles in time wins", async () => {
+    expect(await withTimeout(Promise.resolve("store"), 50, "fallback")).toBe("store");
+  });
+
+  test("a hung promise gives the fallback after the timeout", async () => {
+    const t0 = performance.now();
+    expect(await withTimeout(new Promise<string>(() => {}), 30, "fallback")).toBe("fallback");
+    expect(performance.now() - t0).toBeGreaterThanOrEqual(25);
+  });
+
+  test("a rejection gives the fallback", async () => {
+    expect(await withTimeout(Promise.reject(new Error("x")), 50, "fallback")).toBe("fallback");
   });
 });

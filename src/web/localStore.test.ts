@@ -81,6 +81,27 @@ describe("LocalStore", () => {
     expect(((await backend.get("papers", "1706.03762")) as { opened_at: number }).opened_at).toBe(5000);
   });
 
+  test("forgetToken clears a stored paper's save_token and leaves the rest (a missing paper is a no-op)", async () => {
+    let t = 1000;
+    const backend = memoryBackend();
+    const store = new LocalStore(backend, () => t);
+    await store.forgetToken("1706.03762");
+    expect(await backend.get("papers", "1706.03762")).toBeUndefined();
+    await store.putPaper(paper("h"));
+    t = 9000;
+    await store.forgetToken("1706.03762");
+    const raw = (await backend.get("papers", "1706.03762")) as { save_token: unknown; opened_at: number; graph_hash: string };
+    expect(raw.save_token).toBeNull();
+    expect(raw.opened_at).toBe(1000);
+    expect(raw.graph_hash).toBe("h");
+    expect((await store.getPaper("1706.03762"))!.save_token).toBeNull();
+  });
+
+  test("forgetToken never throws", async () => {
+    const broken: Backend = { ...memoryBackend(), get: () => Promise.reject(new Error("x")) };
+    await new LocalStore(broken).forgetToken("1706.03762");
+  });
+
   test("artifacts are keyed by graph hash, scope and kind", async () => {
     const store = new LocalStore(memoryBackend());
     await store.putArtifact("1706.03762", "hashA", "main", "journey", journey);

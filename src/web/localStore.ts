@@ -242,6 +242,13 @@ export class LocalStore {
     await this.put("papers", p.arxiv_id, { ...p, opened_at: this.now(), bytes: byteLength(p) }, p.arxiv_id);
   }
 
+  /** The paper was published (or already was): its save token is spent, so Publish stays hidden on reopen. */
+  async forgetToken(id: string): Promise<void> {
+    const paper = (await this.read("papers", id)) as Record<string, unknown> | undefined | null;
+    if (!paper || typeof paper !== "object" || paper.save_token == null) return;
+    await this.write("papers", id, { ...paper, save_token: null });
+  }
+
   // ---- artifacts (learning artifacts and inside graphs) ----
 
   async getArtifact(hash: string, scope: string, kind: string): Promise<AnyArtifact | Architecture | null> {
