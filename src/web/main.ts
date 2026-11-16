@@ -6,6 +6,7 @@ import { train, type Trace } from "../shared/train/run";
 import type { TrainingArtifact } from "../shared/training";
 import { FigureSlot, StepFigure, figureState, type FigureStatus } from "./motion/figure";
 import { locateQuote } from "../shared/locate";
+import { parseArxivId } from "../server/arxiv";
 import { MODELS, modelName, type ModelId } from "../shared/models";
 import { isOriginal, type TranslateKind } from "../shared/translate";
 import { Run } from "./anim";
@@ -23,7 +24,11 @@ import {
   requestArtifact,
   requestInside,
   requestInsideLearn,
+  fetchSharedGraph,
 } from "./learn";
+import { openIdbBackend } from "./idbBackend";
+import { LocalStore, graphHash, sharedDecision, type StoredPaper } from "./localStore";
+import { openPlan, replaceWithShared, sharedStillApplies, storedEvents } from "./paperOpen";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
 import { isTabKind, trainingPrefetchable, walkthroughShown, type TabId, type TabKind } from "./panelState";
@@ -97,6 +102,17 @@ let pinned: string | null = null;
 // The graph exactly as the server signed it: publishing re-checks the signature, so never mutate this.
 let rawGraph: LocatedArchitecture | null = null;
 let saveToken: string | null = null;
+
+// ---------- the browser store: papers the visitor opened before reopen with no request ----------
+
+// Opened once at startup; awaited only when a paper opens, so first paint never waits on IndexedDB.
+const storeReady: Promise<LocalStore> = openIdbBackend().then((b) => new LocalStore(b));
+// The hash of the English graph on screen (stored replay, network or shared replace): what artifacts are keyed by.
+let graphHashNow: string | null = null;
+// The open paper's record write: anything else stored for this paper waits on it, so the paper is written first.
+let paperSaved: Promise<void> = Promise.resolve();
+// The open run is a "forge again": the store is bypassed and the shared check never lands.
+let refreshing = false;
 
 // ---------- API key (bring your own; stays in this browser) ----------
 
@@ -191,6 +207,23 @@ async function forgePaper(input: string, refresh = false) {
   syncInside();
   controls.hidden = true; // Replay / Publish would act on the previous paper until this one loads
   resetLearn();
+  graphHashNow = null;
+  refreshing = refresh;
+
+  const id = parseArxivId(input);
+  const store = await storeReady;
+  if (myRun !== run) return;
+  const hit = id && !refresh ? await store.getPaper(id) : null;
+  if (myRun !== run) return;
+  if (hit && openPlan(hit, refresh) === "replay") {
+    store.setOpen(hit.arxiv_id);
+    for (const e of storedEvents(hit)) {
+      if (myRun !== run) return;
+      await handle(e, myRun, hit.graph_hash);
+    }
+    void checkShared(hit, myRun);
+    return;
+  }
 
   const key = storedKey();
   let res: Response;
@@ -220,7 +253,34 @@ async function forgePaper(input: string, refresh = false) {
   }
 }
 
-async function handle(e: ForgeEvent, myRun: Run) {
+/**
+ * In the background, after a stored paper replays: a gallery or sample graph that differs wins. It is stored with the
+ * paper's pages and shown exactly as a fresh graph would be.
+ */
+async function checkShared(p: StoredPaper, asked: Run) {
+  const shared = await fetchSharedGraph(p.arxiv_id);
+  const hash = shared ? await graphHash(shared.graph) : null;
+  const still = (r: Run) => sharedStillApplies({ id: p.arxiv_id, run: r }, { id: graph?.arxiv_id ?? null, run, refreshing });
+  if (!shared || !hash || !still(asked) || sharedDecision(p, shared, hash) !== "replace") return;
+  const next = replaceWithShared(p, shared, hash);
+  const store = await storeReady;
+  if (!still(asked)) return;
+  paperSaved = store.putPaper(next);
+  // Rebuild as for a fresh graph: the old graph's assembly, learning and inside view are put away.
+  run.cancel();
+  run = new Run();
+  const myRun = run;
+  pinned = null;
+  inside = null;
+  tracing = null;
+  syncInside();
+  resetLearn();
+  await handle({ type: "graph", graph: next.graph, source: next.source }, myRun, next.graph_hash);
+  if (still(myRun)) setStatus("Showing the published version of this paper.");
+}
+
+/** `storedHash`: the graph came from the browser store (already saved, its hash known). */
+async function handle(e: ForgeEvent, myRun: Run, storedHash?: string) {
   switch (e.type) {
     case "status":
       setStatus(e.stage === "extract" ? "Claude is reading the paper — this takes a minute or two…" : e.message);
@@ -242,6 +302,23 @@ async function handle(e: ForgeEvent, myRun: Run) {
       syncPublish();
       graph = e.graph;
       setStatus(null); // a failed rewrite below leaves its message up
+      const hash = storedHash ?? (await graphHash(e.graph));
+      if (myRun !== run) return;
+      graphHashNow = hash;
+      if (storedHash === undefined) {
+        // Store the paper before anything else for it is written (paperSaved); nothing on screen waits for it.
+        const store = await storeReady;
+        if (myRun !== run) return;
+        store.setOpen(e.graph.arxiv_id);
+        paperSaved = store.putPaper({
+          arxiv_id: e.graph.arxiv_id,
+          pages,
+          graph: e.graph,
+          graph_hash: hash,
+          save_token: e.save_token ?? null,
+          source: e.source,
+        });
+      }
       const asked = reading;
       const shown = await localized("graph", e.graph);
       if (myRun !== run) return;
