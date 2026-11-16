@@ -6,6 +6,10 @@ import { pickText } from "../shared/translate";
 import { LocalStore, graphHash, sharedDecision, textHash, usageLabel } from "./localStore";
 import { type Backend, memoryBackend, nullBackend } from "./storeBackend";
 
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const withTimeoutTest = <T,>(p: Promise<T>, ms: number) =>
+  Promise.race([p, new Promise<"timeout">((r) => setTimeout(() => r("timeout"), ms))]);
+
 const SAMPLES = join(import.meta.dir, "../../samples");
 const graph = (await Bun.file(join(SAMPLES, "1706.03762.json")).json()) as Architecture;
 const journey = (await Bun.file(join(SAMPLES, "1706.03762.journey.json")).json()) as JourneyArtifact;
@@ -78,7 +82,30 @@ describe("LocalStore", () => {
     expect(got!.graph_hash).toBe(h);
     expect(got!.bytes).toBeGreaterThan(0);
     expect(got!.opened_at).toBe(5000);
+    await tick(); // the opened_at write is fire-and-forget
     expect(((await backend.get("papers", "1706.03762")) as { opened_at: number }).opened_at).toBe(5000);
+  });
+
+  test("opening never waits on the opened_at write", async () => {
+    const backend = memoryBackend();
+    const store = new LocalStore(backend, () => 1000);
+    await store.putPaper(paper(await graphHash(located)));
+    const hung: Backend = { ...backend, put: () => new Promise<void>(() => {}) };
+    const slow = new LocalStore(hung, () => 2000);
+    const got = await withTimeoutTest(slow.getPaper("1706.03762"), 200);
+    expect(got).not.toBe("timeout");
+    expect((got as { opened_at: number }).opened_at).toBe(2000);
+  });
+
+  test("artifacts keep their origin; old entries without one count as the visitor's own", async () => {
+    const backend = memoryBackend();
+    const store = new LocalStore(backend);
+    await store.putArtifact("1706.03762", "h", "main", "journey", journey, "gallery");
+    expect(await store.getArtifact("h", "main", "journey")).toEqual({ artifact: journey, source: "gallery" });
+    await store.putArtifact("1706.03762", "h", "main", "pytorch", pytorch, "sample");
+    expect((await store.getArtifact("h", "main", "pytorch"))!.source).toBe("sample");
+    await backend.put("artifacts", ["old", "main", "journey"], { arxiv_id: "1706.03762", artifact: journey, saved_at: 1, bytes: 1 });
+    expect(await store.getArtifact("old", "main", "journey")).toEqual({ artifact: journey, source: "claude" });
   });
 
   test("forgetToken clears a stored paper's save_token and leaves the rest (a missing paper is a no-op)", async () => {
@@ -104,19 +131,19 @@ describe("LocalStore", () => {
 
   test("artifacts are keyed by graph hash, scope and kind", async () => {
     const store = new LocalStore(memoryBackend());
-    await store.putArtifact("1706.03762", "hashA", "main", "journey", journey);
-    expect(await store.getArtifact("hashA", "main", "journey")).toEqual(journey);
+    await store.putArtifact("1706.03762", "hashA", "main", "journey", journey, "claude");
+    expect((await store.getArtifact("hashA", "main", "journey"))?.artifact).toEqual(journey);
     expect(await store.getArtifact("hashB", "main", "journey")).toBeNull();
     expect(await store.getArtifact("hashA", "encoder_ffn", "journey")).toBeNull();
     expect(await store.getArtifact("hashA", "main", "pytorch")).toBeNull();
-    await store.putArtifact("1706.03762", "hashA", "main", "pytorch", pytorch);
-    expect(await store.getArtifact("hashA", "main", "pytorch")).toEqual(pytorch);
+    await store.putArtifact("1706.03762", "hashA", "main", "pytorch", pytorch, "claude");
+    expect((await store.getArtifact("hashA", "main", "pytorch"))?.artifact).toEqual(pytorch);
   });
 
   test("inside graphs round-trip under kind inside", async () => {
     const store = new LocalStore(memoryBackend());
-    await store.putArtifact("1706.03762", "hashA", "encoder_ffn", "inside", inside);
-    expect(await store.getArtifact("hashA", "encoder_ffn", "inside")).toEqual(inside);
+    await store.putArtifact("1706.03762", "hashA", "encoder_ffn", "inside", inside, "claude");
+    expect((await store.getArtifact("hashA", "encoder_ffn", "inside"))?.artifact).toEqual(inside);
     expect(await store.getArtifact("hashA", "encoder_self_attention", "inside")).toBeNull();
   });
 
@@ -141,7 +168,7 @@ describe("LocalStore", () => {
     const backend = memoryBackend();
     const store = new LocalStore(backend);
     const { steps: _, ...broken } = journey;
-    await store.putArtifact("1706.03762", "hashA", "main", "journey", broken as unknown as JourneyArtifact);
+    await store.putArtifact("1706.03762", "hashA", "main", "journey", broken as unknown as JourneyArtifact, "claude");
     expect(await store.getArtifact("hashA", "main", "journey")).toBeNull();
     expect(await backend.get("artifacts", ["hashA", "main", "journey"])).toBeUndefined();
 
@@ -170,7 +197,7 @@ describe("LocalStore", () => {
       const store = new LocalStore(backend);
       await store.putPaper(paper("h"));
       expect(await store.getPaper("1706.03762")).toBeNull();
-      await store.putArtifact("1706.03762", "h", "main", "journey", journey);
+      await store.putArtifact("1706.03762", "h", "main", "journey", journey, "claude");
       expect(await store.getArtifact("h", "main", "journey")).toBeNull();
       await store.putTranslation("1706.03762", "t", "fr", "engineer", "graph", pickText("graph", graph));
       expect(await store.getTranslation("t", "fr", "engineer", "graph")).toBeNull();
@@ -211,7 +238,7 @@ describe("LocalStore", () => {
     const afterPaper = await store.usage();
     expect(afterPaper.papers).toBe(1);
     expect(afterPaper.bytes).toBeGreaterThan(0);
-    await store.putArtifact("1706.03762", "h", "main", "journey", journey);
+    await store.putArtifact("1706.03762", "h", "main", "journey", journey, "claude");
     await store.putTranslation("1706.03762", "t", "fr", "engineer", "graph", pickText("graph", graph));
     const all = await store.usage();
     expect(all.papers).toBe(1);
@@ -286,7 +313,7 @@ describe("the cap", () => {
     };
     const store = new LocalStore(b, () => 9999, opts);
     await seedPaper(b, "old", 1, 900);
-    await store.putArtifact("new", "h", "main", "journey", journey);
+    await store.putArtifact("new", "h", "main", "journey", journey, "claude");
     expect(await b.get("papers", "old")).toBeUndefined();
     expect(await b.get("artifacts", ["h", "main", "journey"])).toBeDefined();
   });
@@ -296,7 +323,7 @@ describe("the cap", () => {
     const b: Backend = { ...mem, put: (s, k, v) => (s === "artifacts" ? Promise.reject({ name: "QuotaExceededError" }) : mem.put(s, k, v)) };
     const store = new LocalStore(b, () => 9999, opts);
     await seedPaper(b, "old", 1, 900);
-    await store.putArtifact("new", "h", "main", "journey", journey);
+    await store.putArtifact("new", "h", "main", "journey", journey, "claude");
     expect(await mem.get("artifacts", ["h", "main", "journey"])).toBeUndefined();
   });
 
@@ -334,7 +361,7 @@ describe("the cap", () => {
     const store = new LocalStore(b, () => 9999, opts);
     await seedPaper(b, "mine", 1, 500);
     await seedPaper(b, "other", 2, 500);
-    await store.putArtifact("mine", "h", "main", "journey", journey);
+    await store.putArtifact("mine", "h", "main", "journey", journey, "claude");
     expect(await b.get("papers", "mine")).toBeDefined();
     expect(await b.get("papers", "other")).toBeUndefined();
   });

@@ -109,7 +109,7 @@ export async function requestInside(
   graph: LocatedArchitecture,
   key: string,
   onStatus: (message: string) => void,
-): Promise<Architecture> {
+): Promise<{ graph: Architecture; source: string }> {
   const res = await fetch("/api/inside", {
     method: "POST",
     headers: headers(key),
@@ -118,7 +118,7 @@ export async function requestInside(
   if (!res?.body) throw new LearnError("Can't reach the Paperforge server.");
   for await (const e of lines<InsideEvent>(res)) {
     if (e.type === "status") onStatus(e.message);
-    else if (e.type === "inside") return e.graph;
+    else if (e.type === "inside") return { graph: e.graph, source: e.source };
     else throw new LearnError(e.message, e.code);
   }
   throw new LearnError("The server stopped before finishing.");

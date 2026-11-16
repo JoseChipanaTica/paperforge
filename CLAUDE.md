@@ -17,6 +17,7 @@ make that 30-second moment look better or work more reliably. Polish what the ca
   check its stored copy against it), learn/ask/inside/translate
 - `src/shared/graph.ts` — Zod schema for the block graph. **The contract** between the
   LLM, the server and the front end. Change it here and nowhere else.
+  Changing a required field makes graphs stored in visitors' browsers fail validation, so they get re-forged.
 - `src/server/arxiv.ts` — parse arXiv ids/URLs, download PDFs
 - `src/server/pdf.ts` — pdf.js (`pdfjs-dist/legacy`) text extraction, one string per page
 - `src/shared/models.ts` — the Claude models a visitor can pick (Opus 5.5 default, Fable 5.1, Sonnet 5.5, Haiku 5.5);
@@ -82,7 +83,8 @@ make that 30-second moment look better or work more reliably. Polish what the ca
     quota eviction of whole papers, `usage()`/`clear()` and `usageLabel` for the settings-card line),
     `storeBackend.ts` (the `Backend` interface, memory and null backends), `idbBackend.ts` (IndexedDB; a failed or
     hung open falls back to null), `paperOpen.ts` (open plan: stored paper first, shared graph still wins; `withTimeout`),
-    `stored.ts` (`withStored`: a stored value is used with no request, a miss fetches then stores),
+    `stored.ts` (`withStored`: a stored value is used with no request, a miss fetches then stores;
+    `withStoredArtifact`: artifacts keep their origin, a stored gallery/sample copy is refreshed from the server first),
     `codeView.ts` (PyTorch), `learn.ts` (learn/ask/inside clients, request bookkeeping), `lang.ts`
     (language + level pickers, translate client), `trace.ts` (shape tracing: dimensions, aliases via
     hyperparameters, splits like 512 = h × d_k). `main.ts` keeps `graph` (English, signed, sent to the

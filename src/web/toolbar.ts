@@ -1,10 +1,14 @@
-/** The stage toolbar: Skip during assembly; Back (inside a block), Replay, Explode, Labels, Pulse and Publish after. */
+/**
+ * The stage toolbar: Skip during assembly; Back (inside a block), Replay, Explode, Forge again (this browser's own
+ * forge only), Labels, Pulse and Publish after.
+ */
 
 export interface ToolbarActions {
   skip(): void;
   outside(): void;
   replay(): void;
   explode(): void;
+  again(): void;
   labels(): void;
   pulse(): void;
   publish(): void;
@@ -27,5 +31,5 @@ export function initToolbar(root: HTMLElement, actions: ToolbarActions) {
     sync();
   });
   sync();
-  return { sync, publishButton: btn("publish"), outsideButton: btn("outside") };
+  return { sync, publishButton: btn("publish"), outsideButton: btn("outside"), againButton: btn("again") };
 }

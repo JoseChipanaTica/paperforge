@@ -66,7 +66,9 @@ export function sharedDecision(
 export type WriteResult = { ok: true } | { ok: false; name: string; error: unknown };
 
 type ArtifactValue = AnyArtifact | Architecture;
-type StoredArtifact = { arxiv_id: string; artifact: ArtifactValue; saved_at: number; bytes: number };
+/** Where a stored artifact came from: shared ones (gallery, sample) are refreshed from the server; the visitor's own never. */
+export type ArtifactSource = "gallery" | "sample" | "claude";
+type StoredArtifact = { arxiv_id: string; artifact: ArtifactValue; source?: ArtifactSource; saved_at: number; bytes: number };
 type StoredTranslation = { arxiv_ids: string[]; text: TranslatedText; saved_at: number; bytes: number };
 
 const PaperRecord = z.object({
@@ -80,7 +82,7 @@ const PaperRecord = z.object({
   bytes: z.number(),
 });
 const Envelope = z.object({ saved_at: z.number(), bytes: z.number() });
-const ArtifactEnvelope = Envelope.extend({ arxiv_id: z.string() });
+const ArtifactEnvelope = Envelope.extend({ arxiv_id: z.string(), source: z.enum(["gallery", "sample", "claude"]).optional() });
 const TranslationEnvelope = Envelope.extend({ arxiv_ids: z.array(z.string()) });
 
 function artifactSchema(kind: string): z.ZodType | null {
@@ -234,7 +236,7 @@ export class LocalStore {
     const paper = (await this.readValid("papers", id, (v) => PaperRecord.safeParse(v).success)) as StoredPaper | null;
     if (!paper) return null;
     const opened = { ...paper, opened_at: this.now() };
-    await this.write("papers", id, opened);
+    void this.write("papers", id, opened); // never awaited: a slow write must not hold the replay back
     return opened;
   }
 
@@ -251,7 +253,8 @@ export class LocalStore {
 
   // ---- artifacts (learning artifacts and inside graphs) ----
 
-  async getArtifact(hash: string, scope: string, kind: string): Promise<AnyArtifact | Architecture | null> {
+  /** The stored value and its origin (entries from before origins were kept count as the visitor's own). */
+  async getArtifact(hash: string, scope: string, kind: string): Promise<{ artifact: ArtifactValue; source: ArtifactSource } | null> {
     const schema = artifactSchema(kind);
     if (!schema) return null;
     const entry = (await this.readValid(
@@ -259,11 +262,18 @@ export class LocalStore {
       [hash, scope, kind],
       (v) => ArtifactEnvelope.safeParse(v).success && schema.safeParse((v as StoredArtifact).artifact).success,
     )) as StoredArtifact | null;
-    return entry?.artifact ?? null;
+    return entry ? { artifact: entry.artifact, source: entry.source ?? "claude" } : null;
   }
 
-  async putArtifact(id: string, hash: string, scope: string, kind: string, value: ArtifactValue): Promise<void> {
-    const entry: StoredArtifact = { arxiv_id: id, artifact: value, saved_at: this.now(), bytes: byteLength(value) };
+  async putArtifact(
+    id: string,
+    hash: string,
+    scope: string,
+    kind: string,
+    value: ArtifactValue,
+    source: ArtifactSource,
+  ): Promise<void> {
+    const entry: StoredArtifact = { arxiv_id: id, artifact: value, source, saved_at: this.now(), bytes: byteLength(value) };
     await this.put("artifacts", [hash, scope, kind], entry, id);
   }
 

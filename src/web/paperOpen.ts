@@ -1,4 +1,4 @@
-import type { Architecture, ForgeEvent, LocatedArchitecture } from "../shared/graph";
+import type { Architecture, ForgeEvent, GraphSource, LocatedArchitecture } from "../shared/graph";
 import { locateQuote } from "../shared/locate";
 import type { StoredPaper } from "./localStore";
 
@@ -10,6 +10,11 @@ import type { StoredPaper } from "./localStore";
 /** A stored paper replays with no request (no key, no network); "forge again" or a miss goes to /api/forge. */
 export function openPlan(hit: StoredPaper | null, refresh: boolean): "replay" | "network" {
   return hit && !refresh ? "replay" : "network";
+}
+
+/** "Forge again" is offered only for this browser's own forge (Claude, or the server's cache of one), never a shared paper. */
+export function canForgeAgain(source: GraphSource | null): boolean {
+  return source === "claude" || source === "cache";
 }
 
 /** The events /api/forge would have sent for this paper. */

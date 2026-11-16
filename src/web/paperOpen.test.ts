@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import type { Architecture, LocatedArchitecture } from "../shared/graph";
 import { sharedDecision, type StoredPaper } from "./localStore";
-import { openPlan, replaceWithShared, sharedStillApplies, storedEvents, withTimeout } from "./paperOpen";
+import { canForgeAgain, openPlan, replaceWithShared, sharedStillApplies, storedEvents, withTimeout } from "./paperOpen";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
 const graph = (await Bun.file(join(SAMPLES, "1706.03762.json")).json()) as Architecture;
@@ -96,5 +96,15 @@ describe("withTimeout", () => {
 
   test("a rejection gives the fallback", async () => {
     expect(await withTimeout(Promise.reject(new Error("x")), 50, "fallback")).toBe("fallback");
+  });
+});
+
+describe("canForgeAgain", () => {
+  test("only this browser's own forge (claude or the server cache), never a shared paper or nothing", () => {
+    expect(canForgeAgain("claude")).toBe(true);
+    expect(canForgeAgain("cache")).toBe(true);
+    expect(canForgeAgain("gallery")).toBe(false);
+    expect(canForgeAgain("sample")).toBe(false);
+    expect(canForgeAgain(null)).toBe(false);
   });
 });

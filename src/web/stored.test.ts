@@ -4,7 +4,7 @@ import type { Architecture } from "../shared/graph";
 import { applyText, pickText, type TranslatedText } from "../shared/translate";
 import { translate, type TranslationStore } from "./lang";
 import { textHash } from "./localStore";
-import { insideJourneyFits, withStored } from "./stored";
+import { artifactSource, insideJourneyFits, preferServer, withStored, withStoredArtifact } from "./stored";
 import { blockEnds, type JourneyArtifact } from "../shared/learn";
 
 const graph = (await Bun.file(join(import.meta.dir, "../../samples/1706.03762.json")).json()) as Architecture;
@@ -86,6 +86,86 @@ describe("withStored", () => {
     await expect(p).rejects.toThrow("offline");
     await tick();
     expect(put).toBe(0);
+  });
+});
+
+describe("preferServer", () => {
+  test("a kind the server lists is asked of it (free) unless the stored copy is the visitor's own", () => {
+    expect(preferServer(true, null)).toBe(true);
+    expect(preferServer(true, "gallery")).toBe(true);
+    expect(preferServer(true, "sample")).toBe(true);
+    expect(preferServer(true, "claude")).toBe(false);
+    expect(preferServer(false, "gallery")).toBe(false);
+    expect(preferServer(false, null)).toBe(false);
+  });
+
+  test("artifactSource: anything but gallery or sample is the visitor's own", () => {
+    expect(artifactSource("gallery")).toBe("gallery");
+    expect(artifactSource("sample")).toBe("sample");
+    expect(artifactSource("claude")).toBe("claude");
+    expect(artifactSource("local")).toBe("claude");
+    expect(artifactSource(undefined)).toBe("claude");
+  });
+});
+
+describe("withStoredArtifact", () => {
+  type Put = [string, string];
+  const run = (o: {
+    stored: { artifact: string; source: "gallery" | "sample" | "claude" } | null;
+    listed: boolean;
+    shared?: () => Promise<{ value: string; source: string }>;
+  }) => {
+    const calls = { shared: 0, fetch: 0, puts: [] as Put[] };
+    const p = withStoredArtifact({
+      get: async () => o.stored,
+      listed: o.listed,
+      shared: () => (calls.shared++, (o.shared ?? (async () => ({ value: "server", source: "gallery" })))()),
+      fetch: async () => (calls.fetch++, { value: "fetched", source: "claude" }),
+      put: async (v, source) => void calls.puts.push([v, source]),
+    });
+    return { p, calls };
+  };
+
+  test("the visitor's own stored copy is used with no request", async () => {
+    const { p, calls } = run({ stored: { artifact: "mine", source: "claude" }, listed: true });
+    expect(await p).toEqual({ value: "mine", local: true });
+    await tick();
+    expect(calls).toEqual({ shared: 0, fetch: 0, puts: [] });
+  });
+
+  test("a shared stored copy is refreshed from the server when it lists the kind, and overwritten", async () => {
+    const { p, calls } = run({ stored: { artifact: "old", source: "gallery" }, listed: true });
+    expect(await p).toEqual({ value: "server", local: false });
+    await tick();
+    expect(calls.shared).toBe(1);
+    expect(calls.fetch).toBe(0);
+    expect(calls.puts).toEqual([["server", "gallery"]]);
+  });
+
+  test("offline or failing, the shared stored copy is used", async () => {
+    const { p, calls } = run({
+      stored: { artifact: "old", source: "sample" },
+      listed: true,
+      shared: () => Promise.reject(new Error("offline")),
+    });
+    expect(await p).toEqual({ value: "old", local: true });
+    await tick();
+    expect(calls.fetch).toBe(0);
+    expect(calls.puts).toEqual([]);
+  });
+
+  test("a shared stored copy the server doesn't list is used as is", async () => {
+    const { p, calls } = run({ stored: { artifact: "old", source: "gallery" }, listed: false });
+    expect(await p).toEqual({ value: "old", local: true });
+    expect(calls.shared).toBe(0);
+  });
+
+  test("a miss fetches and stores with the source that came back", async () => {
+    const { p, calls } = run({ stored: null, listed: true });
+    expect(await p).toEqual({ value: "fetched", local: false });
+    await tick();
+    expect(calls.shared).toBe(0);
+    expect(calls.puts).toEqual([["fetched", "claude"]]);
   });
 });
 

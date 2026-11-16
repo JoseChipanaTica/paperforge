@@ -1,5 +1,5 @@
 import "katex/dist/katex.min.css";
-import type { Architecture, ForgeEvent, LocatedArchitecture } from "../shared/graph";
+import type { Architecture, ForgeEvent, GraphSource, LocatedArchitecture } from "../shared/graph";
 import { LEARN_KINDS, blockEnds, type AnyArtifact, type JourneyArtifact, type LearnKind, type PytorchArtifact } from "../shared/learn";
 import { motionFits, type MotionArtifact } from "../shared/motion";
 import { train, type Trace } from "../shared/train/run";
@@ -28,9 +28,9 @@ import {
 } from "./learn";
 import { openIdbBackend } from "./idbBackend";
 import { LocalStore, graphHash, sharedDecision, usageLabel, type StoredPaper } from "./localStore";
-import { openPlan, replaceWithShared, sharedStillApplies, storedEvents, withTimeout } from "./paperOpen";
+import { canForgeAgain, openPlan, replaceWithShared, sharedStillApplies, storedEvents, withTimeout } from "./paperOpen";
 import { nullBackend } from "./storeBackend";
-import { insideJourneyFits, withStored } from "./stored";
+import { insideJourneyFits, withStoredArtifact } from "./stored";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
 import { isTabKind, missAction, trainingPrefetchable, walkthroughShown, type TabId, type TabKind } from "./panelState";
@@ -119,6 +119,8 @@ let paperSaved: Promise<void> = Promise.resolve();
 let refreshing = false;
 // Each forgePaper is one opening: the shared check lands only on the opening it was made for.
 let openSeq = 0;
+// Where the graph on screen came from (null while a paper is opening): "Forge again" shows for claude/cache only.
+let paperSource: GraphSource | null = null;
 
 /**
  * An artifact for graph `g` (scope "main" or a block id; kind a LearnKind or "inside"): from the browser store when it
@@ -126,26 +128,35 @@ let openSeq = 0;
  * hash and the paper's record write are taken now, so a result that lands after the paper changed is still filed
  * under the graph it was built for. The read is bounded (a slow store is a miss); the write is never awaited.
  * `fits`: a stored value that no longer fits what's on screen is a miss (and the fetched one replaces it).
+ * `shared`: the server's saved or shipped copy only (never a Claude call). Given for the model's own artifacts: a
+ * stored gallery/sample copy of a kind the server lists is refreshed from it (see withStoredArtifact).
  */
+type Fetched<T> = { value: T; source: string };
 function fromStore<T extends AnyArtifact | Architecture>(
   g: LocatedArchitecture,
   scope: string,
   kind: string,
-  fetch: () => Promise<T>,
+  fetch: () => Promise<Fetched<T>>,
   fits: (v: T) => boolean | Promise<boolean> = () => true,
+  shared?: () => Promise<Fetched<T>>,
 ): Promise<T> {
   const hash = graph === g ? graphHashNow : null;
-  if (!hash) return fetch();
+  if (!hash) return fetch().then((r) => r.value);
   const saved = paperSaved;
-  return withStored(
-    async () => {
-      const hit = await withTimeout(storeReady.then((s) => s.getArtifact(hash, scope, kind) as Promise<T | null>), STORE_WAIT, null);
-      return hit && (await fits(hit)) ? hit : null;
+  return withStoredArtifact<T>({
+    get: async () => {
+      const hit = await withTimeout(storeReady.then((s) => s.getArtifact(hash, scope, kind)), STORE_WAIT, null);
+      return hit && (await fits(hit.artifact as T)) ? { artifact: hit.artifact as T, source: hit.source } : null;
     },
+    listed: !!shared && scope === "main" && serverKinds.has(kind as LearnKind),
+    shared: shared ?? (() => Promise.reject(new LearnError("Not shared."))),
     fetch,
-    (v) => saved.then(() => storeReady).then((s) => s.putArtifact(g.arxiv_id, hash, scope, kind, v)),
-  ).then((r) => r.value);
+    put: (v, source) => saved.then(() => storeReady).then((s) => s.putArtifact(g.arxiv_id, hash, scope, kind, v, source)),
+  }).then((r) => r.value);
 }
+
+/** What a learn request brought, with where it came from. */
+const fetched = (r: { artifact: AnyArtifact; source: string }): Fetched<AnyArtifact> => ({ value: r.artifact, source: r.source });
 
 /** Rewrites kept in this browser for paper `id`: bounded reads, writes after the paper's record. */
 function translationStore(id: string): TranslationStore {
@@ -283,6 +294,7 @@ async function forgePaper(input: string, refresh = false) {
   syncPublish();
   graph = view = inside = null; // results for the previous paper must not land on this one
   tracing = null;
+  paperSource = null; // "Forge again" stays hidden during a forge
   syncInside();
   controls.hidden = true; // Replay / Publish would act on the previous paper until this one loads
   resetLearn();
@@ -385,6 +397,8 @@ async function handle(e: ForgeEvent, myRun: Run, storedHash?: string) {
       saveToken = e.save_token ?? null;
       syncPublish();
       graph = e.graph;
+      paperSource = e.source;
+      syncInside();
       setStatus(null); // a failed rewrite below leaves its message up
       const hash = storedHash ?? (await graphHash(e.graph));
       if (myRun !== run) return;
@@ -699,10 +713,12 @@ async function openLearn(kind: TabKind, explicit = true) {
       progress[kind] = m;
       panel.tab(kind).querySelector(".learn-progress")?.replaceChildren(m);
     });
-    return r.artifact;
+    return fetched(r);
   };
+  // The server's copy, when it lists this kind: a stored shared copy may have been replaced since (free, no Claude).
+  const shared = () => requestArtifact(g.arxiv_id, kind, g, storedKey(), () => {}, undefined, true).then(fetched);
   try {
-    const artifact = cached ?? (await learning.run(kind, () => fromStore(g, "main", kind, request))).value;
+    const artifact = cached ?? (await learning.run(kind, () => fromStore(g, "main", kind, request, undefined, shared))).value;
     if (graph !== g) return; // the visitor moved on to another paper meanwhile
     artifacts.set(kind, artifact);
     // Translate while the tab still shows its progress, then mark it ready.
@@ -799,7 +815,9 @@ function fetchTraining(existingOnly = false): Promise<TrainingArtifact> | null {
         },
         journey,
         existingOnly,
-      ).then((r) => r.artifact),
+      ).then(fetched),
+      undefined,
+      () => requestArtifact(g.arxiv_id, "training", g, storedKey(), () => {}, journey, true).then(fetched),
     ).then((artifact) => {
       if (trainingReq === p) trainingArtifact = artifact as TrainingArtifact;
       return artifact as TrainingArtifact;
@@ -941,7 +959,7 @@ async function openInsideJourney(blockId: string) {
           </div>`;
       return requestInsideLearn(g.arxiv_id, blockId, "journey", { graph: g, inside: at.english, ...blockEnds(artifacts.get("journey") as JourneyArtifact | undefined, blockId) }, storedKey(), (m) =>
         root.querySelector(".learn-progress")?.replaceChildren(m),
-      ).then((r) => r.artifact as JourneyArtifact);
+      ).then((r) => ({ value: r.artifact as JourneyArtifact, source: r.source }));
     };
     // A stored one must start from the example the model's walkthrough brings into this block.
     const ends = blockEnds(artifacts.get("journey") as JourneyArtifact | undefined, blockId);
@@ -990,12 +1008,13 @@ function loadMotion(scope: string) {
           g,
           "main",
           "motion",
-          () => requestArtifact(g.arxiv_id, "motion", g, storedKey(), () => {}, artifacts.get("journey") as JourneyArtifact | undefined).then((r) => r.artifact),
+          () => requestArtifact(g.arxiv_id, "motion", g, storedKey(), () => {}, artifacts.get("journey") as JourneyArtifact | undefined).then(fetched),
           // A stored motion must animate the walkthrough on screen.
           (m) => {
             const journey = artifacts.get("journey") as JourneyArtifact | undefined;
             return !!journey && motionFits(m as MotionArtifact, journey);
           },
+          () => requestArtifact(g.arxiv_id, "motion", g, storedKey(), () => {}, artifacts.get("journey") as JourneyArtifact | undefined, true).then(fetched),
         )
       : fromStore(g, scope, "motion", () =>
           insideJourneys
@@ -1005,7 +1024,7 @@ function loadMotion(scope: string) {
                 ? requestInsideLearn(g.arxiv_id, scope, "motion", { graph: g, inside: inside.english, journey }, storedKey(), () => {})
                 : Promise.reject(new LearnError("closed")),
             )
-            .then((r) => r.artifact),
+            .then(fetched),
           async (m) => motionFits(m as MotionArtifact, await insideJourneys.get(scope)!),
         );
   request
@@ -1161,7 +1180,7 @@ async function openInside(blockId: string) {
     // The English inside graph is what's stored; it's located in this paper's pages on the way out either way.
     const request = () => {
       if (graph === g) setStatus(`Looking inside ${block.label}…`);
-      return requestInside(id, blockId, g, storedKey(), (m) => setStatus(m));
+      return requestInside(id, blockId, g, storedKey(), (m) => setStatus(m)).then((r) => ({ value: r.graph, source: r.source }));
     };
     const p = fromStore(g, blockId, "inside", request).then((a) => ({
       ...a,
@@ -1258,6 +1277,10 @@ const toolbar = initToolbar(controls, {
     });
     scene.explode = to; // so the toggle state reads right immediately
   },
+  // Bypass the browser store and the server's cache: the new graph overwrites the stored record. Uses the model picked now.
+  again() {
+    if (graph && !inside && canForgeAgain(paperSource)) void forgePaper(graph.arxiv_id, true);
+  },
   labels: () => document.body.classList.toggle("labels-off"),
   pulse: () => (scene.pulsing ? (scene.pulsing = false) : scene.startPulse()),
   publish: () => void publish(),
@@ -1271,6 +1294,7 @@ const toolbar = initToolbar(controls, {
 /** The toolbar's back button shows only inside a block. */
 function syncInside() {
   toolbar.outsideButton.hidden = !inside;
+  toolbar.againButton.hidden = !!inside || !canForgeAgain(paperSource);
 }
 
 $<HTMLFormElement>("#forge-form").addEventListener("submit", (e) => {
