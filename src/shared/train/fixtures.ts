@@ -119,3 +119,39 @@ export const TRANSFORMER_TOY: TrainingArtifact = {
   ],
   outro: "One example, one step: the error flows backward through every block, and every weight moves a little so the right words become more likely.",
 };
+
+/**
+ * A tiny regression (data → linear, MSE, plain SGD) whose toy learning rate is far too large: lr_toy, a tenth of it
+ * and ten times it all overshoot, so one step raises the loss. Block ids from samples/1706.03762.json.
+ */
+export const RAISING_TOY: TrainingArtifact = {
+  toy: {
+    dims: "Two features in, two values out: one linear layer.",
+    nodes: [
+      node("x", "inputs", "input", [], [{ name: "values", values: [[1, 2], [2, 1]] }]),
+      node("proj", "final_linear", "linear", ["x"], [{ name: "W", values: [[0.1, -0.2], [0.3, 0.05]] }]),
+    ],
+  },
+  vocab: [],
+  target: { classes: [], values: [[1, 0], [0, 1]] },
+  loss: { kind: "mse", label_smoothing: 0, quote: "", caption: "The mean squared distance from the target values." },
+  optimizer: {
+    kind: "SGD",
+    lr: 1000,
+    lr_toy: 1000,
+    momentum: 0,
+    beta1: 0.9,
+    beta2: 0.999,
+    eps: 1e-8,
+    weight_decay: 0,
+    schedule_note: "A single step at one fixed rate.",
+    quote: "",
+    fallback: false,
+  },
+  intro: "One step with a learning rate far too large: the weights jump past the answer.",
+  steps: [
+    { block_id: "final_linear", title: "The projection", narration: "The error reaches the only weights.", learns: "A map from features to values." },
+    { block_id: "inputs", title: "The data", narration: "The features are data: the gradient stops here.", learns: "Nothing: these are the example's features." },
+  ],
+  outro: "Too large a step overshoots: the loss goes up.",
+};

@@ -1,4 +1,7 @@
 import { z } from "zod";
+import type { Architecture } from "./graph";
+import { TOY_KINDS } from "./train/ops";
+import { optimizerKind, train } from "./train/run";
 
 /**
  * The training walkthrough's contract: a tiny toy version of the paper's model (a DAG of nodes, each tied to a 3D
@@ -99,3 +102,122 @@ export const TrainingArtifact = z.object({
   outro: z.string().describe("One sentence to remember"),
 });
 export type TrainingArtifact = z.infer<typeof TrainingArtifact>;
+
+const MAX_NODES = 32;
+const MAX_SIDE = 8;
+const MAX_VOCAB = 8;
+const MAX_HEADS = 2;
+const MIN_EPS = 1e-12;
+/** A learning rate is kept when one step lowers the loss by at least this fraction. */
+const MIN_DROP = 0.01;
+const KINDS = new Set<string>(TOY_KINDS);
+
+const clampMatrix = (m: number[][]) => m.slice(0, MAX_SIDE).map((r) => r.slice(0, MAX_SIDE));
+const clamp = (x: number, lo: number, hi: number, fallback: number) => (Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : fallback);
+
+/** Every node sits on a block of the graph. */
+export function trainingFits(a: TrainingArtifact, graph: Architecture): boolean {
+  const ids = new Set(graph.blocks.map((b) => b.id));
+  return a.toy.nodes.every((n) => ids.has(n.block_id));
+}
+
+function lossOrNull(a: TrainingArtifact): { before: number; after: number } | null {
+  try {
+    const t = train(a);
+    return { before: t.lossBefore, after: t.lossAfter };
+  } catch {
+    return null;
+  }
+}
+
+const drops = (l: { before: number; after: number } | null) => l !== null && l.before - l.after >= MIN_DROP * Math.abs(l.before);
+
+/**
+ * The gate before anyone sees a training artifact: clamps sizes, drops nodes off the graph, turns unknown kinds into
+ * pass-throughs, maps the optimizer to one the engine runs and picks a toy learning rate that trains. Returns `null`
+ * when the toy model can't run one finite step (cycle, dangling input, shape mismatch, bad target, non-finite numbers)
+ * or fewer than two graph blocks carry a node.
+ */
+export function cleanTraining(raw: TrainingArtifact, graph: Architecture): TrainingArtifact | null {
+  const blockIds = new Set(graph.blocks.map((b) => b.id));
+
+  // Structure: ids unique, every input names an earlier node (this also rules out cycles).
+  const seen = new Set<string>();
+  for (const n of raw.toy.nodes.slice(0, MAX_NODES)) {
+    if (seen.has(n.id)) return null;
+    for (const i of n.inputs) if (!seen.has(i)) return null;
+    seen.add(n.id);
+  }
+
+  // Nodes off the graph are dropped; nothing is rewired, so a node that read one keeps only the inputs that remain
+  // and becomes a pass-through (or goes too, when nothing remains).
+  const kept = new Set<string>();
+  const nodes: ToyNode[] = [];
+  for (const n of raw.toy.nodes.slice(0, MAX_NODES)) {
+    if (!blockIds.has(n.block_id)) continue;
+    const inputs = n.inputs.filter((i) => kept.has(i));
+    const lost = inputs.length < n.inputs.length;
+    if (lost && inputs.length === 0) continue;
+    const passthrough = lost || !KINDS.has(n.kind) || n.fn.trim().toLowerCase() === "passthrough";
+    nodes.push(
+      passthrough
+        ? { id: n.id, block_id: n.block_id, kind: "dropout", fn: "passthrough", inputs: inputs.slice(0, 1), params: [], count: 1 }
+        : {
+            ...n,
+            params: n.params.map((p) => ({ name: p.name, values: clampMatrix(p.values) })),
+            count: n.kind === "attention" ? clamp(Math.round(n.count), 1, MAX_HEADS, 1) : 1,
+          },
+    );
+    kept.add(n.id);
+  }
+  const carried = new Set(nodes.map((n) => n.block_id));
+  if (carried.size < 2) return null;
+
+  // Target: exactly one of classes / values; class ids inside the vocabulary.
+  const vocab = raw.vocab.slice(0, MAX_VOCAB);
+  const classes = raw.target.classes;
+  const values = clampMatrix(raw.target.values);
+  if ((classes.length > 0) === (values.length > 0)) return null;
+  if (classes.some((c) => !Number.isInteger(c) || c < 0 || c >= vocab.length)) return null;
+
+  const o = raw.optimizer;
+  const a: TrainingArtifact = {
+    ...raw,
+    toy: { ...raw.toy, nodes },
+    vocab,
+    target: { classes, values },
+    loss: { ...raw.loss, label_smoothing: clamp(raw.loss.label_smoothing, 0, 0.5, 0) },
+    optimizer: {
+      ...o,
+      lr_toy: Number.isFinite(o.lr_toy) && o.lr_toy > 0 ? o.lr_toy : 0.05,
+      momentum: clamp(o.momentum, 0, 0.999, 0),
+      beta1: clamp(o.beta1, 0, 0.999, 0.9),
+      beta2: clamp(o.beta2, 0, 0.9999, 0.999),
+      eps: clamp(o.eps, MIN_EPS, 1, 1e-8),
+      weight_decay: clamp(o.weight_decay, 0, 1, 0),
+      fallback: optimizerKind(o.kind).fallback,
+    },
+    steps: raw.steps.filter((s) => carried.has(s.block_id)),
+  };
+
+  // It must train: one finite step, and class ids inside the output.
+  let trace;
+  try {
+    trace = train(a);
+  } catch {
+    return null;
+  }
+  const width = trace.predictionBefore[0]?.length ?? 0;
+  if (classes.some((c) => c >= width)) return null;
+
+  // The toy learning rate: keep it if the loss drops by 1%, else a tenth, else ten times; else keep it (the tour
+  // reports the rise). The paper's `lr` never changes.
+  if (!drops({ before: trace.lossBefore, after: trace.lossAfter })) {
+    const base = a.optimizer.lr_toy;
+    for (const lr_toy of [base * 0.1, base * 10]) {
+      const tried = { ...a, optimizer: { ...a.optimizer, lr_toy } };
+      if (drops(lossOrNull(tried))) return tried;
+    }
+  }
+  return a;
+}
