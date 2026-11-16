@@ -1,6 +1,6 @@
 import "katex/dist/katex.min.css";
-import type { ForgeEvent, LocatedArchitecture } from "../shared/graph";
-import { blockEnds, type AnyArtifact, type JourneyArtifact, type LearnKind, type PytorchArtifact } from "../shared/learn";
+import type { Architecture, ForgeEvent, LocatedArchitecture } from "../shared/graph";
+import { LEARN_KINDS, blockEnds, type AnyArtifact, type JourneyArtifact, type LearnKind, type PytorchArtifact } from "../shared/learn";
 import type { MotionArtifact } from "../shared/motion";
 import { train, type Trace } from "../shared/train/run";
 import type { TrainingArtifact } from "../shared/training";
@@ -11,7 +11,7 @@ import { MODELS, modelName, type ModelId } from "../shared/models";
 import { isOriginal, type TranslateKind } from "../shared/translate";
 import { Run } from "./anim";
 import { initLanding } from "./landing";
-import { initReadingPickers, readingMessage, storedReading, translate, type Reading } from "./lang";
+import { initReadingPickers, readingMessage, storedReading, translate, type Reading, type TranslationStore } from "./lang";
 import { chooseModel, chosenModel, claudeHeaders } from "./model";
 import { initToolbar } from "./toolbar";
 import {
@@ -30,6 +30,7 @@ import { openIdbBackend } from "./idbBackend";
 import { LocalStore, graphHash, sharedDecision, type StoredPaper } from "./localStore";
 import { openPlan, replaceWithShared, sharedStillApplies, storedEvents, withTimeout } from "./paperOpen";
 import { nullBackend } from "./storeBackend";
+import { withStored } from "./stored";
 import { PaperView } from "./paper";
 import { ForgeScene, escapeHtml, renderTex } from "./scene";
 import { isTabKind, trainingPrefetchable, walkthroughShown, type TabId, type TabKind } from "./panelState";
@@ -118,6 +119,32 @@ let paperSaved: Promise<void> = Promise.resolve();
 let refreshing = false;
 // Each forgePaper is one opening: the shared check lands only on the opening it was made for.
 let openSeq = 0;
+
+/**
+ * An artifact for graph `g` (scope "main" or a block id; kind a LearnKind or "inside"): from the browser store when it
+ * holds one for g's hash (no request, no key), else `fetch`, whose result is stored after the paper's own record. The
+ * hash and the paper's record write are taken now, so a result that lands after the paper changed is still filed
+ * under the graph it was built for. The read is bounded (a slow store is a miss); the write is never awaited.
+ */
+function fromStore<T extends AnyArtifact | Architecture>(g: LocatedArchitecture, scope: string, kind: string, fetch: () => Promise<T>): Promise<T> {
+  const hash = graph === g ? graphHashNow : null;
+  if (!hash) return fetch();
+  const saved = paperSaved;
+  return withStored(
+    () => withTimeout(storeReady.then((s) => s.getArtifact(hash, scope, kind) as Promise<T | null>), STORE_WAIT, null),
+    fetch,
+    (v) => saved.then(() => storeReady).then((s) => s.putArtifact(g.arxiv_id, hash, scope, kind, v)),
+  ).then((r) => r.value);
+}
+
+/** Rewrites kept in this browser for paper `id`: bounded reads, writes after the paper's record. */
+function translationStore(id: string): TranslationStore {
+  const saved = paperSaved;
+  return {
+    get: (h, lang, level, kind) => withTimeout(storeReady.then((s) => s.getTranslation(h, lang, level, kind)), STORE_WAIT, null),
+    put: (h, lang, level, kind, text) => saved.then(() => storeReady).then((s) => s.putTranslation(id, h, lang, level, kind, text)),
+  };
+}
 
 // ---------- API key (bring your own; stays in this browser) ----------
 
@@ -560,7 +587,7 @@ function renderState(kind: TabKind) {
 }
 
 // One request per kind at a time; a repeat click joins it instead of paying again.
-const learning = new InFlight<Awaited<ReturnType<typeof requestArtifact>>>();
+const learning = new InFlight<AnyArtifact>();
 
 function resetLearn() {
   learning.reset();
@@ -589,30 +616,40 @@ function resetLearn() {
 async function refreshKinds() {
   const id = graph?.arxiv_id;
   if (!id) return;
-  const kinds = await fetchKinds(id);
-  if (graph?.arxiv_id !== id) return;
-  panel.dispatch({ type: "kinds", ready: kinds });
+  const hash = graphHashNow;
+  const [kinds, local] = await Promise.all([fetchKinds(id), storedKinds(hash)]);
+  if (graph?.arxiv_id !== id || graphHashNow !== hash) return;
+  panel.dispatch({ type: "kinds", ready: [...new Set([...kinds, ...local])] });
+}
+
+/** The learning kinds this browser already holds for the graph with this hash (they open with no request). */
+async function storedKinds(hash: string | null): Promise<LearnKind[]> {
+  if (!hash) return [];
+  const has = await Promise.all(
+    LEARN_KINDS.map((k) => withTimeout(storeReady.then((s) => s.getArtifact(hash, "main", k)).then((a) => !!a), STORE_WAIT, false)),
+  );
+  return LEARN_KINDS.filter((_, i) => has[i]);
 }
 
 async function openLearn(kind: TabKind) {
   if (!graph) return;
   const g = graph;
   const cached = artifacts.get(kind);
-  if (!cached) {
-    panel.dispatch({ type: "generate", kind });
-    if (panel.state.active === kind) renderState(kind);
-  }
+  // Stored in this browser: shown with no request; otherwise the tab shows its progress while Claude writes.
+  const request = async () => {
+    if (graph === g) {
+      panel.dispatch({ type: "generate", kind });
+      if (panel.state.active === kind) renderState(kind);
+    }
+    const r = await requestArtifact(g.arxiv_id, kind, g, storedKey(), (m) => {
+      progress[kind] = m;
+      panel.tab(kind).querySelector(".learn-progress")?.replaceChildren(m);
+    });
+    return r.artifact;
+  };
   try {
-    const { value } = cached
-      ? { value: { artifact: cached } }
-      : await learning.run(kind, () =>
-          requestArtifact(g.arxiv_id, kind, g, storedKey(), (m) => {
-            progress[kind] = m;
-            panel.tab(kind).querySelector(".learn-progress")?.replaceChildren(m);
-          }),
-        );
+    const artifact = cached ?? (await learning.run(kind, () => fromStore(g, "main", kind, request))).value;
     if (graph !== g) return; // the visitor moved on to another paper meanwhile
-    const { artifact } = value;
     artifacts.set(kind, artifact);
     // Translate while the tab still shows its progress, then mark it ready.
     if (panel.state.active === kind) await showArtifact(kind, artifact, g);
@@ -695,18 +732,20 @@ function fetchTraining(existingOnly = false): Promise<TrainingArtifact> | null {
     trainingFailed = false;
     trainingProgress = "";
     // Always with the graph and the walkthrough: the server fits the toy to them.
-    const p = requestArtifact(
-      g.arxiv_id,
-      "training",
-      g,
-      storedKey(),
-      (m) => {
-        trainingProgress = m;
-        if (trainingOn) panel.tab("journey").querySelector(".learn-progress")?.replaceChildren(m);
-      },
-      journey,
-      existingOnly,
-    ).then(({ artifact }) => {
+    const p = fromStore(g, "main", "training", () =>
+      requestArtifact(
+        g.arxiv_id,
+        "training",
+        g,
+        storedKey(),
+        (m) => {
+          trainingProgress = m;
+          if (trainingOn) panel.tab("journey").querySelector(".learn-progress")?.replaceChildren(m);
+        },
+        journey,
+        existingOnly,
+      ).then((r) => r.artifact),
+    ).then((artifact) => {
       if (trainingReq === p) trainingArtifact = artifact as TrainingArtifact;
       return artifact as TrainingArtifact;
     });
@@ -838,14 +877,18 @@ async function openInsideJourney(blockId: string) {
   const still = () => graph === g && inside?.blockId === blockId && panel.state.active === "journey";
   let pending = insideJourneys.get(blockId);
   if (!pending) {
-    root.innerHTML = `
-      <div class="learn-state" aria-busy="true">
-        <div class="skeleton"><i></i><i></i><i></i><i></i><i></i></div>
-        <p class="learn-progress">${escapeHtml(`Claude is following the input inside ${label}…`)}</p>
-      </div>`;
-    const p = requestInsideLearn(g.arxiv_id, blockId, "journey", { graph: g, inside: at.english, ...blockEnds(artifacts.get("journey") as JourneyArtifact | undefined, blockId) }, storedKey(), (m) =>
-      root.querySelector(".learn-progress")?.replaceChildren(m),
-    ).then((r) => r.artifact as JourneyArtifact);
+    const request = () => {
+      if (still())
+        root.innerHTML = `
+          <div class="learn-state" aria-busy="true">
+            <div class="skeleton"><i></i><i></i><i></i><i></i><i></i></div>
+            <p class="learn-progress">${escapeHtml(`Claude is following the input inside ${label}…`)}</p>
+          </div>`;
+      return requestInsideLearn(g.arxiv_id, blockId, "journey", { graph: g, inside: at.english, ...blockEnds(artifacts.get("journey") as JourneyArtifact | undefined, blockId) }, storedKey(), (m) =>
+        root.querySelector(".learn-progress")?.replaceChildren(m),
+      ).then((r) => r.artifact as JourneyArtifact);
+    };
+    const p = fromStore(g, blockId, "journey", request);
     insideJourneys.set(blockId, (pending = p));
     p.catch(() => insideJourneys.get(blockId) === p && insideJourneys.delete(blockId));
   }
@@ -886,16 +929,21 @@ function loadMotion(scope: string) {
   motions.set(scope, state);
   const request =
     scope === "main"
-      ? requestArtifact(g.arxiv_id, "motion", g, storedKey(), () => {}, artifacts.get("journey") as JourneyArtifact | undefined)
-      : insideJourneys
-          .get(scope)!
-          .then((journey) =>
-            inside?.blockId === scope
-              ? requestInsideLearn(g.arxiv_id, scope, "motion", { graph: g, inside: inside.english, journey }, storedKey(), () => {})
-              : Promise.reject(new LearnError("closed")),
-          );
+      ? fromStore(g, "main", "motion", () =>
+          requestArtifact(g.arxiv_id, "motion", g, storedKey(), () => {}, artifacts.get("journey") as JourneyArtifact | undefined).then((r) => r.artifact),
+        )
+      : fromStore(g, scope, "motion", () =>
+          insideJourneys
+            .get(scope)!
+            .then((journey) =>
+              inside?.blockId === scope
+                ? requestInsideLearn(g.arxiv_id, scope, "motion", { graph: g, inside: inside.english, journey }, storedKey(), () => {})
+                : Promise.reject(new LearnError("closed")),
+            )
+            .then((r) => r.artifact),
+        );
   request
-    .then(({ artifact }) => {
+    .then((artifact) => {
       if (graph !== g || motions.get(scope) !== state) return;
       state.motion = artifact as MotionArtifact;
       state.status = "ready";
@@ -953,8 +1001,11 @@ async function localized<C extends object>(kind: TranslateKind, english: C, bloc
   let pending = translations.get(cacheKey) as Promise<C> | undefined;
   if (!pending) {
     const message = readingMessage(r);
-    setStatus(message);
-    const p = translate(graph.arxiv_id, kind, r, english, storedKey(), blockId);
+    // Kept in this browser: no request, so no "Translating…" either.
+    const p = translate(graph.arxiv_id, kind, r, english, storedKey(), blockId, {
+      store: translationStore(graph.arxiv_id),
+      onRequest: () => setStatus(message),
+    });
     translations.set(cacheKey, (pending = p));
     p.catch(() => translations.get(cacheKey) === p && translations.delete(cacheKey)).finally(() => {
       if (statusEl.querySelector(".status-text")!.textContent === message) setStatus(null);
@@ -1040,9 +1091,13 @@ async function openInside(blockId: string) {
   scene.setHeat(null);
   let pending = insides.get(blockId);
   if (!pending) {
-    setStatus(`Looking inside ${block.label}…`);
     const id = g.arxiv_id;
-    const p = requestInside(id, blockId, g, storedKey(), (m) => setStatus(m)).then((a) => ({
+    // The English inside graph is what's stored; it's located in this paper's pages on the way out either way.
+    const request = () => {
+      if (graph === g) setStatus(`Looking inside ${block.label}…`);
+      return requestInside(id, blockId, g, storedKey(), (m) => setStatus(m));
+    };
+    const p = fromStore(g, blockId, "inside", request).then((a) => ({
       ...a,
       arxiv_id: id,
       blocks: a.blocks.map((b) => ({ ...b, source: locateQuote(pages, b.source_quote) })),

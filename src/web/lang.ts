@@ -4,12 +4,16 @@ import {
   LEVELS,
   applyText,
   isOriginal,
+  pickText,
   type Lang,
   type Level,
   type TranslateKind,
   type TranslateResponse,
+  type TranslatedText,
 } from "../shared/translate";
 import { LearnError } from "./learn";
+import { textHash } from "./localStore";
+import { withStored } from "./stored";
 import { claudeHeaders } from "./model";
 
 /** How the visitor reads: language and level pickers, where they're remembered, and the /api/translate client. */
@@ -67,7 +71,17 @@ export function initReadingPickers(lang: HTMLSelectElement, level: HTMLSelectEle
   level.addEventListener("change", changed);
 }
 
-/** The content with its prose rewritten for this reader (English for an engineer comes back as is). */
+/** Where rewrites are kept in this browser, by the English text's hash, language and level. */
+export interface TranslationStore {
+  get(hash: string, lang: Lang, level: Level, kind: TranslateKind): Promise<TranslatedText | null>;
+  put(hash: string, lang: Lang, level: Level, kind: TranslateKind, text: TranslatedText): Promise<void>;
+}
+
+/**
+ * The content with its prose rewritten for this reader (English for an engineer comes back as is). With a `store`,
+ * a rewrite kept in this browser is used with no request; a requested one is kept. `onRequest` runs only when the
+ * rewrite has to be asked for (the status line's "Translating…").
+ */
 export async function translate<C extends object>(
   id: string,
   kind: TranslateKind,
@@ -75,15 +89,31 @@ export async function translate<C extends object>(
   content: C,
   key: string,
   blockId?: string,
+  { store, onRequest }: { store?: TranslationStore; onRequest?: () => void } = {},
 ): Promise<C> {
   if (isOriginal(lang, level)) return content;
-  const res = await fetch("/api/translate", {
-    method: "POST",
-    headers: claudeHeaders(key),
-    body: JSON.stringify({ arxiv_id: id, kind, lang, level, content, ...(blockId && { block_id: blockId }) }),
-  }).catch(() => null);
-  if (!res) throw new LearnError("Can't reach the Paperforge server.");
-  const body = (await res.json().catch(() => ({}))) as Partial<TranslateResponse> & { error?: string; code?: string };
-  if (!res.ok || !body.text) throw new LearnError(body.error ?? "Couldn't translate that.", body.code);
-  return applyText(kind, content as never, body.text) as C;
+  const request = async (): Promise<TranslatedText> => {
+    onRequest?.();
+    const res = await fetch("/api/translate", {
+      method: "POST",
+      headers: claudeHeaders(key),
+      body: JSON.stringify({ arxiv_id: id, kind, lang, level, content, ...(blockId && { block_id: blockId }) }),
+    }).catch(() => null);
+    if (!res) throw new LearnError("Can't reach the Paperforge server.");
+    const body = (await res.json().catch(() => ({}))) as Partial<TranslateResponse> & { error?: string; code?: string };
+    if (!res.ok || !body.text) throw new LearnError(body.error ?? "Couldn't translate that.", body.code);
+    return body.text;
+  };
+  let text: TranslatedText;
+  if (store) {
+    const hash = await textHash(kind, pickText(kind, content as never));
+    text = (
+      await withStored(
+        () => store.get(hash, lang, level, kind),
+        request,
+        (t) => store.put(hash, lang, level, kind, t),
+      )
+    ).value;
+  } else text = await request();
+  return applyText(kind, content as never, text) as C;
 }
