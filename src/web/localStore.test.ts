@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Architecture, LocatedArchitecture } from "../shared/graph";
 import type { JourneyArtifact, PytorchArtifact } from "../shared/learn";
 import { pickText } from "../shared/translate";
-import { LocalStore, graphHash, sharedDecision, textHash } from "./localStore";
+import { LocalStore, graphHash, sharedDecision, textHash, usageLabel } from "./localStore";
 import { type Backend, memoryBackend, nullBackend } from "./storeBackend";
 
 const SAMPLES = join(import.meta.dir, "../../samples");
@@ -348,5 +348,21 @@ describe("sharedDecision", () => {
     expect(sharedDecision(local, shared, "aaa")).toBe("keep");
     expect(sharedDecision(local, null, null)).toBe("keep");
     expect(sharedDecision(local, null, "bbb")).toBe("keep");
+  });
+});
+
+describe("usageLabel", () => {
+  test("names papers and megabytes, bold part separate", () => {
+    expect(usageLabel({ papers: 12, bytes: 18_400_000 }, true)).toEqual({ lead: "Saved in this browser: ", strong: "12 papers · 18 MB", clearable: true });
+  });
+  test("singular paper and one decimal under 10 MB", () => {
+    expect(usageLabel({ papers: 1, bytes: 2_340_000 }, true).strong).toBe("1 paper · 2.3 MB");
+    expect(usageLabel({ papers: 2, bytes: 9_960_000 }, true).strong).toBe("2 papers · 10 MB");
+  });
+  test("nothing yet has no Clear", () => {
+    expect(usageLabel({ papers: 0, bytes: 0 }, true)).toEqual({ lead: "Saved in this browser: nothing yet", strong: "", clearable: false });
+  });
+  test("unavailable", () => {
+    expect(usageLabel({ papers: 3, bytes: 5 }, false)).toEqual({ lead: "Saving is off in this browser.", strong: "", clearable: false });
   });
 });

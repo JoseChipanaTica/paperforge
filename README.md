@@ -37,7 +37,7 @@ arXiv link ──▶ download PDF ──▶ pdf.js pulls out the text, page by p
 
 - **Server:** [Bun](https://bun.sh) + TypeScript, [pdf.js](https://mozilla.github.io/pdf.js/) for text extraction, [Claude](https://www.anthropic.com/claude) (`claude-opus-5-5`) with structured outputs, so the response always matches the graph schema in `src/shared/graph.ts`.
 - **Front end:** [Three.js](https://threejs.org) for the scene, [KaTeX](https://katex.org) for equations. No framework.
-- Results are cached in `data/cache/`, so a paper only gets read once.
+- Results are cached in `data/cache/`, so a paper only gets read once. Your browser also keeps the papers, walkthroughs and translations you open (IndexedDB), so they reopen without a request; the key card shows how much and can clear it.
 
 ## Run it
 

@@ -58,6 +58,10 @@ body:not(.has-paper) .topbar .forge-form { visibility: hidden; }
 .key-model select:focus-visible { border-color: var(--ink); box-shadow: var(--focus); }
 .key-hint { margin: calc(-1 * var(--s1)) 0 0; font: var(--t-xs) / 1.4 var(--ui); color: var(--ink-faint); }
 .key-note { padding-top: var(--s2); border-top: 1px solid var(--rule); }
+.key-store { padding-top: 0; border-top: 0; }
+.key-link { all: unset; cursor: pointer; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+.key-link:hover { color: var(--vermilion); }
+.key-link:focus-visible { box-shadow: var(--focus); border-radius: 2px; }
 
 @media (max-width: 899px) {
   .topbar { padding: 0 var(--s3); gap: var(--s2); }

@@ -318,3 +318,15 @@ export class LocalStore {
     } catch {}
   }
 }
+
+/** The settings-card line as text parts (the DOM code renders `strong` in <b>): lead + strong, then Clear if `clearable`. */
+export function usageLabel(
+  u: { papers: number; bytes: number },
+  available: boolean,
+): { lead: string; strong: string; clearable: boolean } {
+  if (!available) return { lead: "Saving is off in this browser.", strong: "", clearable: false };
+  if (u.papers === 0) return { lead: "Saved in this browser: nothing yet", strong: "", clearable: false };
+  const mb = u.bytes / 1_000_000;
+  const size = mb < 9.95 ? mb.toFixed(1) : String(Math.round(mb));
+  return { lead: "Saved in this browser: ", strong: `${u.papers} ${u.papers === 1 ? "paper" : "papers"} · ${size} MB`, clearable: true };
+}

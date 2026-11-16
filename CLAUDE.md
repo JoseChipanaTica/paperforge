@@ -13,7 +13,8 @@ make that 30-second moment look better or work more reliably. Polish what the ca
 - `server.ts` — Vercel entry (Bun preset, `.vercelignore` drops `index.ts`): the API routes + the page
   built into `public/` by `bun run build` (Vercel doesn't support HTML imports)
 - `src/server/routes.ts` — every `/api` route: `POST /api/forge` (visitor's key in `x-anthropic-key`),
-  `GET|POST /api/papers`, learn/ask/inside/translate
+  `GET|POST /api/papers`, `GET /api/graph?arxiv_id=` (the shared graph, gallery then sample, so the browser can
+  check its stored copy against it), learn/ask/inside/translate
 - `src/shared/graph.ts` — Zod schema for the block graph. **The contract** between the
   LLM, the server and the front end. Change it here and nowhere else.
 - `src/server/arxiv.ts` — parse arXiv ids/URLs, download PDFs
@@ -76,6 +77,12 @@ make that 30-second moment look better or work more reliably. Polish what the ca
     `trainingTour.ts` (trace → `TourScript`, `traceViews`, `trainingHeat`: "Train on this example →" on the last
     step walks the model backward with vermilion heat via `scene.setHeat`; prefetch only when the kinds list already
     has training, never an unasked Claude call; `specimenLayout` shows small numbers as compact exponents),
+    the browser store (what a visitor opens again costs nothing): `localStore.ts` (`LocalStore`: papers by arXiv id,
+    artifacts by [graph hash, scope, kind], translations by [text hash, language, level]; Zod-checked reads,
+    quota eviction of whole papers, `usage()`/`clear()` and `usageLabel` for the settings-card line),
+    `storeBackend.ts` (the `Backend` interface, memory and null backends), `idbBackend.ts` (IndexedDB; a failed or
+    hung open falls back to null), `paperOpen.ts` (open plan: stored paper first, shared graph still wins; `withTimeout`),
+    `stored.ts` (`withStored`: a stored value is used with no request, a miss fetches then stores),
     `codeView.ts` (PyTorch), `learn.ts` (learn/ask/inside clients, request bookkeeping), `lang.ts`
     (language + level pickers, translate client), `trace.ts` (shape tracing: dimensions, aliases via
     hyperparameters, splits like 512 = h × d_k). `main.ts` keeps `graph` (English, signed, sent to the

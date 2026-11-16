@@ -27,7 +27,7 @@ import {
   fetchSharedGraph,
 } from "./learn";
 import { openIdbBackend } from "./idbBackend";
-import { LocalStore, graphHash, sharedDecision, type StoredPaper } from "./localStore";
+import { LocalStore, graphHash, sharedDecision, usageLabel, type StoredPaper } from "./localStore";
 import { openPlan, replaceWithShared, sharedStillApplies, storedEvents, withTimeout } from "./paperOpen";
 import { nullBackend } from "./storeBackend";
 import { insideJourneyFits, withStored } from "./stored";
@@ -200,6 +200,43 @@ function showKey(open: boolean) {
   if (!open) return;
   keyInput.value = storedKey();
   keyInput.focus();
+  void refreshStoreLine();
+}
+
+/** The card's "Saved in this browser" line: usage read within STORE_WAIT, Clear asks before it wipes. */
+const storeLine = $("#store-line");
+function textButton(label: string, onClick: () => void): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "key-link";
+  b.textContent = label;
+  b.addEventListener("click", onClick);
+  return b;
+}
+async function refreshStoreLine(): Promise<void> {
+  const read = await withTimeout(
+    storeReady.then(async (s) => ({ usage: await s.usage(), available: s.available })),
+    STORE_WAIT,
+    null,
+  );
+  if (!read) return void (storeLine.textContent = "");
+  const label = usageLabel(read.usage, read.available);
+  storeLine.replaceChildren(label.lead);
+  if (label.strong) {
+    const b = document.createElement("b");
+    b.textContent = label.strong;
+    storeLine.append(b);
+  }
+  if (!label.clearable) return;
+  const ask = () => {
+    storeLine.replaceChildren(
+      "Clear everything saved? ",
+      textButton("Yes", () => void storeReady.then((s) => s.clear()).then(refreshStoreLine)),
+      " · ",
+      textButton("No", () => void refreshStoreLine()),
+    );
+  };
+  storeLine.append(" · ", textButton("Clear", ask));
 }
 
 keyToggle.addEventListener("click", () => showKey(keyToggle.getAttribute("aria-expanded") !== "true"));
