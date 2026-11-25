@@ -9,6 +9,8 @@ import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRe
 import type { Edge, LocatedArchitecture, LocatedBlock } from "../shared/graph";
 import type { Run } from "./anim";
 import { INK, VERMILION, buildBlock, buildGroupFrame, type BlockObject } from "./blocks";
+import { CameraRig } from "./cameraRig";
+import { leadingPulse, type Vec3 } from "./director";
 import { layoutGraph, type Layout, type PlacedBlock, type PlacedGroup } from "./layout";
 import { arcBetween } from "./specimen";
 
@@ -62,6 +64,8 @@ export class ForgeScene {
   readonly camera = new THREE.PerspectiveCamera(32, 1, 0.1, 400);
   readonly scene = new THREE.Scene();
   readonly controls: OrbitControls;
+  /** Directs the camera during assembly; lets go when the visitor grabs the controls. */
+  readonly rig: CameraRig;
   private labels: CSS2DRenderer;
   private composer: EffectComposer;
   private model = new THREE.Group();
@@ -84,7 +88,7 @@ export class ForgeScene {
   pulsing = false;
   private pulseClock = 0;
   private pulses: Pulse[] = [];
-  private pulseCycle = 1;
+  private cycle = 1;
 
   /** Horizontal shift of the model on screen, as a fraction of the canvas width. */
   viewShift = 0;
@@ -136,7 +140,11 @@ export class ForgeScene {
     this.controls = new OrbitControls(this.camera, this.labels.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
-    this.controls.addEventListener("start", () => (this.sway = false));
+    this.controls.addEventListener("start", () => {
+      this.sway = false;
+      this.rig.release();
+    });
+    this.rig = new CameraRig(this.controls.target, this.camera.position);
 
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
@@ -275,6 +283,7 @@ export class ForgeScene {
     this.buildEdges();
     this.buildPulses();
     this.sway = !this.reduceMotion;
+    this.rig.release();
     this.frame(true);
   }
 
@@ -413,6 +422,7 @@ export class ForgeScene {
     const sb = id ? this.blocks.get(id) : null;
     if (id && !sb) return Promise.resolve();
     this.sway = false;
+    this.rig.release();
     const fromTarget = this.controls.target.clone();
     const fromCam = this.camera.position.clone();
     let toTarget: THREE.Vector3;
@@ -567,7 +577,7 @@ export class ForgeScene {
       // Cross edges fire once the encoder is done, so the pulse visibly hands over.
       this.pulses.push({ edge: e, start: fromRank * PULSE_STEP, dots });
     }
-    this.pulseCycle = (maxRank + 2) * PULSE_STEP + PULSE_PAUSE;
+    this.cycle = (maxRank + 2) * PULSE_STEP + PULSE_PAUSE;
   }
 
   startPulse() {
@@ -575,12 +585,33 @@ export class ForgeScene {
     this.pulseClock = 0;
   }
 
+  /** Seconds for one pulse to run through the model, pause included. */
+  get pulseCycle() {
+    return this.cycle;
+  }
+
+  /** Where the pulse furthest along the model is now, or null between pulses. */
+  pulseHead(): Vec3 | null {
+    if (!this.pulsing) return null;
+    const i = leadingPulse(this.pulses.map((p) => p.start), this.pulseClock, PULSE_STEP);
+    if (i < 0) return null;
+    const p = this.pulses[i]!;
+    return p.edge.curve.getPointAt(Math.min(1, (this.pulseClock - p.start) / PULSE_STEP), new THREE.Vector3());
+  }
+
   // ---------- frame loop ----------
 
   private tick() {
     const dt = Math.min(this.clock.getDelta(), 0.05);
 
-    if (this.sway && this.layout) {
+    if (this.rig.active) {
+      this.rig.step(dt);
+      // Let go after the last shot settles: the sway picks up from the resting angle.
+      if (!this.rig.active) {
+        this.sway = !this.reduceMotion;
+        this.swayTime = 0;
+      }
+    } else if (this.sway && this.layout) {
       this.swayTime += dt;
       const target = this.controls.target;
       const az = Math.sin(this.swayTime * 0.18) * 0.32 + 0.28;
@@ -591,7 +622,7 @@ export class ForgeScene {
 
     // Pulses
     if (this.pulsing) {
-      this.pulseClock = (this.pulseClock + dt) % this.pulseCycle;
+      this.pulseClock = (this.pulseClock + dt) % this.cycle;
       for (const p of this.pulses) {
         const t = (this.pulseClock - p.start) / PULSE_STEP;
         p.dots.forEach((dot, i) => {
