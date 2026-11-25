@@ -80,7 +80,7 @@ export async function assemble(scene: ForgeScene, paper: PaperView, graph: Locat
 const HERO_HOLD = 1500; // ms the hero shot holds before landings reframe again
 
 /** The director's cues for one assembly, in world space. */
-function director(scene: ForgeScene, graph: LocatedArchitecture, run: Run) {
+export function director(scene: ForgeScene, graph: LocatedArchitecture, run: Run) {
   const layout = scene.layout!;
   const hero = pickHero(graph.blocks, layout);
   const dist = () => scene.distanceFor(0);
@@ -126,7 +126,8 @@ function director(scene: ForgeScene, graph: LocatedArchitecture, run: Run) {
         return head && followPoint(head);
       }, followShot(dist()));
       void run.wait(scene.pulseCycle * 1000).then(() => {
-        if (run.cancelled || !ours()) return;
+        // Something else has the camera since (the walkthrough's focusOn released it): leave it there.
+        if (run.cancelled || !ours() || !scene.rig.active) return;
         if (run.skipping) rest();
         else scene.rig.cue(restingShot(layout, dist()), true);
       });

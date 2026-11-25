@@ -57,13 +57,19 @@ export async function record(
       if (track?.cropTo) await track.cropTo(await CropTarget.fromElement(el));
     } catch {}
     const mime = pickMime((t) => MediaRecorder.isTypeSupported(t));
-    const recorder = new MediaRecorder(stream, { mimeType: mime });
     const chunks: Blob[] = [];
-    recorder.ondataavailable = (e) => {
-      if (e.data.size) chunks.push(e.data);
-    };
-    const stopped = new Promise<void>((resolve) => (recorder.onstop = () => resolve()));
-    recorder.start(1000);
+    let recorder: MediaRecorder;
+    let stopped: Promise<void>;
+    try {
+      recorder = new MediaRecorder(stream, { mimeType: mime });
+      recorder.ondataavailable = (e) => {
+        if (e.data.size) chunks.push(e.data);
+      };
+      stopped = new Promise<void>((resolve) => (recorder.onstop = () => resolve()));
+      recorder.start(1000);
+    } catch {
+      return "cancelled"; // e.g. the share ended between the prompt and the start
+    }
     const outcome = await new Promise<"done" | "cancelled">((resolve) => {
       if (signal.aborted) return resolve("cancelled");
       signal.addEventListener("abort", () => resolve("cancelled"), { once: true });
@@ -90,4 +96,13 @@ function download(blob: Blob, name: string) {
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** Resolves once `done()` holds (checked every `everyMs`), or after `maxMs` regardless. */
+export function until(done: () => boolean, maxMs: number, everyMs = 50): Promise<void> {
+  const end = performance.now() + maxMs;
+  return new Promise((resolve) => {
+    const check = () => (done() || performance.now() >= end ? resolve() : setTimeout(check, everyMs));
+    check();
+  });
 }

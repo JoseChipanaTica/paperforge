@@ -37,7 +37,7 @@ import { isTabKind, missAction, trainingPrefetchable, walkthroughShown, type Tab
 import { Overview } from "./overview";
 import { Sheet } from "./sheet";
 import { StudyPanel } from "./studyPanel";
-import { canRecord, record } from "./recorder";
+import { canRecord, record, until } from "./recorder";
 import { assemble } from "./timeline";
 import { traceCardHtml, traceDim } from "./trace";
 import { renderSteps } from "./stepsView";
@@ -276,6 +276,7 @@ syncKey();
 // ---------- forging ----------
 
 function setStatus(message: string | null, error = false) {
+  if (error) document.body.classList.remove("presenting"); // a play link that can't open still says why
   statusEl.hidden = !message;
   statusEl.classList.toggle("error", error);
   statusEl.querySelector(".status-text")!.textContent = message ?? "";
@@ -432,7 +433,6 @@ async function handle(e: ForgeEvent, myRun: Run, storedHash?: string) {
       break;
     }
     case "error":
-      document.body.classList.remove("presenting"); // a play link that can't open still says why
       paper.stopReading();
       setStatus(e.message, true);
       if (e.code === "needs_key") showKey(true);
@@ -1318,16 +1318,21 @@ function startRecording() {
   const filmed = async () => {
     document.body.classList.add("recording");
     await replay({ direct: true });
-    await new Promise((r) => setTimeout(r, scene.pulseCycle * 1000 + 1000));
+    // One full pulse, then the camera easing back to rest, so the video ends on a still frame.
+    await new Promise((r) => setTimeout(r, scene.pulseCycle * 1000));
+    await until(() => !scene.rig.active, 3000);
+    await new Promise((r) => setTimeout(r, 500));
   };
-  void record($(".workspace"), filmed, inside ? `${id}-${inside.english.model_name}` : id, ctrl.signal).then((result) => {
-    document.body.classList.remove("recording");
-    if (recording === ctrl) recording = null;
-    if (result === "denied") {
-      setStatus("Recording needs tab sharing.", true);
-      setTimeout(() => setStatus(null), 3500);
-    }
-  });
+  void record($(".workspace"), filmed, inside ? `${id}-${inside.english.model_name}` : id, ctrl.signal)
+    .catch(() => "cancelled" as const)
+    .then((result) => {
+      document.body.classList.remove("recording");
+      if (recording === ctrl) recording = null;
+      if (result === "denied") {
+        setStatus("Recording needs tab sharing.", true);
+        setTimeout(() => setStatus(null), 3500);
+      }
+    });
 }
 
 /** The toolbar's back button shows only inside a block. */
@@ -1346,7 +1351,7 @@ const landing = initLanding($("#landing"), { scene, stage: $("#stage"), onForge:
 
 window.addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
-  if (e.key === " " && document.body.classList.contains("assembling")) run.skip();
+  if (e.key === " " && document.body.classList.contains("assembling") && !recording) run.skip();
   if (e.key === "Escape" && recording) {
     recording.abort();
     run.skip();

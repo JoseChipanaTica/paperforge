@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { fileName, pickMime, record } from "./recorder";
+import { fileName, pickMime, record, until } from "./recorder";
 
 test("pickMime prefers mp4", () => {
   expect(pickMime(() => true)).toBe("video/mp4;codecs=avc1");
@@ -118,4 +118,33 @@ test("a failed crop still records the whole tab", async () => {
   });
   expect(result).toBe("saved");
   expect(downloads).toEqual(["paperforge-x.mp4"]);
+});
+
+test("a recorder that fails to start gives up cleanly instead of throwing", async () => {
+  saved.MediaRecorder = class extends FakeRecorder {
+    override start() {
+      throw new DOMException("ended", "InvalidStateError");
+    }
+  };
+  const track = new FakeTrack();
+  let played = false;
+  const result = await record(el, async () => void (played = true), "x", new AbortController().signal, {
+    media: capture(track),
+    download: () => {},
+  });
+  expect(result).toBe("cancelled");
+  expect(played).toBe(false);
+  expect(track.stopped).toBe(true);
+});
+
+test("until waits for the condition, and no longer than its cap", async () => {
+  let moving = true;
+  setTimeout(() => (moving = false), 60);
+  const t0 = performance.now();
+  await until(() => !moving, 2000, 10);
+  expect(performance.now() - t0).toBeGreaterThanOrEqual(55);
+  expect(performance.now() - t0).toBeLessThan(500);
+  const t1 = performance.now();
+  await until(() => false, 80, 10);
+  expect(performance.now() - t1).toBeGreaterThanOrEqual(75);
 });
