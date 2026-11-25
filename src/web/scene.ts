@@ -142,7 +142,7 @@ export class ForgeScene {
     this.controls.dampingFactor = 0.08;
     this.controls.addEventListener("start", () => {
       this.sway = false;
-      this.rig.release();
+      this.rig.handOver();
     });
     this.rig = new CameraRig(this.controls.target, this.camera.position);
 
@@ -283,7 +283,7 @@ export class ForgeScene {
     this.buildEdges();
     this.buildPulses();
     this.sway = !this.reduceMotion;
-    this.rig.release();
+    this.rig.reclaim();
     this.frame(true);
   }
 

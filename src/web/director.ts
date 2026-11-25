@@ -92,9 +92,17 @@ export function discoverShot(points: readonly Vec3[], landed: number, aspect: nu
   return { name: "discover", target, offset: scaled(vec(Math.sin(az), -0.04, Math.cos(az)), dist), ms: 1100 };
 }
 
+const FOLLOW_SCALE = 0.75; // of the fit distance: close enough to feel the pulse, wide enough to keep both columns
+
+/** Where the follow shot looks: the pulse's height, but only part of its sideways jumps between columns. */
+export function followPoint(head: Vec3): Vec3 {
+  return vec(head.x * 0.4, head.y, 0);
+}
+
 /** Rides along with the pulse; the target is replaced every frame by the pulse head. */
 export function followShot(dist: number): Shot {
-  return { name: "follow", target: vec(0, 0, 0), offset: vec(dist * 0.28 * 0.55, dist * 0.12 * 0.55, dist * 0.95 * 0.55), ms: 500 };
+  const s = dist * FOLLOW_SCALE;
+  return { name: "follow", target: vec(0, 0, 0), offset: vec(0.28 * s, 0.12 * s, 0.95 * s), ms: 500 };
 }
 
 /** Index of the pulse furthest along the model (the latest to start) that is in flight, or -1. */

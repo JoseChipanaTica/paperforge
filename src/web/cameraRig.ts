@@ -16,6 +16,8 @@ export class CameraRig {
   private vPosition: Vec3 = { x: 0, y: 0, z: 0 };
   private tracking: (() => Vec3 | null) | null = null;
   private releaseWhenSettled = false;
+  /** The visitor has the camera: cues are ignored until `reclaim()` (the next assembly). */
+  private visitor = false;
 
   constructor(
     private target: Vec3,
@@ -26,19 +28,27 @@ export class CameraRig {
     return this.on;
   }
 
+  /** True once the visitor has grabbed the camera during this assembly. */
+  get handedOver() {
+    return this.visitor;
+  }
+
   cue(shot: Shot, releaseWhenSettled = false) {
+    if (this.visitor) return;
     this.aim(shot);
     this.tracking = null;
     this.releaseWhenSettled = releaseWhenSettled;
   }
 
   follow(at: () => Vec3 | null, shot: Shot) {
+    if (this.visitor) return;
     this.aim(shot);
     this.tracking = at;
     this.releaseWhenSettled = false;
   }
 
   jump(shot: Shot) {
+    if (this.visitor) return;
     this.aim(shot);
     this.tracking = null;
     this.releaseWhenSettled = false;
@@ -53,6 +63,18 @@ export class CameraRig {
     this.tracking = null;
     zero(this.vTarget);
     zero(this.vPosition);
+  }
+
+  /** The visitor grabbed the controls: let go, and stay out of their way. */
+  handOver() {
+    this.release();
+    this.visitor = true;
+  }
+
+  /** Take cues again (a new assembly). */
+  reclaim() {
+    this.release();
+    this.visitor = false;
   }
 
   step(dt: number) {

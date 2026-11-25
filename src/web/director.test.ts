@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { Architecture } from "../shared/graph";
 import {
   discoverShot,
+  followPoint,
   followShot,
   framePoints,
   heroShot,
@@ -104,4 +105,9 @@ test("degenerate graphs give finite shots", () => {
     for (const v of [s.target, s.offset]) for (const n of [v.x, v.y, v.z]) expect(Number.isFinite(n)).toBe(true);
     expect(s.ms).toBeGreaterThan(0);
   }
+});
+
+test("the follow shot rides the pulse's height, damping its jumps between columns", () => {
+  expect(followPoint({ x: 5, y: 7, z: 1 })).toEqual({ x: 2, y: 7, z: 0 });
+  expect(len(followShot(40).offset)).toBeCloseTo(len(restingShot(layoutGraph(transformer), 40).offset) * 0.75);
 });

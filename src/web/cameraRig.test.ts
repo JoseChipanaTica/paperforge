@@ -73,3 +73,20 @@ test("jump lands at once", () => {
   expect(position).toEqual({ x: 7, y: 0, z: 5 });
   expect(rig.active).toBe(true);
 });
+
+test("after the visitor takes over, cues are ignored until the rig is reclaimed", () => {
+  const { target, rig } = rigAtOrigin();
+  rig.cue(shot(10));
+  rig.handOver();
+  rig.cue(shot(10));
+  rig.follow(() => ({ x: 10, y: 0, z: 0 }), shot(10));
+  rig.jump(shot(10));
+  run(rig, 1);
+  expect(rig.active).toBe(false);
+  expect(target.x).toBe(0);
+  expect(rig.handedOver).toBe(true);
+  rig.reclaim();
+  expect(rig.handedOver).toBe(false);
+  rig.jump(shot(10));
+  expect(target.x).toBe(10);
+});

@@ -437,8 +437,11 @@ async function handle(e: ForgeEvent, myRun: Run, storedHash?: string) {
   }
 }
 
-/** Assemble what's on the stage: the model (first forge, Replay) or a block's inside view. */
-async function play(myRun = (run = new Run())) {
+/**
+ * Assemble what's on the stage: the model (first forge, Replay) or a block's inside view. The camera follows the
+ * director's cut unless the visitor prefers reduced motion; `direct` forces it (a recording).
+ */
+async function play(myRun = (run = new Run()), opts: { direct?: boolean } = {}) {
   const g = displayed();
   if (!g) return;
   trace(null);
@@ -448,8 +451,9 @@ async function play(myRun = (run = new Run())) {
   panel.select("paper"); // the sweep plays in the Paper tab (first forge and Replay)
   sheet.snapTo("half"); // phones: the sweep happens in the sheet
   scene.reduceMotion = reducedMotion();
-  if (reducedMotion()) myRun.skip(); // straight to the finished model
-  await assemble(scene, paper, g, myRun);
+  const direct = opts.direct || !reducedMotion();
+  if (!direct) myRun.skip(); // straight to the finished model
+  await assemble(scene, paper, g, myRun, direct);
   if (myRun === run) {
     document.body.classList.remove("assembling");
     panel.select("overview");
