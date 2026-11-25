@@ -91,6 +91,9 @@ make that 30-second moment look better or work more reliably. Polish what the ca
     API), `view` (rewritten for the reader) and `inside` (a block's inside view, when open).
   - `styles/tokens.css` holds every colour, font and spacing token; `blocks.ts` mirrors ink /
     highlighter / vermilion and owns the block palette. One CSS file per component.
+- `src/web/icons/` — the icon set, served at the site root under stable names so other sites can link them
+  (`/favicon.ico` 16/32/48, `/icon.svg`, `/app-icon.svg`, `/apple-touch-icon.png`, `/icon-192.png`, `/icon-512.png`;
+  `src/server/icons.ts`: a day's cache, CORS open). `bun run build` copies them into `public/`.
 - `samples/` — committed block graphs (`<id>.json`), learning artifacts (`<id>.<kind>.json`, kind `pytorch` or
   `journey` or `motion` or `training`; `bun run learn <url> <kind> --write` regenerates one, motion and training from the committed journey) and inside
   views (`<id>.inside.<block_id>.json`, with `<id>.inside.<block_id>.{journey,motion}.json` for their walkthrough;

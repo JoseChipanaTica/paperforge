@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { ICON_FILES, iconHeaders } from "./src/server/icons";
 import { apiRoutes } from "./src/server/routes";
 
 // Vercel entry (Bun preset): the API, plus the page built into `public/` by `bun run build`
@@ -15,6 +16,8 @@ Bun.serve({
     if (name.includes("/") || name.startsWith(".") || !(await file.exists())) {
       return new Response("Not found", { status: 404 });
     }
+    // The icons keep stable names (other sites link them), so they can't be cached as immutable.
+    if (ICON_FILES.includes(name)) return new Response(file, { headers: iconHeaders(name) });
     const cache = name === "index.html" ? "public, max-age=0, s-maxage=60" : "public, max-age=31536000, immutable";
     return new Response(file, { headers: { "Cache-Control": cache } });
   },
