@@ -32,6 +32,11 @@ body.has-paper .workspace {
 .assembling .toolbar .skip { display: inline-flex; }
 .assembling .toolbar .btn:not(.skip) { display: none; }
 .toolbar .publish { color: var(--vermilion); border-color: var(--vermilion); }
+/* A play link: only Skip while the build plays; the rest appears when it ends. */
+.presenting .toolbar .btn:not(.skip), .presenting .status, .presenting .title-card { display: none; }
+/* Recording: nothing on the stage but the model and the paper, and no pointer to disturb them. */
+.recording .toolbar, .recording .sheet-handle { display: none; }
+.recording .workspace { pointer-events: none; cursor: none; }
 
 @media (max-width: 899px) {
   body.has-paper .workspace { grid-template-columns: 1fr; }

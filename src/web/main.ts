@@ -37,6 +37,7 @@ import { isTabKind, missAction, trainingPrefetchable, walkthroughShown, type Tab
 import { Overview } from "./overview";
 import { Sheet } from "./sheet";
 import { StudyPanel } from "./studyPanel";
+import { canRecord, record } from "./recorder";
 import { assemble } from "./timeline";
 import { traceCardHtml, traceDim } from "./trace";
 import { renderSteps } from "./stepsView";
@@ -281,6 +282,7 @@ function setStatus(message: string | null, error = false) {
 }
 
 async function forgePaper(input: string, refresh = false) {
+  recording?.abort();
   run.cancel();
   run = new Run();
   const myRun = run;
@@ -430,6 +432,7 @@ async function handle(e: ForgeEvent, myRun: Run, storedHash?: string) {
       break;
     }
     case "error":
+      document.body.classList.remove("presenting"); // a play link that can't open still says why
       paper.stopReading();
       setStatus(e.message, true);
       if (e.code === "needs_key") showKey(true);
@@ -455,7 +458,7 @@ async function play(myRun = (run = new Run()), opts: { direct?: boolean } = {}) 
   if (!direct) myRun.skip(); // straight to the finished model
   await assemble(scene, paper, g, myRun, direct);
   if (myRun === run) {
-    document.body.classList.remove("assembling");
+    document.body.classList.remove("assembling", "presenting");
     panel.select("overview");
     sheet.snapTo("tabs"); // phones: hand the screen to the model
   }
@@ -556,7 +559,7 @@ async function publish() {
     if (!stillOpen) return;
     paperSaved = forgot;
     saveToken = null;
-    shareUrl = `${location.origin}/?paper=${encodeURIComponent(body.arxiv_id ?? id)}`;
+    shareUrl = `${location.origin}/?paper=${encodeURIComponent(body.arxiv_id ?? id)}&play`; // opens into the director's cut
     syncPublish();
     setStatus(res.status === 201 ? "Published to the gallery." : "Already in the gallery — Copy link shares that version.");
     setTimeout(() => setStatus(null), 3500);
@@ -1175,6 +1178,7 @@ async function openInside(blockId: string) {
   const g = graph;
   const block = view?.blocks.find((b) => b.id === blockId);
   if (!g || !view || !block || inside) return; // one level deep
+  recording?.abort();
   if (tourKind && driver.active) tourAt[tourScope] = driver.index; // "← Whole model" comes back here
   driver.stop();
   scene.setHeat(null);
@@ -1220,6 +1224,7 @@ async function openInside(blockId: string) {
 /** Back from a block's inside view to the whole model, assembled. */
 function closeInside() {
   if (!inside || !view) return;
+  recording?.abort();
   // The inside walkthrough's tour points at inside blocks: remember its step and put it away.
   if (tourScope !== "main") {
     if (driver.active) tourAt[tourScope] = driver.index;
@@ -1259,15 +1264,8 @@ let explodeRun = new Run();
 const toolbar = initToolbar(controls, {
   skip: () => run.skip(),
   outside: () => closeInside(),
-  replay() {
-    if (!graph || !displayed()) return;
-    driver.stop();
-    scene.setHeat(null);
-    pinned = null;
-    inspect(null);
-    paper.setPaper(graph.arxiv_id, pages);
-    void play();
-  },
+  replay: () => void replay(),
+  record: () => startRecording(),
   explode() {
     explodeRun.cancel();
     explodeRun = new Run();
@@ -1295,6 +1293,43 @@ const toolbar = initToolbar(controls, {
   }),
 });
 
+toolbar.recordButton.hidden = !canRecord();
+
+/** Play the stage's assembly again from the paper. */
+function replay(opts: { direct?: boolean } = {}): Promise<void> {
+  if (!graph || !displayed()) return Promise.resolve();
+  driver.stop();
+  scene.setHeat(null);
+  pinned = null;
+  inspect(null);
+  paper.setPaper(graph.arxiv_id, pages);
+  if (opts.direct) run.cancel(); // a recording starts clean
+  return play(undefined, opts);
+}
+
+// The recording in progress: Esc, opening another paper or going in or out of a block discards it.
+let recording: AbortController | null = null;
+
+/** Record the director's cut of what's on the stage, through one full pulse, as a video. Runs in the click. */
+function startRecording() {
+  const id = graph?.arxiv_id;
+  if (!id || recording) return;
+  const ctrl = (recording = new AbortController());
+  const filmed = async () => {
+    document.body.classList.add("recording");
+    await replay({ direct: true });
+    await new Promise((r) => setTimeout(r, scene.pulseCycle * 1000 + 1000));
+  };
+  void record($(".workspace"), filmed, inside ? `${id}-${inside.english.model_name}` : id, ctrl.signal).then((result) => {
+    document.body.classList.remove("recording");
+    if (recording === ctrl) recording = null;
+    if (result === "denied") {
+      setStatus("Recording needs tab sharing.", true);
+      setTimeout(() => setStatus(null), 3500);
+    }
+  });
+}
+
 /** The toolbar's back button shows only inside a block. */
 function syncInside() {
   toolbar.outsideButton.hidden = !inside;
@@ -1312,6 +1347,11 @@ const landing = initLanding($("#landing"), { scene, stage: $("#stage"), onForge:
 window.addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
   if (e.key === " " && document.body.classList.contains("assembling")) run.skip();
+  if (e.key === "Escape" && recording) {
+    recording.abort();
+    run.skip();
+    return;
+  }
   if (e.key === "Escape") {
     // Esc stops a trace, then the tour you can see, then leaves a block's inside; otherwise it collapses the phone sheet.
     const tourShowing = driver.active && tourKind !== null && panel.state.active === "journey";
@@ -1332,5 +1372,7 @@ window.addEventListener("keydown", (e) => {
 });
 
 const initial = new URLSearchParams(location.search).get("paper");
+// A play link (?paper=…&play): the build plays with the chrome tucked away, then the app appears as usual.
+if (initial && new URLSearchParams(location.search).has("play")) document.body.classList.add("presenting");
 if (initial) void forgePaper(initial);
 else landing.preview();

@@ -1,6 +1,6 @@
 /**
  * The stage toolbar: Skip during assembly; Back (inside a block), Replay, Explode, Forge again (this browser's own
- * forge only), Labels, Pulse and Publish after.
+ * forge only), Labels, Pulse, Record (Chromium) and Publish after.
  */
 
 export interface ToolbarActions {
@@ -11,6 +11,7 @@ export interface ToolbarActions {
   again(): void;
   labels(): void;
   pulse(): void;
+  record(): void;
   publish(): void;
   /** Current toggle states, read after every action. */
   state(): { explode: boolean; labels: boolean; pulse: boolean };
@@ -31,5 +32,5 @@ export function initToolbar(root: HTMLElement, actions: ToolbarActions) {
     sync();
   });
   sync();
-  return { sync, publishButton: btn("publish"), outsideButton: btn("outside"), againButton: btn("again") };
+  return { sync, publishButton: btn("publish"), outsideButton: btn("outside"), againButton: btn("again"), recordButton: btn("record") };
 }
